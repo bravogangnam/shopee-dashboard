@@ -1,0 +1,260 @@
+/**
+ * 인증 라우트
+ * POST /api/auth/login         - 비밀번호 인증 → JWT 발급
+ * GET  /api/auth/shopee/url    - Shopee OAuth URL 반환
+ * GET  /api/auth/shopee/callback - OAuth 콜백 처리
+ * POST /api/auth/shopee/refresh - 토큰 수동 갱신
+ * GET  /api/auth/status         - 현재 토큰 상태 확인
+ * POST /api/auth/logout         - 로그아웃
+ */
+
+const express = require('express');
+const router = express.Router();
+const { generateToken } = require('../middleware/auth');
+const { requireAuth } = require('../middleware/auth');
+const {
+  getShopeeAuthUrl,
+  exchangeCodeForToken,
+  getMainAccount,
+  saveToken,
+  saveShopToken,
+  refreshAllShopTokens,
+} = require('../services/shopeeAuth');
+const db = require('../config/database');
+require('dotenv').config();
+
+// ─── 비밀번호 로그인 ────────────────────────────────────────────
+router.post('/login', (req, res) => {
+  const { password } = req.body;
+  const APP_PASSWORD = process.env.APP_PASSWORD || '976431';
+
+  if (!password) {
+    return res.status(400).json({ success: false, error: 'Password required' });
+  }
+
+  if (password !== APP_PASSWORD) {
+    return res.status(401).json({ success: false, error: 'Invalid password' });
+  }
+
+  const token = generateToken();
+
+  // 쿠키에 JWT 저장 (7일, httpOnly, sameSite)
+  res.cookie('auth_token', token, {
+    httpOnly: true,
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7일
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+  });
+
+  return res.json({
+    success: true,
+    message: 'Login successful',
+    token, // 프론트가 localStorage에도 저장할 수 있게
+  });
+});
+
+// ─── 로그아웃 ────────────────────────────────────────────────────
+router.post('/logout', (req, res) => {
+  res.clearCookie('auth_token');
+  return res.json({ success: true, message: 'Logged out' });
+});
+
+// ─── Shopee OAuth URL 생성 ───────────────────────────────────────
+router.get('/shopee/url', requireAuth, (req, res) => {
+  const url = getShopeeAuthUrl();
+  return res.json({ success: true, url });
+});
+
+// ─── Shopee OAuth Callback ──────────────────────────────────────
+router.get('/shopee/callback', async (req, res) => {
+  const { code, shop_id, main_account_id, merchant_id } = req.query;
+
+  if (!code) {
+    return res.status(400).send(`
+      <html><body>
+        <h2>Authorization Failed</h2>
+        <p>No authorization code received.</p>
+        <script>
+          if (window.opener) {
+            window.opener.postMessage({ type: 'SHOPEE_AUTH_ERROR', error: 'No code' }, '*');
+            window.close();
+          } else {
+            window.location.href = '/?auth=error';
+          }
+        </script>
+      </body></html>
+    `);
+  }
+
+  try {
+    // ── 콜백 파라미터 전체 상세 로깅 ───────────────────────────
+    console.log('[OAuth] ===== CALLBACK PARAMS =====');
+    console.log(`[OAuth]   code          : ${code?.slice(0, 15)}...`);
+    console.log(`[OAuth]   shop_id       : ${shop_id ?? '(없음)'}`);
+    console.log(`[OAuth]   merchant_id   : ${merchant_id ?? '(없음)'}`);
+    console.log(`[OAuth]   main_account_id: ${main_account_id ?? '(없음)'}`);
+    console.log(`[OAuth]   raw query     : ${JSON.stringify(req.query)}`);
+    console.log('[OAuth] ==================================');
+
+    // shop_id, main_account_id, merchant_id 중 실제로 온 값으로 토큰 교환
+    const useShopId      = shop_id      ? parseInt(shop_id)      : null;
+    const useMerchantId  = merchant_id  ? parseInt(merchant_id)  : null;
+    // main_account_id는 Shopee가 merchant_id 대신 보내는 경우 있음
+    const useMainAcctId  = (!useMerchantId && main_account_id)
+      ? parseInt(main_account_id)
+      : null;
+
+    console.log(`[OAuth] exchangeCodeForToken → shop_id=${useShopId}, merchantId=${useMerchantId ?? useMainAcctId}`);
+
+    const result = await exchangeCodeForToken(
+      code,
+      useShopId,
+      useMerchantId ?? useMainAcctId  // merchant_id 없으면 main_account_id 시도
+    );
+
+    // ── 응답 전체 로깅 (토큰 타입 확인용) ──────────────────────
+    console.log('[OAuth] ===== TOKEN RESPONSE =====');
+    console.log(`[OAuth]   access_token  : ${result.access_token?.slice(0, 20)}...`);
+    console.log(`[OAuth]   expire_in     : ${result.expire_in}`);
+    console.log(`[OAuth]   refresh_expire: ${result.refresh_token_expire_in}`);
+    console.log(`[OAuth]   merchant_id_r : ${result.merchant_id_list ?? result.merchant_id ?? '(없음)'}`);
+    console.log(`[OAuth]   shop_id_list  : ${JSON.stringify(result.shop_id_list ?? '(없음)')}`);
+    console.log(`[OAuth]   full response : ${JSON.stringify(result)}`);
+    console.log('[OAuth] ==================================');
+
+    if (!result.access_token) {
+      throw new Error(`No access_token in response: ${JSON.stringify(result)}`);
+    }
+
+    // ── main_account 토큰 저장 ──────────────────────────────────
+    const callbackShopId = useShopId;
+    await saveToken(result, callbackShopId);
+    console.log(`✅ Shopee OAuth completed, main_account token saved. auth_shop_id=${callbackShopId || 'none'}`);
+
+    // ── 응답의 shop_id_list → shops 테이블에 동일 토큰 저장 ─────
+    // Shopee main_account 인증 시 shop_id_list에 연결된 shop들이 반환됨
+    // 이 토큰은 해당 모든 shop API 호출에 사용 가능
+    const shopIdList = Array.isArray(result.shop_id_list) ? result.shop_id_list : [];
+    if (callbackShopId && !shopIdList.includes(callbackShopId)) {
+      shopIdList.push(callbackShopId); // 콜백에 shop_id가 직접 온 경우도 포함
+    }
+
+    const savedShopIds = [];
+    for (const sid of shopIdList) {
+      try {
+        const saved = await saveShopToken(sid, result);
+        if (saved) savedShopIds.push(sid);
+      } catch (e) {
+        console.error(`[OAuth] shops 저장 실패 (shop_id=${sid}):`, e.message);
+      }
+    }
+    console.log(`[OAuth] shop_id_list=${JSON.stringify(shopIdList)}, shops 테이블 저장 완료=${JSON.stringify(savedShopIds)}`);
+
+    // 나머지 미인증 shop 확인
+    const [allShops] = await db.query(
+      'SELECT shop_id, region, alias, token_status FROM shops WHERE is_active=1 ORDER BY id'
+    );
+    const pendingShops = allShops.filter(s => s.token_status !== 'active');
+    const allAuthed    = pendingShops.length === 0;
+
+    console.log(`[OAuth] shop 인증 현황: 전체=${allShops.length}, 미완료=${pendingShops.length}`);
+
+    // 팝업이면 메시지 후 닫기, 아니면 설정 페이지로 리다이렉트
+    return res.send(`
+      <html>
+      <head><title>Shopee Authorization</title></head>
+      <body style="font-family:Arial;text-align:center;padding:50px;">
+        <h2 style="color:#1677FF;">✅ 인증 완료!</h2>
+        <p>Shopee 계정 연결이 완료되었습니다.</p>
+        ${savedShopIds.length > 0
+          ? `<p style="color:#52c41a;">✅ Shop 토큰 저장: ${savedShopIds.join(', ')}</p>`
+          : ''}
+        ${!allAuthed ? `
+        <div style="background:#fff3cd;border:1px solid #ffc107;padding:15px;border-radius:8px;margin:20px auto;max-width:400px;text-align:left;">
+          <b>⚠️ 아직 인증이 필요한 Shop:</b><br>
+          ${pendingShops.map(s => `• ${s.alias || s.region} (${s.shop_id})`).join('<br>')}<br><br>
+          <small>Settings 화면에서 각 shop별로 "Shopee 연동" 버튼을 클릭해 주세요.</small>
+        </div>` : '<p style="color:#52c41a;">🎉 모든 Shop 인증 완료!</p>'}
+        <p style="color:#888;">이 창은 자동으로 닫힙니다...</p>
+        <script>
+          if (window.opener) {
+            window.opener.postMessage({ type: 'SHOPEE_AUTH_SUCCESS', shopIds: ${JSON.stringify(savedShopIds)} }, '*');
+            setTimeout(() => window.close(), 3000);
+          } else {
+            setTimeout(() => { window.location.href = '/settings?auth=success'; }, 3000);
+          }
+        </script>
+      </body>
+      </html>
+    `);
+  } catch (err) {
+    console.error('[OAuth] Token exchange failed:', err.message);
+
+    return res.status(500).send(`
+      <html>
+      <head><title>Auth Error</title></head>
+      <body style="font-family:Arial;text-align:center;padding:50px;">
+        <h2 style="color:red;">❌ 인증 실패</h2>
+        <p>${err.message}</p>
+        <script>
+          if (window.opener) {
+            window.opener.postMessage({ type: 'SHOPEE_AUTH_ERROR', error: '${err.message.replace(/'/g, "\\'")}' }, '*');
+            setTimeout(() => window.close(), 3000);
+          } else {
+            setTimeout(() => { window.location.href = '/settings?auth=error'; }, 3000);
+          }
+        </script>
+      </body>
+      </html>
+    `);
+  }
+});
+
+// ─── 토큰 수동 갱신 ──────────────────────────────────────────────
+router.post('/shopee/refresh', requireAuth, async (req, res) => {
+  try {
+    const success = await autoRefreshToken();
+    const account = await getMainAccount();
+
+    return res.json({
+      success: true,
+      refreshed: success,
+      status: account?.token_status,
+      expires_at: account?.token_expires_at,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── 토큰 상태 확인 ──────────────────────────────────────────────
+router.get('/status', requireAuth, async (req, res) => {
+  const account = await getMainAccount();
+
+  if (!account) {
+    return res.json({
+      success: true,
+      authenticated: false,
+      token_status: null,
+      message: 'No account configured',
+    });
+  }
+
+  return res.json({
+    success: true,
+    authenticated: !!account.access_token,
+    token_status: account.token_status,
+    token_expires_at: account.token_expires_at,
+    refresh_expires_at: account.refresh_expires_at,
+    partner_id: account.partner_id,
+    main_account_id: account.main_account_id,
+    merchant_id: account.merchant_id,
+  });
+});
+
+// ─── 인증 상태 확인 (세션 체크용) ──────────────────────────────
+router.get('/check', requireAuth, (req, res) => {
+  return res.json({ success: true, authenticated: true });
+});
+
+module.exports = router;

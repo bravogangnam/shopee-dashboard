@@ -18,8 +18,5 @@ jobs:
 
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
             cd /var/www/shopee-dashboard
-            git pull origin main
-            cd backend
-            npm install
-            pm2 restart all
+            ./deploy.sh
           EOF

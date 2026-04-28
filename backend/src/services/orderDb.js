@@ -86,23 +86,107 @@ async function batchInsertOrders(orderRows) {
 async function batchInsertOrderItems(itemRows) {
   if (!itemRows.length) return;
 
+  const skuList = Array.from(new Set(
+    itemRows
+      .map(item => item.model_sku)
+      .filter(sku => sku !== null && sku !== undefined && String(sku).trim() !== '')
+      .map(sku => String(sku).trim())
+  ));
+
   const conn = await db.getConnection();
   try {
+    const productMap = new Map();
+    if (skuList.length > 0) {
+      const placeholders = skuList.map(() => '?').join(',');
+      const [products] = await conn.query(
+        `SELECT sku, cost_price, discounted_price_with_vat, vat
+         FROM products
+         WHERE sku IN (${placeholders})`,
+        skuList
+      );
+      for (const product of products) {
+        productMap.set(product.sku, product);
+      }
+    }
+
     await conn.beginTransaction();
     for (const item of itemRows) {
+      const modelSku = item.model_sku ? String(item.model_sku).trim() : '';
+      const product = modelSku ? productMap.get(modelSku) : null;
+
+      if (modelSku && !product) {
+        console.warn(`[CostSnapshot] 미등록 SKU: ${modelSku}, 주문: ${item.order_sn}`);
+      }
+
       await conn.query(
         `INSERT IGNORE INTO order_items (
           order_sn, shop_id, item_id, item_name, item_sku,
           model_id, model_name, model_sku,
           model_quantity_purchased, model_original_price, model_discounted_price,
-          image_info_image_url, item_image_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          image_info_image_url, item_image_url,
+          cost_price_at_order, discounted_price_at_order, vat_at_order
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           item.order_sn, item.shop_id, item.item_id, item.item_name, item.item_sku,
           item.model_id, item.model_name, item.model_sku,
           item.model_quantity_purchased, item.model_original_price, item.model_discounted_price,
           item.image_info_image_url, item.item_image_url,
+          product?.cost_price ?? null, product?.discounted_price_with_vat ?? null, product?.vat ?? null,
         ]
+      );
+
+      if (product) {
+        await conn.query(
+          `UPDATE order_items
+           SET
+             cost_price_at_order = COALESCE(cost_price_at_order, ?),
+             discounted_price_at_order = COALESCE(discounted_price_at_order, ?),
+             vat_at_order = COALESCE(vat_at_order, ?)
+           WHERE order_sn = ?
+             AND shop_id = ?
+             AND model_sku = ?
+             AND (
+               cost_price_at_order IS NULL
+               OR discounted_price_at_order IS NULL
+               OR vat_at_order IS NULL
+             )`,
+          [
+            product.cost_price,
+            product.discounted_price_with_vat,
+            product.vat,
+            item.order_sn,
+            item.shop_id,
+            modelSku,
+          ]
+        );
+      }
+    }
+
+    const orderKeys = Array.from(new Set(itemRows.map(item => `${item.shop_id}::${item.order_sn}`)))
+      .map(key => {
+        const [shopId, orderSn] = key.split('::');
+        return { shopId, orderSn };
+      });
+
+    for (const { shopId, orderSn } of orderKeys) {
+      await conn.query(
+        `UPDATE orders o
+         JOIN (
+           SELECT
+             shop_id,
+             order_sn,
+             SUM(COALESCE(cost_price_at_order, 0) * COALESCE(model_quantity_purchased, 1)) AS total_cost_price,
+             SUM(COALESCE(discounted_price_at_order, 0) * COALESCE(model_quantity_purchased, 1)) AS total_discounted_price,
+             SUM(COALESCE(vat_at_order, 0) * COALESCE(model_quantity_purchased, 1)) AS total_vat
+           FROM order_items
+           WHERE order_sn = ? AND shop_id = ?
+           GROUP BY shop_id, order_sn
+         ) x ON x.shop_id = o.shop_id AND x.order_sn = o.order_sn
+         SET
+           o.total_cost_price = x.total_cost_price,
+           o.total_discounted_price = x.total_discounted_price,
+           o.total_vat = x.total_vat`,
+        [orderSn, shopId]
       );
     }
     await conn.commit();

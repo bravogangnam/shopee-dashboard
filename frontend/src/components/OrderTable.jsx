@@ -2,16 +2,16 @@ import MarginBadge from './MarginBadge.jsx';
 import { formatCurrency, formatDateTime, formatKrw, profitTone } from '../utils/format.js';
 
 function calculateMarginRate(order) {
-  const hasEscrow = order.escrow_amount !== null && order.escrow_amount !== undefined;
+  const hasSales = order.merchandise_subtotal !== null && order.merchandise_subtotal !== undefined;
   const hasProfit = order.net_profit !== null && order.net_profit !== undefined;
   const hasRate = order.krw_rate !== null && order.krw_rate !== undefined;
-  if (!hasEscrow || !hasProfit || !hasRate) return '-';
+  if (!hasSales || !hasProfit || !hasRate) return '-';
 
-  const escrowKrw = Number(order.escrow_amount) * Number(order.krw_rate);
+  const salesKrw = Number(order.merchandise_subtotal) * Number(order.krw_rate);
   const netProfit = Number(order.net_profit);
-  if (!Number.isFinite(escrowKrw) || !Number.isFinite(netProfit) || escrowKrw === 0) return '-';
+  if (!Number.isFinite(salesKrw) || !Number.isFinite(netProfit) || salesKrw === 0) return '-';
 
-  return `${((netProfit / escrowKrw) * 100).toFixed(2)}%`;
+  return `${((netProfit / salesKrw) * 100).toFixed(2)}%`;
 }
 
 export default function OrderTable({ orders, loading }) {

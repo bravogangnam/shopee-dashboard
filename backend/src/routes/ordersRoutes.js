@@ -459,16 +459,17 @@ router.get('/summary', async (req, res) => {
     );
 
     const summary = rows[0] || {};
+    const totalSalesKrw = parseFloat(summary.total_sales_krw || 0);
     const totalEscrowKrw = parseFloat(summary.total_escrow_krw || 0);
     const totalNetProfit = parseFloat(summary.total_net_profit || 0);
-    const profitRate = totalEscrowKrw === 0
+    const profitRate = totalSalesKrw === 0
       ? 0
-      : Math.round((totalNetProfit / totalEscrowKrw) * 10000) / 100;
+      : Math.round((totalNetProfit / totalSalesKrw) * 10000) / 100;
 
     return res.json({
       success: true,
       summary: {
-        total_sales_krw: parseFloat(summary.total_sales_krw || 0),
+        total_sales_krw: totalSalesKrw,
         total_escrow_krw: totalEscrowKrw,
         total_net_profit: totalNetProfit,
         total_vat: parseFloat(summary.total_vat || 0),

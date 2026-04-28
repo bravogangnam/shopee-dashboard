@@ -135,6 +135,8 @@ router.get('/', async (req, res) => {
         o.shipping_carrier, o.tracking_number, o.shipping_fee, o.shipping_fee_discount,
         o.actual_shipping_fee, o.estimated_shipping_fee, o.order_chargeable_weight_gram,
         o.commission_fee, o.service_fee, o.transaction_fee, o.escrow_amount,
+        o.net_profit, o.product_profit, o.margin_status,
+        o.total_cost_price, o.total_discounted_price, o.total_vat,
         o.create_time, o.order_created_at, o.update_time, o.synced_at,
         s.alias as shop_alias,
         r.rate_to_krw as krw_rate
@@ -152,7 +154,8 @@ router.get('/', async (req, res) => {
     const [items] = await db.query(
       `SELECT order_sn, item_id, item_name, item_sku, model_id, model_name, model_sku,
               model_quantity_purchased, model_original_price, model_discounted_price,
-              image_info_image_url, item_image_url
+              image_info_image_url, item_image_url,
+              cost_price_at_order, discounted_price_at_order, vat_at_order
        FROM order_items
        WHERE order_sn IN (${snPlaceholders})
        ORDER BY id ASC`,
@@ -170,6 +173,12 @@ router.get('/', async (req, res) => {
       return {
         ...o,
         merchandise_subtotal: o.merchandise_subtotal ?? null,
+        net_profit: o.net_profit ?? null,
+        product_profit: o.product_profit ?? null,
+        margin_status: o.margin_status ?? 'pending',
+        total_cost_price: o.total_cost_price ?? null,
+        total_discounted_price: o.total_discounted_price ?? null,
+        total_vat: o.total_vat ?? null,
         item_list: its,
       };
     });

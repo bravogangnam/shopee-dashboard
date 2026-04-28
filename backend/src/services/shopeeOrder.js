@@ -293,26 +293,11 @@ function mapOrderToDb(order, shopId, region, escrow) {
   // ─ 수수료 필드 우선순위: escrow > order 직접 필드
   const income = escrow?.order_income || {};
 
-  // merchandise_subtotal 우선순위:
-  // 1) escrow.buyer_payment_info.merchant_subtotal  (Shopee 공식 상품금액, 가장 정확)
-  // 2) escrow.order_income.original_price           (차선)
-  // 3) item_list 합산: disc>0 행만 합산, disc=0 행은 제외
-  //    (Shopee 묶음할인 시 disc=0 행은 단가 미확정이므로 합산 제외)
   const itemList = order.item_list || [];
-
-  let subtotalFromItems = 0;
-  for (const item of itemList) {
-    const disc = parseFloat(item.model_discounted_price || 0);
-    const orig = parseFloat(item.model_original_price  || 0);
-    const qty  = item.model_quantity_purchased || 1;
-    // disc>0이면 실제 판매가 사용, disc=0이면 original_price 사용
-    const unitPrice = disc > 0 ? disc : orig;
-    subtotalFromItems += unitPrice * qty;
-  }
 
   const buyerPaymentSubtotal = parseFloat(escrow?.buyer_payment_info?.merchant_subtotal || 0);
   const escrowSubtotal       = parseFloat(income.original_price || 0);
-  const merchandise_subtotal = buyerPaymentSubtotal || escrowSubtotal || subtotalFromItems || null;
+  const merchandise_subtotal = buyerPaymentSubtotal || escrowSubtotal || null;
 
   const orderRow = {
     shop_id: shopId,

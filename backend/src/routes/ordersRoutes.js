@@ -165,16 +165,11 @@ router.get('/', async (req, res) => {
       itemsByOrderSn[item.order_sn].push(item);
     }
 
-    // ── STEP 5: merchandise_subtotal enrichment ──
-    // DB의 merchandise_subtotal을 우선 사용.
-    // Shopee 묶음할인 시 disc=0인 행이 있어 item 합산은 부정확 → 절대 item 합산 fallback 사용 안 함.
-    // subtotal 없으면 total_amount fallback.
     const enrichedOrders = orders.map(o => {
       const its = itemsByOrderSn[o.order_sn] || [];
-      const subtotal = parseFloat(o.merchandise_subtotal || 0) || null;
       return {
         ...o,
-        merchandise_subtotal: subtotal || o.total_amount || null,
+        merchandise_subtotal: o.merchandise_subtotal ?? null,
         item_list: its,
       };
     });

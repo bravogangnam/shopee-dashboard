@@ -8,6 +8,122 @@
 
 const db = require('../config/database');
 
+function parseNullableNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function roundCurrency(value) {
+  return Math.round(value * 100) / 100;
+}
+
+function getMarginStatus(order) {
+  if (order.order_status === 'CANCELLED') return 'cancelled';
+
+  const actualShippingFee = parseNullableNumber(order.actual_shipping_fee);
+  return actualShippingFee !== null && actualShippingFee > 0 ? 'confirmed' : 'pending';
+}
+
+async function getExchangeRateMap(conn) {
+  const [rows] = await conn.query(
+    'SELECT currency, rate_to_krw FROM exchange_rates'
+  );
+
+  const rateMap = new Map();
+  for (const row of rows) {
+    const rate = parseNullableNumber(row.rate_to_krw);
+    if (row.currency && rate !== null) {
+      rateMap.set(String(row.currency), rate);
+    }
+  }
+  return rateMap;
+}
+
+async function recalculateMarginsForOrders(conn, orderKeys, options = {}) {
+  const uniqueKeys = Array.from(
+    new Map(
+      orderKeys
+        .filter(key => key?.shopId !== undefined && key?.shopId !== null && key?.orderSn)
+        .map(key => [`${key.shopId}::${key.orderSn}`, key])
+    ).values()
+  );
+
+  if (!uniqueKeys.length) return;
+
+  const rateMap = await getExchangeRateMap(conn);
+  const whereClauses = uniqueKeys.map(() => '(shop_id = ? AND order_sn = ?)').join(' OR ');
+  const params = [];
+  for (const key of uniqueKeys) {
+    params.push(key.shopId, key.orderSn);
+  }
+
+  const [orders] = await conn.query(
+    `SELECT
+       order_sn, shop_id, currency, escrow_amount, total_cost_price,
+       total_discounted_price, actual_shipping_fee, order_status,
+       margin_status, net_profit, product_profit
+     FROM orders
+     WHERE ${whereClauses}`,
+    params
+  );
+
+  for (const order of orders) {
+    const marginStatus = getMarginStatus(order);
+
+    if (marginStatus === 'cancelled') {
+      await conn.query(
+        `UPDATE orders
+         SET net_profit = NULL, product_profit = NULL, margin_status = ?
+         WHERE order_sn = ? AND shop_id = ?`,
+        [marginStatus, order.order_sn, order.shop_id]
+      );
+      continue;
+    }
+
+    const hasConfirmedProfit =
+      order.margin_status === 'confirmed' &&
+      parseNullableNumber(order.net_profit) !== null;
+
+    if (hasConfirmedProfit && !options.forceRecalculateProfit) {
+      await conn.query(
+        `UPDATE orders
+         SET margin_status = ?
+         WHERE order_sn = ? AND shop_id = ?`,
+        [marginStatus, order.order_sn, order.shop_id]
+      );
+      continue;
+    }
+
+    const escrowAmount = parseNullableNumber(order.escrow_amount);
+    const totalCostPrice = parseNullableNumber(order.total_cost_price);
+    const totalDiscountedPrice = parseNullableNumber(order.total_discounted_price);
+    const rateToKrw = order.currency ? rateMap.get(String(order.currency)) : null;
+
+    let netProfit = null;
+    let productProfit = null;
+    if (
+      escrowAmount !== null &&
+      escrowAmount > 0 &&
+      totalCostPrice !== null &&
+      totalDiscountedPrice !== null &&
+      rateToKrw !== null &&
+      rateToKrw !== undefined
+    ) {
+      const escrowAmountKrw = escrowAmount * rateToKrw;
+      netProfit = roundCurrency(escrowAmountKrw - totalCostPrice);
+      productProfit = roundCurrency(escrowAmountKrw - totalDiscountedPrice);
+    }
+
+    await conn.query(
+      `UPDATE orders
+       SET net_profit = ?, product_profit = ?, margin_status = ?
+       WHERE order_sn = ? AND shop_id = ?`,
+      [netProfit, productProfit, marginStatus, order.order_sn, order.shop_id]
+    );
+  }
+}
+
 /**
  * 주문 1건 UPSERT (신규: INSERT, 기존: 무시)
  */
@@ -189,6 +305,8 @@ async function batchInsertOrderItems(itemRows) {
         [orderSn, shopId]
       );
     }
+
+    await recalculateMarginsForOrders(conn, orderKeys);
     await conn.commit();
   } catch (err) {
     await conn.rollback();
@@ -214,6 +332,24 @@ async function updateOrder(orderSn, shopId, diff) {
     `UPDATE orders SET ${sets}, synced_at = NOW() WHERE order_sn = ? AND shop_id = ?`,
     vals
   );
+
+  const marginFields = new Set([
+    'escrow_amount',
+    'actual_shipping_fee',
+    'order_status',
+    'currency',
+    'total_cost_price',
+    'total_discounted_price',
+  ]);
+  const shouldRecalculateMargin = Object.keys(diff).some(field => marginFields.has(field));
+  if (shouldRecalculateMargin) {
+    await recalculateMarginsForOrders(
+      db,
+      [{ shopId, orderSn }],
+      { forceRecalculateProfit: Object.prototype.hasOwnProperty.call(diff, 'escrow_amount') }
+    );
+  }
+
   return true;
 }
 

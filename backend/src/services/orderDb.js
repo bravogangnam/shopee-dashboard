@@ -18,11 +18,16 @@ function roundCurrency(value) {
   return Math.round(value * 100) / 100;
 }
 
-function getMarginStatus(order) {
+function getMarginStatus(order, netProfit, productProfit) {
   if (order.order_status === 'CANCELLED') return 'cancelled';
 
-  const actualShippingFee = parseNullableNumber(order.actual_shipping_fee);
-  return actualShippingFee !== null && actualShippingFee > 0 ? 'confirmed' : 'pending';
+  const escrowAmount = parseNullableNumber(order.escrow_amount);
+  return escrowAmount !== null &&
+    escrowAmount > 0 &&
+    netProfit !== null &&
+    productProfit !== null
+    ? 'confirmed'
+    : 'pending';
 }
 
 async function getExchangeRateMap(conn) {
@@ -61,7 +66,7 @@ async function recalculateMarginsForOrders(conn, orderKeys, options = {}) {
   const [orders] = await conn.query(
     `SELECT
        order_sn, shop_id, currency, escrow_amount, total_cost_price,
-       total_discounted_price, actual_shipping_fee, order_status,
+       total_discounted_price, order_status,
        margin_status, net_profit, product_profit
      FROM orders
      WHERE ${whereClauses}`,
@@ -69,23 +74,27 @@ async function recalculateMarginsForOrders(conn, orderKeys, options = {}) {
   );
 
   for (const order of orders) {
-    const marginStatus = getMarginStatus(order);
-
-    if (marginStatus === 'cancelled') {
+    if (order.order_status === 'CANCELLED') {
       await conn.query(
         `UPDATE orders
          SET net_profit = NULL, product_profit = NULL, margin_status = ?
          WHERE order_sn = ? AND shop_id = ?`,
-        [marginStatus, order.order_sn, order.shop_id]
+        ['cancelled', order.order_sn, order.shop_id]
       );
       continue;
     }
 
     const hasConfirmedProfit =
       order.margin_status === 'confirmed' &&
-      parseNullableNumber(order.net_profit) !== null;
+      parseNullableNumber(order.net_profit) !== null &&
+      parseNullableNumber(order.product_profit) !== null;
 
     if (hasConfirmedProfit && !options.forceRecalculateProfit) {
+      const marginStatus = getMarginStatus(
+        order,
+        parseNullableNumber(order.net_profit),
+        parseNullableNumber(order.product_profit)
+      );
       await conn.query(
         `UPDATE orders
          SET margin_status = ?
@@ -114,6 +123,8 @@ async function recalculateMarginsForOrders(conn, orderKeys, options = {}) {
       netProfit = roundCurrency(escrowAmountKrw - totalCostPrice);
       productProfit = roundCurrency(escrowAmountKrw - totalDiscountedPrice);
     }
+
+    const marginStatus = getMarginStatus(order, netProfit, productProfit);
 
     await conn.query(
       `UPDATE orders
@@ -335,7 +346,6 @@ async function updateOrder(orderSn, shopId, diff) {
 
   const marginFields = new Set([
     'escrow_amount',
-    'actual_shipping_fee',
     'order_status',
     'currency',
     'total_cost_price',

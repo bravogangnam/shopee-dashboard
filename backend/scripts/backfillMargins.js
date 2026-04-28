@@ -15,11 +15,16 @@ function roundCurrency(value) {
   return Math.round(value * 100) / 100;
 }
 
-function getMarginStatus(order) {
+function getMarginStatus(order, netProfit, productProfit) {
   if (order.order_status === 'CANCELLED') return 'cancelled';
 
-  const actualShippingFee = parseNullableNumber(order.actual_shipping_fee);
-  return actualShippingFee !== null && actualShippingFee > 0 ? 'confirmed' : 'pending';
+  const escrowAmount = parseNullableNumber(order.escrow_amount);
+  return escrowAmount !== null &&
+    escrowAmount > 0 &&
+    netProfit !== null &&
+    productProfit !== null
+    ? 'confirmed'
+    : 'pending';
 }
 
 function formatValue(value) {
@@ -45,7 +50,7 @@ async function loadGeneralTargets() {
   const [rows] = await db.query(
     `SELECT
        order_sn, shop_id, currency, escrow_amount, total_cost_price,
-       total_discounted_price, actual_shipping_fee, order_status,
+       total_discounted_price, order_status,
        margin_status, net_profit, product_profit
      FROM orders
      WHERE escrow_amount IS NOT NULL
@@ -173,10 +178,12 @@ async function main() {
 
   for (const order of targets) {
     try {
-      const newMarginStatus = getMarginStatus(order);
       const rateToKrw = order.currency ? rateMap.get(String(order.currency)) : null;
 
       if (rateToKrw === null || rateToKrw === undefined) {
+        const existingNetProfit = parseNullableNumber(order.net_profit);
+        const existingProductProfit = parseNullableNumber(order.product_profit);
+        const newMarginStatus = getMarginStatus(order, existingNetProfit, existingProductProfit);
         stats.missing_rate++;
         stats.skipped++;
         if (samples.length < 10) {
@@ -193,6 +200,7 @@ async function main() {
         netProfit: roundCurrency((escrowAmount * rateToKrw) - totalCostPrice),
         productProfit: roundCurrency((escrowAmount * rateToKrw) - totalDiscountedPrice),
       };
+      const newMarginStatus = getMarginStatus(order, expected.netProfit, expected.productProfit);
 
       const existingNetProfit = parseNullableNumber(order.net_profit);
       const existingProductProfit = parseNullableNumber(order.product_profit);

@@ -295,9 +295,13 @@ function mapOrderToDb(order, shopId, region, escrow) {
 
   const itemList = order.item_list || [];
 
-  const buyerPaymentSubtotal = parseFloat(escrow?.buyer_payment_info?.merchant_subtotal || 0);
-  const escrowSubtotal       = parseFloat(income.original_price || 0);
-  const merchandise_subtotal = buyerPaymentSubtotal || escrowSubtotal || null;
+  const buyerPaymentInfo = escrow?.buyer_payment_info || {};
+  const buyerPaymentSubtotal = parseFloat(
+    buyerPaymentInfo.merchandise_subtotal ??
+    buyerPaymentInfo.merchant_subtotal ??
+    0
+  );
+  const merchandise_subtotal = buyerPaymentSubtotal || null;
 
   const orderRow = {
     shop_id: shopId,

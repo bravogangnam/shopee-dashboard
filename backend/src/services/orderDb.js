@@ -23,7 +23,6 @@ function getMarginStatus(order, netProfit, productProfit) {
 
   const escrowAmount = parseNullableNumber(order.escrow_amount);
   return escrowAmount !== null &&
-    escrowAmount > 0 &&
     netProfit !== null &&
     productProfit !== null
     ? 'confirmed'
@@ -113,7 +112,6 @@ async function recalculateMarginsForOrders(conn, orderKeys, options = {}) {
     let productProfit = null;
     if (
       escrowAmount !== null &&
-      escrowAmount > 0 &&
       totalCostPrice !== null &&
       totalDiscountedPrice !== null &&
       rateToKrw !== null &&

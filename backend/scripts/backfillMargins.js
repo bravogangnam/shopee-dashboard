@@ -20,7 +20,6 @@ function getMarginStatus(order, netProfit, productProfit) {
 
   const escrowAmount = parseNullableNumber(order.escrow_amount);
   return escrowAmount !== null &&
-    escrowAmount > 0 &&
     netProfit !== null &&
     productProfit !== null
     ? 'confirmed'
@@ -54,7 +53,6 @@ async function loadGeneralTargets() {
        margin_status, net_profit, product_profit
      FROM orders
      WHERE escrow_amount IS NOT NULL
-       AND escrow_amount > 0
        AND total_cost_price IS NOT NULL
        AND total_discounted_price IS NOT NULL
        AND order_status != 'CANCELLED'
@@ -80,7 +78,7 @@ async function countConfirmedWithoutEscrowTargets() {
     `SELECT COUNT(*) AS count
      FROM orders
      WHERE margin_status = 'confirmed'
-       AND (escrow_amount IS NULL OR escrow_amount <= 0)
+       AND escrow_amount IS NULL
        AND order_status != 'CANCELLED'`
   );
 
@@ -107,7 +105,7 @@ async function applyConfirmedWithoutEscrowFix() {
          net_profit = NULL,
          product_profit = NULL
      WHERE margin_status = 'confirmed'
-       AND (escrow_amount IS NULL OR escrow_amount <= 0)
+       AND escrow_amount IS NULL
        AND order_status != 'CANCELLED'`
   );
 

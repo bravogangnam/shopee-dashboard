@@ -75,6 +75,18 @@ async function countCancelledTargets() {
   return Number(rows[0]?.count || 0);
 }
 
+async function countConfirmedWithoutEscrowTargets() {
+  const [rows] = await db.query(
+    `SELECT COUNT(*) AS count
+     FROM orders
+     WHERE margin_status = 'confirmed'
+       AND (escrow_amount IS NULL OR escrow_amount <= 0)
+       AND order_status != 'CANCELLED'`
+  );
+
+  return Number(rows[0]?.count || 0);
+}
+
 async function applyCancelledFix() {
   const [result] = await db.query(
     `UPDATE orders
@@ -83,6 +95,20 @@ async function applyCancelledFix() {
          product_profit = NULL
      WHERE order_status = 'CANCELLED'
        AND (margin_status IS NULL OR margin_status != 'cancelled')`
+  );
+
+  return result.affectedRows;
+}
+
+async function applyConfirmedWithoutEscrowFix() {
+  const [result] = await db.query(
+    `UPDATE orders
+     SET margin_status = 'pending',
+         net_profit = NULL,
+         product_profit = NULL
+     WHERE margin_status = 'confirmed'
+       AND (escrow_amount IS NULL OR escrow_amount <= 0)
+       AND order_status != 'CANCELLED'`
   );
 
   return result.affectedRows;
@@ -160,6 +186,7 @@ async function main() {
   const rateMap = await loadExchangeRateMap();
   const targets = await loadGeneralTargets();
   const cancelledTargetCount = await countCancelledTargets();
+  const confirmedWithoutEscrowTargetCount = await countConfirmedWithoutEscrowTargets();
   const samples = [];
   const stats = {
     general_target: targets.length,
@@ -174,6 +201,8 @@ async function main() {
     no_change: 0,
     cancelled_target: cancelledTargetCount,
     cancelled_updated: 0,
+    confirmed_without_escrow_target: confirmedWithoutEscrowTargetCount,
+    confirmed_without_escrow_updated: 0,
   };
 
   for (const order of targets) {
@@ -246,6 +275,7 @@ async function main() {
 
   if (APPLY) {
     stats.cancelled_updated = await applyCancelledFix();
+    stats.confirmed_without_escrow_updated = await applyConfirmedWithoutEscrowFix();
   }
 
   console.log(`[MarginBackfill] general_target=${stats.general_target}`);
@@ -258,6 +288,8 @@ async function main() {
   console.log(`[MarginBackfill] profit_recalc=${stats.profit_recalc}`);
   console.log(`[MarginBackfill] cancelled_target=${stats.cancelled_target}`);
   console.log(`[MarginBackfill] cancelled_updated=${stats.cancelled_updated}`);
+  console.log(`[MarginBackfill] confirmed_without_escrow_target=${stats.confirmed_without_escrow_target}`);
+  console.log(`[MarginBackfill] confirmed_without_escrow_updated=${stats.confirmed_without_escrow_updated}`);
   for (const sample of samples) {
     printSample(sample);
   }

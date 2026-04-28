@@ -217,6 +217,27 @@ async function getEscrowDetail(shopId, orderSn, accessToken) {
       return null;
     }
 
+    if (orderSn === '26042814WW388A') {
+      const response = data.response || {};
+      const buyerPaymentInfo = response.buyer_payment_info || {};
+      const orderIncome = response.order_income || {};
+
+      console.log('[EscrowDiag][26042814WW388A]', JSON.stringify({
+        buyer_payment_info_keys: Object.keys(buyerPaymentInfo),
+        buyer_payment_info_merchandise_subtotal: buyerPaymentInfo.merchandise_subtotal,
+        buyer_payment_info_merchant_subtotal: buyerPaymentInfo.merchant_subtotal,
+        order_income_keys: Object.keys(orderIncome),
+        order_income_escrow_amount: orderIncome.escrow_amount,
+        order_income_original_price: orderIncome.original_price,
+        order_income_items_sample: (orderIncome.items || []).slice(0, 5).map(item => ({
+          item_id: item.item_id,
+          quantity_purchased: item.quantity_purchased,
+          discounted_price: item.discounted_price,
+          original_price: item.original_price,
+        })),
+      }));
+    }
+
     return data.response || null;
   } catch (err) {
     if (err.isBusinessError) return null;

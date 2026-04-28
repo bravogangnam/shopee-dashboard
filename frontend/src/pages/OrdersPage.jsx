@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchOrders } from '../api/orders.js';
+import { fetchOrders, fetchSummary } from '../api/orders.js';
 import OrderFilters from '../components/OrderFilters.jsx';
 import OrderTable from '../components/OrderTable.jsx';
 import Pagination from '../components/Pagination.jsx';
+import { formatKrw, formatNumber } from '../utils/format.js';
 
 const DEFAULT_FILTERS = {
   page: 1,
-  page_size: '20',
-  shop_id: '',
+  page_size: '100',
   region: '',
   order_status: '',
   date_from: '',
@@ -15,13 +15,36 @@ const DEFAULT_FILTERS = {
   order_sn: '',
 };
 
+function SummaryCards({ summary }) {
+  const cards = [
+    { label: '매출', value: formatKrw(summary?.total_sales_krw) },
+    { label: '정산액', value: formatKrw(summary?.total_escrow_krw) },
+    { label: '순이익', value: formatKrw(summary?.total_net_profit) },
+    { label: '부가세', value: formatKrw(summary?.total_vat) },
+    { label: '순이익률', value: summary ? `${formatNumber(summary.profit_rate, 2)}%` : '-' },
+  ];
+
+  return (
+    <div className="summary-cards">
+      {cards.map(card => (
+        <div className="summary-card" key={card.label}>
+          <span>{card.label}</span>
+          <strong>{card.value}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function OrdersPage() {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [query, setQuery] = useState(DEFAULT_FILTERS);
   const [orders, setOrders] = useState([]);
+  const [summary, setSummary] = useState(null);
   const [pagination, setPagination] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
   const queryKey = useMemo(() => JSON.stringify(query), [query]);
 
@@ -32,15 +55,21 @@ export default function OrdersPage() {
       setLoading(true);
       setError('');
       try {
-        const result = await fetchOrders(query);
+        const [ordersResult, summaryResult] = await Promise.all([
+          fetchOrders(query),
+          fetchSummary(query),
+        ]);
+
         if (!cancelled) {
-          setOrders(result.data || []);
-          setPagination(result.pagination || null);
+          setOrders(ordersResult.data || []);
+          setPagination(ordersResult.pagination || null);
+          setSummary(summaryResult);
         }
       } catch (err) {
         if (!cancelled) {
           setError(err.message || '주문을 불러오지 못했습니다.');
           setOrders([]);
+          setSummary(null);
           setPagination(null);
         }
       } finally {
@@ -52,7 +81,7 @@ export default function OrdersPage() {
     return () => {
       cancelled = true;
     };
-  }, [queryKey]);
+  }, [queryKey, reloadKey]);
 
   function handleSubmit(event) {
     event.preventDefault();
@@ -73,10 +102,10 @@ export default function OrdersPage() {
     <section className="page">
       <div className="page-header">
         <div>
-          <h1>주문 목록</h1>
-          <p>주문 상태, 판매가, 정산금액, 원가와 마진을 함께 확인합니다.</p>
+          <h1>정산목록</h1>
+          <p>주문별 매출, 원가, 순이익, 마진율을 확인합니다.</p>
         </div>
-        <button type="button" className="ghost-button" onClick={() => setQuery(current => ({ ...current }))}>
+        <button type="button" className="ghost-button" onClick={() => setReloadKey(value => value + 1)}>
           새로고침
         </button>
       </div>
@@ -87,6 +116,8 @@ export default function OrdersPage() {
         onSubmit={handleSubmit}
         onReset={handleReset}
       />
+
+      <SummaryCards summary={summary} />
 
       {error && <div className="alert">{error}</div>}
 

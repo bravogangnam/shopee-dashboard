@@ -142,7 +142,8 @@ router.get('/', async (req, res) => {
         r.rate_to_krw as krw_rate
        FROM orders o
        LEFT JOIN shops s ON o.shop_id = s.shop_id
-       LEFT JOIN exchange_rates r ON o.currency = r.currency
+       LEFT JOIN exchange_rates r
+         ON o.currency COLLATE utf8mb4_general_ci = r.currency
        WHERE o.id IN (${idPlaceholders})
        ORDER BY o.order_created_at DESC`,
       idList
@@ -179,6 +180,7 @@ router.get('/', async (req, res) => {
         total_cost_price: o.total_cost_price ?? null,
         total_discounted_price: o.total_discounted_price ?? null,
         total_vat: o.total_vat ?? null,
+        krw_rate: o.krw_rate ?? null,
         item_list: its,
       };
     });
@@ -418,6 +420,68 @@ router.get('/stats', async (req, res) => {
  * GET /api/orders/:orderSn
  * 주문 상세 (order_items 포함)
  */
+/**
+ * GET /api/orders/summary
+ * Settlement list summary.
+ */
+router.get('/summary', async (req, res) => {
+  const { date_from, date_to, region, order_status, order_sn } = req.query;
+  const dateFrom = date_from || null;
+  const dateTo = date_to || null;
+  const regionFilter = region || null;
+  const statusFilter = order_status || null;
+  const orderSnFilter = order_sn || null;
+
+  try {
+    const [rows] = await db.query(
+      `SELECT
+        COALESCE(SUM(o.merchandise_subtotal * er.rate_to_krw), 0) AS total_sales_krw,
+        COALESCE(SUM(o.escrow_amount * er.rate_to_krw), 0) AS total_escrow_krw,
+        COALESCE(SUM(o.net_profit), 0) AS total_net_profit,
+        COALESCE(SUM(o.total_vat), 0) AS total_vat,
+        COUNT(*) AS order_count
+       FROM orders o
+       LEFT JOIN exchange_rates er
+         ON o.currency COLLATE utf8mb4_general_ci = er.currency
+       WHERE 1=1
+         AND (? IS NULL OR o.order_created_at >= ?)
+         AND (? IS NULL OR o.order_created_at < DATE_ADD(?, INTERVAL 1 DAY))
+         AND (? IS NULL OR o.region = ?)
+         AND (? IS NULL OR o.order_status = ?)
+         AND (? IS NULL OR o.order_sn LIKE CONCAT('%', ?, '%'))`,
+      [
+        dateFrom, dateFrom,
+        dateTo, dateTo,
+        regionFilter, regionFilter,
+        statusFilter, statusFilter,
+        orderSnFilter, orderSnFilter,
+      ]
+    );
+
+    const summary = rows[0] || {};
+    const totalEscrowKrw = parseFloat(summary.total_escrow_krw || 0);
+    const totalNetProfit = parseFloat(summary.total_net_profit || 0);
+    const profitRate = totalEscrowKrw === 0
+      ? 0
+      : Math.round((totalNetProfit / totalEscrowKrw) * 10000) / 100;
+
+    return res.json({
+      success: true,
+      summary: {
+        total_sales_krw: parseFloat(summary.total_sales_krw || 0),
+        total_escrow_krw: totalEscrowKrw,
+        total_net_profit: totalNetProfit,
+        total_vat: parseFloat(summary.total_vat || 0),
+        profit_rate: profitRate,
+        order_count: parseInt(summary.order_count || 0),
+      },
+    });
+  } catch (err) {
+    console.error('[OrdersRoute] summary error:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 router.get('/:orderSn', async (req, res) => {
   const { orderSn } = req.params;
 

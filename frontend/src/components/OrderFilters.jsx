@@ -33,14 +33,6 @@ export default function OrderFilters({ filters, onChange, onSubmit, onReset }) {
         />
       </label>
       <label>
-        Shop ID
-        <input
-          value={filters.shop_id}
-          onChange={event => setField('shop_id', event.target.value)}
-          placeholder="예: 123456"
-        />
-      </label>
-      <label>
         국가
         <select value={filters.region} onChange={event => setField('region', event.target.value)}>
           {REGION_OPTIONS.map(option => (
@@ -63,14 +55,6 @@ export default function OrderFilters({ filters, onChange, onSubmit, onReset }) {
       <label>
         종료일
         <input type="date" value={filters.date_to} onChange={event => setField('date_to', event.target.value)} />
-      </label>
-      <label>
-        페이지 크기
-        <select value={filters.page_size} onChange={event => setField('page_size', event.target.value)}>
-          <option value="20">20</option>
-          <option value="50">50</option>
-          <option value="100">100</option>
-        </select>
       </label>
       <div className="filter-actions">
         <button type="submit">검색</button>

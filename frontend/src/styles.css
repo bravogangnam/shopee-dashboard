@@ -191,7 +191,7 @@ label {
 
 .filters {
   display: grid;
-  grid-template-columns: minmax(180px, 1.2fr) repeat(6, minmax(120px, 1fr)) auto;
+  grid-template-columns: minmax(180px, 1.4fr) repeat(4, minmax(120px, 1fr)) auto;
   gap: 10px;
   align-items: end;
   border: 1px solid #dde3ec;
@@ -211,6 +211,34 @@ label {
   background: #fff5f5;
   color: #b42318;
   padding: 10px 12px;
+}
+
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.summary-card {
+  display: grid;
+  gap: 5px;
+  min-height: 82px;
+  border: 1px solid #dde3ec;
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+}
+
+.summary-card span {
+  color: #6c7889;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.summary-card strong {
+  color: #172033;
+  font-size: 21px;
+  line-height: 1.2;
 }
 
 .table-wrap {
@@ -366,6 +394,10 @@ label {
   .filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .summary-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 620px) {
@@ -377,6 +409,10 @@ label {
   }
 
   .filters {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-cards {
     grid-template-columns: 1fr;
   }
 

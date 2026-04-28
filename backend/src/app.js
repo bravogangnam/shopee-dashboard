@@ -119,6 +119,14 @@ app.listen(PORT, '0.0.0.0', () => {
     console.error('[App] autoSyncJob FAILED to load — auto sync disabled:', e.message);
   }
 
+  // Google Sheet products sync (5분 주기)
+  try {
+    const { startGoogleSheetSyncJob } = require('./services/googleSheetSync');
+    startGoogleSheetSyncJob();
+  } catch (e) {
+    console.error('[App] googleSheetSync FAILED to load — product sync disabled:', e.message);
+  }
+
   // 비정상 종료된 Job 복구
   const { recoverStaleJobs } = require('./services/jobManager');
   recoverStaleJobs().catch(e => console.error('[App] recoverStaleJobs error:', e.message));

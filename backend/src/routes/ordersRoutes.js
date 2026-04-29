@@ -129,7 +129,7 @@ router.get('/', async (req, res) => {
     const [orders] = await db.query(
       `SELECT
         o.id, o.shop_id, o.region, o.order_sn, o.order_status, o.is_final_status,
-        o.merchandise_subtotal, o.total_amount, o.currency,
+        COALESCE(o.merchandise_subtotal, o.total_amount) AS merchandise_subtotal, o.total_amount, o.currency,
         o.original_price, o.seller_discount, o.voucher_from_seller, o.voucher_from_shopee,
         o.coins_offset, o.buyer_total_amount,
         o.shipping_carrier, o.tracking_number, o.shipping_fee, o.shipping_fee_discount,

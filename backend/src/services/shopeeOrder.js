@@ -378,6 +378,7 @@ function diffOrderRow(dbRow, newRow) {
     const dbVal = dbRow[field] === null ? null : String(dbRow[field]);
     const newVal = newRow[field] === null ? null : String(newRow[field]);
     if (dbVal !== newVal) {
+      if (field === 'escrow_amount' && newVal === null && dbVal !== null) continue;
       diff[field] = newRow[field];
     }
   }

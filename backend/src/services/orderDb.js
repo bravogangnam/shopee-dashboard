@@ -20,6 +20,7 @@ function roundCurrency(value) {
 
 function getMarginStatus(order, netProfit, productProfit) {
   if (order.order_status === 'CANCELLED') return 'cancelled';
+  if (order.order_status === 'READY_TO_SHIP') return 'pending';
 
   const escrowAmount = parseNullableNumber(order.escrow_amount);
   return escrowAmount !== null &&

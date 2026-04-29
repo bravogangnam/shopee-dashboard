@@ -176,7 +176,7 @@ async function runSync(jobId) {
 
             // ── get_escrow_detail (5건씩 병렬) ──
             const escrowNeededOrders = details.filter(o =>
-              ['COMPLETED', 'SHIPPED', 'PROCESSED', 'TO_CONFIRM_RECEIVE'].includes(o.order_status)
+              ['COMPLETED', 'SHIPPED', 'PROCESSED', 'TO_CONFIRM_RECEIVE', 'READY_TO_SHIP'].includes(o.order_status)
             );
             console.log(`[Sync][Step1] │  escrow 대상: ${escrowNeededOrders.length}/${details.length}건  (${ESCROW_CONCURRENCY}건씩 병렬)`);
 
@@ -259,7 +259,7 @@ async function runSync(jobId) {
 
         // ── get_escrow_detail (5건씩 병렬) ──
         const escrowNeeded = details.filter(o =>
-          ['COMPLETED', 'SHIPPED', 'PROCESSED', 'TO_CONFIRM_RECEIVE'].includes(o.order_status)
+          ['COMPLETED', 'SHIPPED', 'PROCESSED', 'TO_CONFIRM_RECEIVE', 'READY_TO_SHIP'].includes(o.order_status)
         );
         console.log(`[Sync][Step2] │  escrow 대상: ${escrowNeeded.length}/${details.length}건  (${ESCROW_CONCURRENCY}건씩 병렬)`);
 

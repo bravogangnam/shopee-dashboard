@@ -430,10 +430,53 @@ label {
 }
 
 .status-pill {
+  border: 1px solid #e2e8f0;
   background: #f3f7fb;
   color: #475569;
   font-size: 11px;
   white-space: nowrap;
+}
+
+.status-completed {
+  border-color: #b7eb8f;
+  background: #f6ffed;
+  color: #389e0d;
+}
+
+.status-shipped {
+  border-color: #adc6ff;
+  background: #eef4ff;
+  color: #1d4ed8;
+}
+
+.status-to_confirm_receive {
+  border-color: #d3adf7;
+  background: #f9f0ff;
+  color: #722ed1;
+}
+
+.status-cancelled {
+  border-color: #ffa39e;
+  background: #fff1f0;
+  color: #cf1322;
+}
+
+.status-processed {
+  border-color: #87e8de;
+  background: #e6fffb;
+  color: #08979c;
+}
+
+.status-ready_to_ship {
+  border-color: #91caff;
+  background: #e6f4ff;
+  color: #1677ff;
+}
+
+.status-unpaid {
+  border-color: #ffe58f;
+  background: #fff7e6;
+  color: #d48806;
 }
 
 .badge-confirmed {

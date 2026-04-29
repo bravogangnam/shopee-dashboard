@@ -18,6 +18,10 @@ function regionClass(region) {
   return `region-badge region-${String(region || '').toLowerCase()}`;
 }
 
+function statusClass(status) {
+  return `status-pill status-${String(status || '').toLowerCase()}`;
+}
+
 export default function OrderTable({ orders, loading }) {
   if (loading) {
     return <div className="table-state">주문을 불러오는 중...</div>;
@@ -98,7 +102,7 @@ export default function OrderTable({ orders, loading }) {
                 <td>
                   <span className={regionClass(order.region)}>{region}</span>
                 </td>
-                <td><span className="status-pill">{order.order_status}</span></td>
+                <td><span className={statusClass(order.order_status)}>{order.order_status}</span></td>
                 <td>{renderItemLines('item_name', 'truncate')}</td>
                 <td>{renderItemLines('model_name', 'truncate-short')}</td>
                 <td className="num">{renderQuantityLines()}</td>

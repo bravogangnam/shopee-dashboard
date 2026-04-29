@@ -142,7 +142,7 @@ async function buildInvoicePdf({ awbBuffer, items = [], orderSn, trackingNumber,
     try {
       if (!fs.existsSync(fontPath)) continue;
       const cjkBytes = fs.readFileSync(fontPath);
-      fontCjk = await pdfDoc.embedFont(cjkBytes, { subset: true });
+      fontCjk = await pdfDoc.embedFont(cjkBytes, { subset: false });
       console.log(`[pdfBuilder] CJK/KR font loaded: ${fontPath}`);
       break;
     } catch (e) {

@@ -40,7 +40,7 @@ const corsOptions = {
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
 app.use(cors(corsOptions));
@@ -51,6 +51,7 @@ app.use('/api/settings', require('./routes/settingsRoutes'));
 app.use('/api/test', require('./routes/testRoutes'));
 app.use('/api/jobs', require('./routes/jobRoutes'));
 app.use('/api/orders', require('./routes/ordersRoutes'));
+app.use('/api/products', require('./routes/productsRoutes'));
 
 // ─── 송장 라우트 (격리: 오류 시 기존 서비스 영향 없음) ──────────
 try {

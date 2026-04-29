@@ -7,6 +7,7 @@
  */
 
 const db = require('../config/database');
+const { processInventoryForOrders } = require('./inventoryService');
 
 function parseNullableNumber(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -220,6 +221,7 @@ async function batchInsertOrderItems(itemRows) {
   ));
 
   const conn = await db.getConnection();
+  let committed = false;
   try {
     const productMap = new Map();
     if (skuList.length > 0) {
@@ -318,8 +320,14 @@ async function batchInsertOrderItems(itemRows) {
 
     await recalculateMarginsForOrders(conn, orderKeys);
     await conn.commit();
+    committed = true;
+    try {
+      await processInventoryForOrders(orderKeys);
+    } catch (inventoryErr) {
+      console.error(`[Inventory] 주문 아이템 저장 후 재고 처리 오류: ${inventoryErr.message}`);
+    }
   } catch (err) {
-    await conn.rollback();
+    if (!committed) await conn.rollback();
     throw err;
   } finally {
     conn.release();
@@ -357,6 +365,12 @@ async function updateOrder(orderSn, shopId, diff) {
       [{ shopId, orderSn }],
       { forceRecalculateProfit: Object.prototype.hasOwnProperty.call(diff, 'escrow_amount') }
     );
+  }
+
+  try {
+    await processInventoryForOrders([{ shopId, orderSn }]);
+  } catch (inventoryErr) {
+    console.error(`[Inventory] 주문 업데이트 후 재고 처리 오류: shop=${shopId}, order=${orderSn}: ${inventoryErr.message}`);
   }
 
   return true;

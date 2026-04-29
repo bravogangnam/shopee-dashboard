@@ -148,3 +148,42 @@ INSERT IGNORE INTO exchange_rates (currency, rate_to_krw) VALUES
 ('SGD', 1100.00),
 ('MYR', 360.00),
 ('TWD', 44.50);
+
+-- ========================================
+-- 상품/재고 관리 스키마
+-- ========================================
+CREATE TABLE IF NOT EXISTS products (
+    id                              INT AUTO_INCREMENT PRIMARY KEY,
+    sku                             VARCHAR(100) UNIQUE NOT NULL,
+    brand                           VARCHAR(200),
+    product_name_en                 TEXT,
+    option_name                     VARCHAR(200),
+    product_name_kr                 VARCHAR(200),
+    weight                          DECIMAL(8,2),
+    cost_price_with_vat             DECIMAL(12,2),
+    supply_rate                     DECIMAL(5,2),
+    discounted_price_with_vat       DECIMAL(12,2),
+    cost_price                      DECIMAL(12,2),
+    vat                             DECIMAL(12,2),
+    stock_quantity                  INT NOT NULL DEFAULT 0,
+    low_stock_threshold             INT NOT NULL DEFAULT 3,
+    stock_tracking_started_at       DATETIME NULL,
+    created_at                      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at                      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS inventory_movements (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    sku             VARCHAR(100) NOT NULL,
+    order_sn        VARCHAR(50) NULL,
+    shop_id         BIGINT NULL,
+    item_id         BIGINT NULL,
+    model_id        BIGINT NULL,
+    movement_type   ENUM('SALE','CANCEL_RESTORE','MANUAL_ADJUST') NOT NULL,
+    qty_delta       INT NOT NULL,
+    note            VARCHAR(255) NULL,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_inventory_sale (movement_type, order_sn, shop_id, sku, item_id, model_id),
+    INDEX idx_inventory_sku (sku),
+    INDEX idx_inventory_order (order_sn, shop_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

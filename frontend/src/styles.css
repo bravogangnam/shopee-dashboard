@@ -370,7 +370,13 @@ label {
 }
 
 .truncate {
-  max-width: 280px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.truncate-short {
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -426,6 +432,8 @@ label {
 .status-pill {
   background: #f3f7fb;
   color: #475569;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .badge-confirmed {
@@ -520,4 +528,13 @@ label {
   .content {
     padding: 14px;
   }
+}
+
+.item-line {
+  line-height: 1.35;
+  margin-bottom: 4px;
+}
+
+.item-line:last-child {
+  margin-bottom: 0;
 }

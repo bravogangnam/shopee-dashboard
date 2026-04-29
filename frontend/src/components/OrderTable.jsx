@@ -38,6 +38,7 @@ export default function OrderTable({ orders, loading }) {
             <th>상품명</th>
             <th>옵션명</th>
             <th className="num">수량</th>
+            <th className="num">무게(g)</th>
             <th className="num">판매가</th>
             <th className="num">정산금액</th>
             <th className="num">실제원가</th>
@@ -49,12 +50,37 @@ export default function OrderTable({ orders, loading }) {
         </thead>
         <tbody>
           {orders.map(order => {
-            const firstItem = order.item_list?.[0] || {};
-            const quantity = order.item_list?.reduce((sum, item) => {
+            const items = Array.isArray(order.item_list) ? order.item_list : [];
+            const quantity = items.reduce((sum, item) => {
               const count = Number(item.model_quantity_purchased || 0);
               return sum + (Number.isFinite(count) ? count : 0);
-            }, 0) || firstItem.model_quantity_purchased || '-';
+            }, 0) || '-';
             const region = order.region || order.shop_alias || order.shop_id;
+
+            const renderItemLines = (field, className) => {
+              if (!items.length) return '-';
+              return items.map((item, index) => (
+                <div
+                  key={`${field}-${item.item_id || index}-${item.model_id || ''}`}
+                  className={`item-line ${className}`}
+                  title={item[field] || ''}
+                >
+                  {item[field] || '-'}
+                </div>
+              ));
+            };
+
+            const renderQuantityLines = () => {
+              if (!items.length) return quantity;
+              return items.map((item, index) => (
+                <div
+                  key={`qty-${item.item_id || index}-${item.model_id || ''}`}
+                  className="item-line"
+                >
+                  {item.model_quantity_purchased ?? '-'}
+                </div>
+              ));
+            };
 
             return (
               <tr key={`${order.shop_id}-${order.order_sn}`}>
@@ -73,9 +99,10 @@ export default function OrderTable({ orders, loading }) {
                   <span className={regionClass(order.region)}>{region}</span>
                 </td>
                 <td><span className="status-pill">{order.order_status}</span></td>
-                <td className="truncate" title={firstItem.item_name || ''}>{firstItem.item_name || '-'}</td>
-                <td className="truncate" title={firstItem.model_name || ''}>{firstItem.model_name || '-'}</td>
-                <td className="num">{quantity}</td>
+                <td>{renderItemLines('item_name', 'truncate')}</td>
+                <td>{renderItemLines('model_name', 'truncate-short')}</td>
+                <td className="num">{renderQuantityLines()}</td>
+                <td className="num">{order.order_chargeable_weight_gram ?? "-"}</td>
                 <td className="num">{formatCurrency(order.merchandise_subtotal, order.currency)}</td>
                 <td className="num">{formatCurrency(order.escrow_amount, order.currency)}</td>
                 <td className="num">{formatKrw(order.total_cost_price)}</td>

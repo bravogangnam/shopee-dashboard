@@ -25,6 +25,12 @@ function toMysqlDateTime(value) {
   return value ? `${value.replace('T', ' ')}:00` : null;
 }
 
+function nowKSTDateTimeLocal() {
+  const now = new Date();
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 16);
+}
+
 function getProductName(product) {
   return product.product_name_kr || product.product_name || product.item_name || product.product_name_en || '-';
 }
@@ -40,7 +46,7 @@ function getStockStatus(product) {
 function movementLabel(type) {
   if (type === 'SALE') return '판매 차감';
   if (type === 'CANCEL_RESTORE') return '취소 복구';
-  if (type === 'MANUAL_ADJUST') return '수동 조정';
+  if (type === 'MANUAL_ADJUST') return '재고 조정';
   return type || '-';
 }
 
@@ -83,7 +89,7 @@ function StockSettingsModal({ product, saving, onClose, onSave }) {
   const [form, setForm] = useState(() => ({
     stock_quantity: product.stock_quantity ?? 0,
     low_stock_threshold: product.low_stock_threshold ?? 3,
-    stock_tracking_started_at: formatDateTimeLocal(product.stock_tracking_started_at),
+    stock_tracking_started_at: formatDateTimeLocal(product.stock_tracking_started_at) || nowKSTDateTimeLocal(),
   }));
 
   function setField(field, value) {
@@ -104,10 +110,16 @@ function StockSettingsModal({ product, saving, onClose, onSave }) {
       <form className="modal-card inventory-modal" onSubmit={handleSubmit}>
         <div className="modal-header">
           <div>
-            <h2>재고 설정</h2>
+            <h2>재고 최초설정</h2>
             <p>{product.sku}</p>
           </div>
           <button type="button" className="ghost-button" onClick={onClose}>닫기</button>
+        </div>
+
+        <div className="inventory-help-text">
+          최초설정은 재고관리를 처음 시작할 때 현재 재고, 부족 기준, 추적 시작일을 한 번 설정하는 용도입니다.
+          이후 입고, 파손, 실사 차이는 재고조정으로 기록하세요.
+          추적 시작일 이후 주문부터 자동 차감됩니다. 처음 설정 후에는 특별한 이유가 없으면 변경하지 마세요.
         </div>
 
         <label>
@@ -140,7 +152,7 @@ function StockSettingsModal({ product, saving, onClose, onSave }) {
 
         <div className="modal-actions">
           <button type="button" className="ghost-button" onClick={onClose}>취소</button>
-          <button type="submit" disabled={saving}>저장</button>
+          <button type="submit" disabled={saving}>최초설정 저장</button>
         </div>
       </form>
     </div>
@@ -164,7 +176,7 @@ function StockAdjustModal({ product, saving, onClose, onSave }) {
       <form className="modal-card inventory-modal" onSubmit={handleSubmit}>
         <div className="modal-header">
           <div>
-            <h2>수동 조정</h2>
+            <h2>재고 조정</h2>
             <p>{product.sku}</p>
           </div>
           <button type="button" className="ghost-button" onClick={onClose}>닫기</button>
@@ -319,11 +331,11 @@ export default function InventoryPage() {
     setMessage('');
     try {
       await updateProductStock(settingsProduct.sku, payload);
-      setMessage('재고 설정을 저장했습니다.');
+      setMessage('최초설정을 저장했습니다.');
       setSettingsProduct(null);
       await loadProducts();
     } catch (err) {
-      setError(err.message || '재고 설정 저장에 실패했습니다.');
+      setError(err.message || '최초설정 저장에 실패했습니다.');
     } finally {
       setSaving(false);
     }
@@ -451,13 +463,13 @@ export default function InventoryPage() {
                     <td>
                       <div className="inventory-actions">
                         <button type="button" className="invoice-btn" onClick={() => setSettingsProduct(product)}>
-                          재고 설정
+                          최초설정
                         </button>
                         <button type="button" className="invoice-btn" onClick={() => setAdjustProduct(product)}>
-                          수동 조정
+                          재고조정
                         </button>
                         <button type="button" className="invoice-btn" onClick={() => openHistory(product)}>
-                          이력 보기
+                          이력보기
                         </button>
                       </div>
                     </td>

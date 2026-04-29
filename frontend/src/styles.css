@@ -1673,3 +1673,14 @@ label {
   border-radius: 8px;
   font-size: 13px;
 }
+
+.inventory-help-text {
+  margin: 12px 0 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.5;
+}

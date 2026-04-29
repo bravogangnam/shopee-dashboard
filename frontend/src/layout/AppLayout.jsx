@@ -18,6 +18,15 @@ function LedgerIcon() {
   );
 }
 
+function InventoryIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M21 8 12 3 3 8l9 5 9-5Z" />
+      <path d="M3 8v8l9 5 9-5V8M12 13v8" />
+    </svg>
+  );
+}
+
 function SettingsIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -34,6 +43,13 @@ function ToggleIcon({ collapsed }) {
     </svg>
   );
 }
+
+const navItems = [
+  { to: '/orders', label: '주문 관리', icon: <ListIcon /> },
+  { to: '/ledger', label: '정산 관리', icon: <LedgerIcon /> },
+  { to: '/inventory', label: '재고 관리', icon: <InventoryIcon /> },
+  { to: '/settings/rates', label: '설정', icon: <SettingsIcon /> },
+];
 
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
@@ -57,21 +73,16 @@ export default function AppLayout() {
           </button>
         </div>
         <nav className="sidebar-nav">
-          <a href="/orders" className="nav-link">
-            <span className="nav-icon"><ListIcon /></span>
-            <span className="nav-text">주문 관리</span>
-          </a>
-          <NavLink
-            to="/orders"
-            className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
-          >
-            <span className="nav-icon"><LedgerIcon /></span>
-            <span className="nav-text">정산 관리</span>
-          </NavLink>
-          <a href="/settings" className="nav-link">
-            <span className="nav-icon"><SettingsIcon /></span>
-            <span className="nav-text">설정</span>
-          </a>
+          {navItems.map(item => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
+            >
+              <span className="nav-icon">{item.icon}</span>
+              <span className="nav-text">{item.label}</span>
+            </NavLink>
+          ))}
         </nav>
       </aside>
       <main className={`main content main-content ${collapsed ? 'collapsed' : ''}`}>

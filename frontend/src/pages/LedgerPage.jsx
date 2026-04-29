@@ -69,7 +69,7 @@ function SummaryCards({ summary }) {
   );
 }
 
-export default function OrdersPage() {
+export default function LedgerPage() {
   const [filters, setFilters] = useState(() => createDefaultFilters());
   const [query, setQuery] = useState(() => createDefaultFilters());
   const [orders, setOrders] = useState([]);

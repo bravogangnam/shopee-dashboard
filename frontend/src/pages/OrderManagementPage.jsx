@@ -1,19 +1,202 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import dayjs from 'dayjs';
+import { fetchOrders, fetchStats } from '../api/orders.js';
+import { createAndDownloadInvoice } from '../api/invoice.js';
+import { startSync } from '../api/sync.js';
+import OrderManagementFilters from '../components/OrderManagementFilters.jsx';
+import OrderManagementTable from '../components/OrderManagementTable.jsx';
+import Pagination from '../components/Pagination.jsx';
+import StatsCards from '../components/StatsCards.jsx';
+
+const getCurrentMonthRange = () => ({
+  date_from: dayjs().startOf('month').format('YYYY-MM-DD'),
+  date_to: dayjs().endOf('month').format('YYYY-MM-DD'),
+});
+
+const createDefaultFilters = () => ({
+  region: 'ALL',
+  order_status: '',
+  order_sn: '',
+  page: 1,
+  page_size: 20,
+  ...getCurrentMonthRange(),
+});
+
+function toOrderQuery(filters) {
+  return {
+    ...filters,
+    region: filters.region === 'ALL' ? '' : filters.region,
+  };
+}
+
 export default function OrderManagementPage() {
+  const [filters, setFilters] = useState(() => createDefaultFilters());
+  const [query, setQuery] = useState(() => createDefaultFilters());
+  const [orders, setOrders] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [pagination, setPagination] = useState(null);
+  const [selectedOrders, setSelectedOrders] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceLoadingMap, setInvoiceLoadingMap] = useState({});
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+  const skipStatsOnceRef = useRef(false);
+
+  const queryKey = useMemo(() => JSON.stringify(query), [query]);
+
+  async function loadData(nextQuery, options = { includeStats: true }) {
+    setLoading(true);
+    setError('');
+    try {
+      const orderQuery = toOrderQuery(nextQuery);
+      const ordersPromise = fetchOrders(orderQuery);
+      const statsPromise = options.includeStats
+        ? fetchStats(nextQuery)
+        : Promise.resolve(null);
+      const [ordersResult, statsResult] = await Promise.all([ordersPromise, statsPromise]);
+
+      setOrders(ordersResult.data || []);
+      setPagination(ordersResult.pagination || null);
+      if (statsResult) setStats(statsResult);
+      setSelectedOrders([]);
+    } catch (err) {
+      setError(err.message || '주문 정보를 불러오지 못했습니다.');
+      setOrders([]);
+      setPagination(null);
+      if (options.includeStats) setStats(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    const includeStats = !skipStatsOnceRef.current;
+    skipStatsOnceRef.current = false;
+    loadData(query, { includeStats });
+  }, [queryKey, reloadKey]);
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    setMessage('');
+    setQuery({ ...filters, page: 1 });
+  }
+
+  function handleReset() {
+    const defaultFilters = createDefaultFilters();
+    setMessage('');
+    setFilters(defaultFilters);
+    setQuery(defaultFilters);
+  }
+
+  function handlePageChange(page) {
+    const nextQuery = { ...query, page };
+    setFilters(current => ({ ...current, page }));
+    skipStatsOnceRef.current = true;
+    setQuery(nextQuery);
+  }
+
+  function handleRefresh() {
+    setMessage('');
+    setReloadKey(value => value + 1);
+  }
+
+  async function handleInvoice(orderSnList) {
+    if (!orderSnList.length) return;
+    setError('');
+    setMessage('');
+    setInvoiceLoading(true);
+    setInvoiceLoadingMap(current => ({
+      ...current,
+      ...Object.fromEntries(orderSnList.map(orderSn => [orderSn, true])),
+    }));
+
+    try {
+      await createAndDownloadInvoice(orderSnList);
+      setMessage(`송장 출력이 완료되었습니다. (${orderSnList.length}건)`);
+    } catch (err) {
+      setError(err.message || '송장 출력에 실패했습니다.');
+    } finally {
+      setInvoiceLoading(false);
+      setInvoiceLoadingMap(current => {
+        const next = { ...current };
+        orderSnList.forEach(orderSn => {
+          delete next[orderSn];
+        });
+        return next;
+      });
+    }
+  }
+
+  async function handleSync() {
+    setError('');
+    setMessage('');
+    setSyncLoading(true);
+    try {
+      const result = await startSync();
+      const serverMessage = result.message || '';
+      setMessage(serverMessage.includes('ALREADY_RUNNING')
+        ? '동기화가 이미 진행 중입니다.'
+        : serverMessage || '동기화를 시작했습니다.');
+    } catch (err) {
+      const serverMessage = err.message || '';
+      setError(serverMessage.includes('ALREADY_RUNNING')
+        ? '동기화가 이미 진행 중입니다.'
+        : serverMessage || '동기화 시작에 실패했습니다.');
+    } finally {
+      setSyncLoading(false);
+    }
+  }
+
   return (
-    <section className="page">
+    <section className="page order-management-page">
       <div className="page-header">
         <div>
           <h1>주문 관리</h1>
-          <p>주문 목록, 송장 출력, 동기화 기능을 준비 중입니다.</p>
+          <p>주문 목록, 송장 출력, 동기화 작업을 관리합니다.</p>
+        </div>
+        <div className="action-buttons">
+          <button type="button" className="action-btn" onClick={handleRefresh} disabled={loading}>
+            새로고침
+          </button>
+          <button
+            type="button"
+            className="action-btn primary"
+            onClick={() => handleInvoice(selectedOrders)}
+            disabled={!selectedOrders.length || invoiceLoading}
+          >
+            {invoiceLoading ? '송장 처리중' : `송장출력 (${selectedOrders.length})`}
+          </button>
+          <button type="button" className="action-btn" onClick={handleSync} disabled={syncLoading}>
+            {syncLoading ? '동기화 중' : '동기화'}
+          </button>
         </div>
       </div>
 
-      <div className="page-placeholder">
-        <div className="placeholder-card">
-          <h2>주문 관리 준비 중</h2>
-          <p>기존 주문 관리 기능을 새 통합 앱 구조에 맞춰 안전하게 옮기는 중입니다.</p>
-        </div>
-      </div>
+      {message && <div className="notice">{message}</div>}
+      {error && <div className="alert">{error}</div>}
+
+      <StatsCards stats={stats} />
+
+      <OrderManagementFilters
+        filters={filters}
+        stats={stats}
+        onChange={setFilters}
+        onSubmit={handleSubmit}
+        onReset={handleReset}
+      />
+
+      <OrderManagementTable
+        orders={orders}
+        selectedOrders={selectedOrders}
+        onSelectionChange={setSelectedOrders}
+        onInvoiceOne={orderSn => handleInvoice([orderSn])}
+        loading={loading}
+        invoiceLoadingMap={invoiceLoadingMap}
+      />
+      <Pagination pagination={pagination} onPageChange={handlePageChange} />
     </section>
   );
 }

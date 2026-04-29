@@ -4,6 +4,14 @@ export function fetchOrders(params) {
   return apiRequest(`/api/orders${buildQuery(params)}`);
 }
 
+export function fetchStats(params = {}) {
+  const searchParams = {
+    date_from: params.date_from,
+    date_to: params.date_to,
+  };
+  return apiRequest(`/api/orders/stats${buildQuery(searchParams)}`);
+}
+
 export async function fetchSummary(params) {
   const result = await apiRequest(`/api/orders/summary${buildQuery(params)}`);
   return result.summary || null;

@@ -142,8 +142,8 @@ export default function OrdersPage() {
       <section className="page ledger-page">
         <div className="page-header">
           <div>
-            <h1>장부</h1>
-            <p>주문별 매출, 원가, 순이익, 마진율을 확인합니다.</p>
+            <h1>정산 관리</h1>
+            <p>주문별 매출, 원가, 순이익, 마진율과 일별 매출 추이를 확인합니다.</p>
           </div>
           <button type="button" className="ghost-button" onClick={() => setReloadKey(value => value + 1)}>
             새로고침

@@ -158,22 +158,6 @@ label {
   min-width: 0;
 }
 
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 64px;
-  border-bottom: 1px solid #dfe5ee;
-  background: #fff;
-  padding: 0 24px;
-}
-
-.topbar span {
-  margin-left: 10px;
-  color: #7b8797;
-  font-size: 13px;
-}
-
 .content {
   padding: 22px;
 }
@@ -614,7 +598,6 @@ label {
 }
 
 @media (max-width: 620px) {
-  .topbar,
   .page-header,
   .pagination {
     align-items: stretch;

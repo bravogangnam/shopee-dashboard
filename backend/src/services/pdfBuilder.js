@@ -232,18 +232,20 @@ async function buildInvoicePdf({ awbBuffer, items = [], orderSn, trackingNumber,
 
       const font  = pickFont(row.text, true);
       const maxW  = row.qty ? W_ITEM_QTY : W_FULL;
-      const label = _truncateByWidth(row.text, maxW, font, itemSz);
+      const nameSize = row.qty ? Math.max(itemSz - 2, MIN_SZ) : itemSz;
+      const qtySize  = itemSz;
+      const label = _truncateByWidth(row.text, maxW, font, nameSize);
       page.drawText(label, {
         x: LEFT_M, y: textY,
-        size: itemSz, font, color: rgb(0, 0, 0),
+        size: nameSize, font, color: rgb(0, 0, 0),
       });
 
       if (row.qty) {
         const qtyStr = row.qty;
-        const qtyW   = fontLatin.widthOfTextAtSize(qtyStr, itemSz);
+        const qtyW   = fontLatinB.widthOfTextAtSize(qtyStr, qtySize);
         page.drawText(qtyStr, {
           x: PAGE_W - RIGHT_M - qtyW, y: textY,
-          size: itemSz, font: fontLatin, color: rgb(0, 0, 0),
+          size: qtySize, font: fontLatinB, color: rgb(0, 0, 0),
         });
       }
       curY -= itemLineH;

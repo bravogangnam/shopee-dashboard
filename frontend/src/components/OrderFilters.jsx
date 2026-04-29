@@ -41,7 +41,7 @@ export default function OrderFilters({ filters, onChange, onSubmit, onReset }) {
 
   return (
     <form className="filters" onSubmit={onSubmit}>
-      <label>
+      <label className="filter-field order-search-field">
         주문번호
         <input
           value={filters.order_sn}
@@ -49,7 +49,7 @@ export default function OrderFilters({ filters, onChange, onSubmit, onReset }) {
           placeholder="Order SN"
         />
       </label>
-      <label>
+      <label className="filter-field">
         국가
         <select value={filters.region} onChange={event => setField('region', event.target.value)}>
           {REGION_OPTIONS.map(option => (
@@ -57,7 +57,7 @@ export default function OrderFilters({ filters, onChange, onSubmit, onReset }) {
           ))}
         </select>
       </label>
-      <label>
+      <label className="filter-field">
         상태
         <select value={filters.order_status} onChange={event => setField('order_status', event.target.value)}>
           {STATUS_OPTIONS.map(option => (
@@ -65,7 +65,7 @@ export default function OrderFilters({ filters, onChange, onSubmit, onReset }) {
           ))}
         </select>
       </label>
-      <label className="date-range-field">
+      <label className="filter-field date-range-field">
         기간
         <RangePicker
           allowClear
@@ -73,7 +73,7 @@ export default function OrderFilters({ filters, onChange, onSubmit, onReset }) {
           value={dateRangeValue}
           onChange={setDateRange}
           placeholder={['시작일', '종료일']}
-          style={{ width: 280 }}
+          style={{ width: 260 }}
         />
       </label>
       <div className="filter-actions">

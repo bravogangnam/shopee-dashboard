@@ -23,7 +23,7 @@ export default function AppLayout() {
             to="/orders"
             className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
           >
-            정산목록
+            장부
           </NavLink>
           <a href="/settings" className="nav-link">설정</a>
         </nav>

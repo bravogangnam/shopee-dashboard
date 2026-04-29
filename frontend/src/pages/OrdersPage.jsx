@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ConfigProvider } from 'antd';
 import koKR from 'antd/locale/ko_KR';
+import dayjs from 'dayjs';
 import 'antd/dist/reset.css';
 import { fetchOrders, fetchSummary } from '../api/orders.js';
 import OrderFilters from '../components/OrderFilters.jsx';
@@ -8,15 +9,19 @@ import OrderTable from '../components/OrderTable.jsx';
 import Pagination from '../components/Pagination.jsx';
 import { formatKrw, formatNumber } from '../utils/format.js';
 
-const DEFAULT_FILTERS = {
+const getCurrentMonthRange = () => ({
+  date_from: dayjs().startOf('month').format('YYYY-MM-DD'),
+  date_to: dayjs().endOf('month').format('YYYY-MM-DD'),
+});
+
+const createDefaultFilters = () => ({
   page: 1,
   page_size: '100',
   region: '',
   order_status: '',
-  date_from: '',
-  date_to: '',
   order_sn: '',
-};
+  ...getCurrentMonthRange(),
+});
 
 function ChangeRate({ value }) {
   if (value === null || value === undefined) return null;
@@ -58,8 +63,8 @@ function SummaryCards({ summary }) {
 }
 
 export default function OrdersPage() {
-  const [filters, setFilters] = useState(DEFAULT_FILTERS);
-  const [query, setQuery] = useState(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState(() => createDefaultFilters());
+  const [query, setQuery] = useState(() => createDefaultFilters());
   const [orders, setOrders] = useState([]);
   const [summary, setSummary] = useState(null);
   const [pagination, setPagination] = useState(null);
@@ -110,8 +115,9 @@ export default function OrdersPage() {
   }
 
   function handleReset() {
-    setFilters(DEFAULT_FILTERS);
-    setQuery(DEFAULT_FILTERS);
+    const defaultFilters = createDefaultFilters();
+    setFilters(defaultFilters);
+    setQuery(defaultFilters);
   }
 
   function handlePageChange(page) {
@@ -124,7 +130,7 @@ export default function OrdersPage() {
       <section className="page ledger-page">
         <div className="page-header">
           <div>
-            <h1>정산목록</h1>
+            <h1>장부</h1>
             <p>주문별 매출, 원가, 순이익, 마진율을 확인합니다.</p>
           </div>
           <button type="button" className="ghost-button" onClick={() => setReloadKey(value => value + 1)}>

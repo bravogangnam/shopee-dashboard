@@ -210,33 +210,41 @@ label {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  align-items: end;
+  align-items: flex-end;
   border-radius: 8px;
   background: #fff;
   padding: 16px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
+.filter-field,
 .filters label {
+  width: 150px;
   min-width: 150px;
 }
 
+.order-search-field,
 .filters label:first-child {
+  width: 220px;
   min-width: 220px;
 }
 
 .date-range-field {
+  width: 260px;
   min-width: 260px !important;
 }
 
+.filter-field .ant-picker,
 .date-range-field .ant-picker {
   width: 100%;
+  height: 36px;
   min-height: 36px;
 }
 
 .filter-actions {
   display: flex;
   gap: 8px;
+  align-items: flex-end;
 }
 
 .alert {

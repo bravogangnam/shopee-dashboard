@@ -270,7 +270,7 @@ router.get('/stats', async (req, res) => {
       COUNT(*) as order_count,
       SUM(CASE WHEN o.order_status NOT IN (${EXCLUDED_STATUSES}) THEN 1 ELSE 0 END) as valid_count,
       SUM(CASE WHEN o.order_status NOT IN (${EXCLUDED_STATUSES}) THEN
-        COALESCE(o.merchandise_subtotal, 0) ELSE 0 END) as total_sales,
+        COALESCE(o.merchandise_subtotal, o.total_amount, 0) ELSE 0 END) as total_sales,
       SUM(CASE WHEN o.order_status NOT IN (${EXCLUDED_STATUSES}) THEN
         COALESCE(o.escrow_amount, 0) ELSE 0 END) as total_escrow,
       SUM(CASE WHEN o.order_status = 'COMPLETED' THEN 1 ELSE 0 END) as completed_count,
@@ -324,7 +324,7 @@ router.get('/stats', async (req, res) => {
         SUM(CASE WHEN o.order_status NOT IN ('UNPAID', 'PENDING', 'CANCELLED') THEN
           COALESCE(o.escrow_amount, 0) ELSE 0 END) as total_escrow,
         SUM(CASE WHEN o.order_status NOT IN ('UNPAID', 'PENDING', 'CANCELLED') THEN
-          COALESCE(o.merchandise_subtotal, 0) ELSE 0 END) as total_merchandise,
+          COALESCE(o.merchandise_subtotal, o.total_amount, 0) ELSE 0 END) as total_merchandise,
         o.currency,
         r.rate_to_krw
        FROM orders o
@@ -434,7 +434,7 @@ router.get('/summary', async (req, res) => {
 
   try {
     const summarySql = `SELECT
-        COALESCE(SUM(o.merchandise_subtotal * er.rate_to_krw), 0) AS total_sales_krw,
+        COALESCE(SUM(COALESCE(o.merchandise_subtotal, o.total_amount) * er.rate_to_krw), 0) AS total_sales_krw,
         COALESCE(SUM(o.escrow_amount * er.rate_to_krw), 0) AS total_escrow_krw,
         COALESCE(SUM(o.net_profit), 0) AS total_net_profit,
         COALESCE(SUM(o.total_vat), 0) AS total_vat,

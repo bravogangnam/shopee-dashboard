@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import dayjs from 'dayjs';
 import { fetchOrders, fetchStats } from '../api/orders.js';
 import { createAndDownloadInvoice } from '../api/invoice.js';
 import { startSync } from '../api/sync.js';
@@ -10,9 +9,44 @@ import OrderManagementTable from '../components/OrderManagementTable.jsx';
 import Pagination from '../components/Pagination.jsx';
 import StatsCards from '../components/StatsCards.jsx';
 
+function todayKST() {
+  const now = new Date();
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
+}
+
+const getCurrentDayRange = () => {
+  const today = todayKST();
+  return {
+    date_from: today,
+    date_to: today,
+  };
+};
+
+const getCurrentMonthStatsRange = () => {
+  const today = todayKST();
+  return {
+    date_from: `${today.slice(0, 8)}01`,
+    date_to: today,
+  };
+};
+
+function formatDateLabel(dateFrom, dateTo) {
+  if (!dateFrom && !dateTo) return '';
+  const format = value => (value ? value.slice(5) : '');
+  if (dateFrom && dateTo && dateFrom === dateTo) return format(dateFrom);
+  return `${format(dateFrom)}~${format(dateTo)}`;
+}
+
+const getMonthlyLabel = () => {
+  const range = getCurrentMonthStatsRange();
+  return formatDateLabel(range.date_from, range.date_to);
+};
+
+const getFilterLabel = filters => formatDateLabel(filters.date_from, filters.date_to);
+
 const getCurrentMonthRange = () => ({
-  date_from: dayjs().startOf('month').format('YYYY-MM-DD'),
-  date_to: dayjs().endOf('month').format('YYYY-MM-DD'),
+  ...getCurrentDayRange(),
 });
 
 const createDefaultFilters = () => ({
@@ -36,6 +70,7 @@ export default function OrderManagementPage() {
   const [query, setQuery] = useState(() => createDefaultFilters());
   const [orders, setOrders] = useState([]);
   const [stats, setStats] = useState(null);
+  const [monthlyStats, setMonthlyStats] = useState(null);
   const [pagination, setPagination] = useState(null);
   const [selectedOrders, setSelectedOrders] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -49,6 +84,17 @@ export default function OrderManagementPage() {
   const skipStatsOnceRef = useRef(false);
 
   const queryKey = useMemo(() => JSON.stringify(query), [query]);
+
+  async function loadMonthlyStats() {
+    try {
+      const range = getCurrentMonthStatsRange();
+      const result = await fetchStats(range);
+      setMonthlyStats(result);
+    } catch (err) {
+      console.warn('[OrderManagement] Failed to fetch monthly stats:', err);
+      setMonthlyStats(null);
+    }
+  }
 
   async function loadData(nextQuery, options = { includeStats: true }) {
     setLoading(true);
@@ -80,6 +126,10 @@ export default function OrderManagementPage() {
     skipStatsOnceRef.current = false;
     loadData(query, { includeStats });
   }, [queryKey, reloadKey]);
+
+  useEffect(() => {
+    loadMonthlyStats();
+  }, [reloadKey]);
 
   function handleSubmit(event) {
     event.preventDefault();
@@ -170,7 +220,14 @@ export default function OrderManagementPage() {
       {message && <div className="notice">{message}</div>}
       {error && <div className="alert">{error}</div>}
 
-      <StatsCards stats={stats} />
+      <StatsCards
+        monthlyStats={monthlyStats}
+        filterStats={stats}
+        dateFrom={query.date_from}
+        dateTo={query.date_to}
+        monthlyLabel={getMonthlyLabel()}
+        filterLabel={getFilterLabel(query)}
+      />
 
       <OrderManagementFilters
         filters={filters}

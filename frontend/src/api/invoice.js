@@ -52,13 +52,45 @@ export async function downloadInvoice(jobId) {
 
 export function downloadBlob(blob, filename) {
   const url = window.URL.createObjectURL(blob);
+
+  // Keep the original download behavior.
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
-  window.URL.revokeObjectURL(url);
+
+  // Best-effort print prompt. Browser policies may block it after async polling,
+  // so printing must never break the completed download.
+  try {
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.top = '-9999px';
+    iframe.style.left = '-9999px';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.src = url;
+    document.body.appendChild(iframe);
+
+    iframe.onload = () => {
+      try {
+        iframe.contentWindow.print();
+      } catch (err) {
+        console.warn('[Invoice] Print dialog failed, opening PDF fallback:', err);
+        window.open(url, '_blank');
+      }
+
+      setTimeout(() => {
+        iframe.remove();
+        window.URL.revokeObjectURL(url);
+      }, 60000);
+    };
+  } catch (err) {
+    console.warn('[Invoice] Print preview setup failed:', err);
+    window.open(url, '_blank');
+    setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+  }
 }
 
 export async function pollInvoiceJob(jobId) {

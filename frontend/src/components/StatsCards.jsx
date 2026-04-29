@@ -1,6 +1,20 @@
-import { formatKrw, formatNumber } from '../utils/format.js';
+import { formatNumber } from '../utils/format.js';
 
 const REGION_ORDER = ['SG', 'MY', 'PH', 'TW'];
+
+function pickNumber(...values) {
+  for (const value of values) {
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return 0;
+}
+
+function formatKrwValue(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '-';
+  return `₩${Math.round(number).toLocaleString('ko-KR')}`;
+}
 
 function Growth({ value }) {
   const numericValue = Number(value || 0);
@@ -18,30 +32,80 @@ function Growth({ value }) {
   );
 }
 
-function regionSalesKrw(card) {
-  return Number(card?.total_sales || 0) * Number(card?.rate_to_krw || 0);
+function getTotalKrw(stats) {
+  return pickNumber(
+    stats?.total_krw,
+    stats?.total_sales_krw,
+    stats?.summary?.total_krw,
+    stats?.summary?.total_sales_krw,
+  );
 }
 
-export default function StatsCards({ stats }) {
-  const regionCards = Array.isArray(stats?.region_cards) ? stats.region_cards : [];
-  const regionMap = new Map(regionCards.map(card => [card.region, card]));
-  const escrowKrw = regionCards.reduce((sum, card) => (
-    sum + (Number(card.total_escrow || 0) * Number(card.rate_to_krw || 0))
-  ), 0);
+function getGrowth(stats) {
+  return pickNumber(
+    stats?.total_krw_growth,
+    stats?.sales_change_rate,
+    stats?.summary?.total_krw_growth,
+    stats?.summary?.sales_change_rate,
+  );
+}
+
+function getRegionCards(stats) {
+  const candidates = [
+    stats?.region_cards,
+    stats?.regions,
+    stats?.by_region,
+    stats?.summary?.region_cards,
+    stats?.summary?.regions,
+    stats?.summary?.by_region,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate;
+  }
+  return [];
+}
+
+function regionSalesKrw(card) {
+  return pickNumber(card?.total_sales, card?.total_merchandise, card?.sales) *
+    pickNumber(card?.rate_to_krw, card?.krw_rate);
+}
+
+export default function StatsCards({
+  stats,
+  monthlyStats,
+  filterStats,
+  monthlyLabel,
+  filterLabel,
+}) {
+  const currentFilterStats = filterStats || stats || null;
+  const currentMonthlyStats = monthlyStats || stats || null;
+  const regionCards = getRegionCards(currentFilterStats);
+  const regionMap = new Map(regionCards.map(card => [card.region || card.alias || card.currency, card]));
 
   const cards = [
     {
-      key: 'total',
-      label: '총 매출',
-      value: formatKrw(stats?.total_krw || 0),
-      sub: <Growth value={stats?.total_krw_growth} />,
+      key: 'monthly-sales',
+      label: '월 매출 (KRW)',
+      value: formatKrwValue(getTotalKrw(currentMonthlyStats)),
+      sub: (
+        <>
+          <Growth value={getGrowth(currentMonthlyStats)} />
+          {monthlyLabel && <span className="stat-count">{monthlyLabel}</span>}
+        </>
+      ),
       className: 'stat-card-total',
     },
     {
-      key: 'escrow',
-      label: '총 정산액',
-      value: formatKrw(escrowKrw),
-      sub: <span className="stat-growth neutral">정산 기준</span>,
+      key: 'daily-sales',
+      label: '일 매출 (KRW)',
+      value: formatKrwValue(getTotalKrw(currentFilterStats)),
+      sub: (
+        <>
+          <Growth value={getGrowth(currentFilterStats)} />
+          {filterLabel && <span className="stat-count">{filterLabel}</span>}
+        </>
+      ),
       className: 'stat-card-escrow',
     },
     ...REGION_ORDER.map(region => {
@@ -49,11 +113,11 @@ export default function StatsCards({ stats }) {
       return {
         key: region,
         label: region,
-        value: formatKrw(regionSalesKrw(card)),
+        value: formatKrwValue(regionSalesKrw(card)),
         sub: (
           <>
-            <Growth value={card.growth_pct} />
-            <span className="stat-count">{formatNumber(card.order_count || 0, 0)}건</span>
+            <Growth value={card.growth_pct ?? card.growth_rate ?? card.sales_growth} />
+            <span className="stat-count">{formatNumber(card.order_count || card.count || 0, 0)}건</span>
           </>
         ),
         className: `stat-card-${region.toLowerCase()}`,

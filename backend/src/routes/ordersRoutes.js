@@ -442,7 +442,7 @@ router.get('/summary', async (req, res) => {
        FROM orders o
        LEFT JOIN exchange_rates er
          ON o.currency COLLATE utf8mb4_general_ci = er.currency
-       WHERE 1=1
+       WHERE o.order_status NOT IN ('UNPAID', 'PENDING', 'CANCELLED')
          AND (? IS NULL OR o.order_created_at >= ?)
          AND (? IS NULL OR o.order_created_at < DATE_ADD(?, INTERVAL 1 DAY))
          AND (? IS NULL OR o.region = ?)

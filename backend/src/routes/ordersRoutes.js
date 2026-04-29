@@ -536,6 +536,66 @@ router.get('/summary', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/orders/daily-sales
+ * Daily KRW sales for a month, based on stored orders only.
+ */
+router.get('/daily-sales', async (req, res) => {
+  const monthParam = typeof req.query.month === 'string' ? req.query.month : '';
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const month = /^\d{4}-\d{2}$/.test(monthParam) ? monthParam : defaultMonth;
+  const [year, monthNumber] = month.split('-').map(Number);
+  const monthStart = `${month}-01`;
+  const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+
+  try {
+    const [rows] = await db.query(
+      `SELECT
+         DATE(o.order_created_at) AS sales_date,
+         DAY(o.order_created_at) AS day,
+         COALESCE(SUM(COALESCE(o.merchandise_subtotal, o.total_amount) * er.rate_to_krw), 0) AS sales_krw,
+         COUNT(*) AS order_count
+       FROM orders o
+       LEFT JOIN exchange_rates er
+         ON o.currency COLLATE utf8mb4_general_ci = er.currency
+       WHERE o.order_status NOT IN ('UNPAID', 'PENDING', 'CANCELLED')
+         AND o.order_created_at >= ?
+         AND o.order_created_at < DATE_ADD(?, INTERVAL 1 MONTH)
+       GROUP BY DATE(o.order_created_at), DAY(o.order_created_at)
+       ORDER BY sales_date ASC`,
+      [monthStart, monthStart]
+    );
+
+    const rowMap = new Map(
+      rows.map(row => [
+        Number(row.day),
+        {
+          sales_krw: Math.round(Number(row.sales_krw || 0) * 100) / 100,
+          order_count: parseInt(row.order_count || 0),
+        },
+      ])
+    );
+
+    const data = Array.from({ length: daysInMonth }, (_, index) => {
+      const day = index + 1;
+      const date = `${month}-${String(day).padStart(2, '0')}`;
+      const row = rowMap.get(day);
+      return {
+        date,
+        day,
+        sales_krw: row?.sales_krw || 0,
+        order_count: row?.order_count || 0,
+      };
+    });
+
+    return res.json({ success: true, month, data });
+  } catch (err) {
+    console.error('[OrdersRoute] daily-sales error:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 router.get('/:orderSn', async (req, res) => {
   const { orderSn } = req.params;
 

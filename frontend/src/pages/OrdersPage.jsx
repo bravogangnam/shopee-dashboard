@@ -3,7 +3,8 @@ import { ConfigProvider } from 'antd';
 import koKR from 'antd/locale/ko_KR';
 import dayjs from 'dayjs';
 import 'antd/dist/reset.css';
-import { fetchOrders, fetchSummary } from '../api/orders.js';
+import { fetchDailySales, fetchOrders, fetchSummary } from '../api/orders.js';
+import DailySalesChart from '../components/DailySalesChart.jsx';
 import OrderFilters from '../components/OrderFilters.jsx';
 import OrderTable from '../components/OrderTable.jsx';
 import Pagination from '../components/Pagination.jsx';
@@ -22,6 +23,12 @@ const createDefaultFilters = () => ({
   order_sn: '',
   ...getCurrentMonthRange(),
 });
+
+function getChartMonth(filters) {
+  return filters.date_from
+    ? dayjs(filters.date_from).format('YYYY-MM')
+    : dayjs().format('YYYY-MM');
+}
 
 function ChangeRate({ value }) {
   if (value === null || value === undefined) return null;
@@ -67,12 +74,14 @@ export default function OrdersPage() {
   const [query, setQuery] = useState(() => createDefaultFilters());
   const [orders, setOrders] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [dailySales, setDailySales] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
 
   const queryKey = useMemo(() => JSON.stringify(query), [query]);
+  const chartMonth = useMemo(() => getChartMonth(query), [query]);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,21 +90,24 @@ export default function OrdersPage() {
       setLoading(true);
       setError('');
       try {
-        const [ordersResult, summaryResult] = await Promise.all([
+        const [ordersResult, summaryResult, dailySalesResult] = await Promise.all([
           fetchOrders(query),
           fetchSummary(query),
+          fetchDailySales(chartMonth),
         ]);
 
         if (!cancelled) {
           setOrders(ordersResult.data || []);
           setPagination(ordersResult.pagination || null);
           setSummary(summaryResult);
+          setDailySales(dailySalesResult.data || []);
         }
       } catch (err) {
         if (!cancelled) {
           setError(err.message || '주문을 불러오지 못했습니다.');
           setOrders([]);
           setSummary(null);
+          setDailySales([]);
           setPagination(null);
         }
       } finally {
@@ -107,7 +119,7 @@ export default function OrdersPage() {
     return () => {
       cancelled = true;
     };
-  }, [queryKey, reloadKey]);
+  }, [queryKey, chartMonth, reloadKey]);
 
   function handleSubmit(event) {
     event.preventDefault();
@@ -139,6 +151,7 @@ export default function OrdersPage() {
         </div>
 
         <SummaryCards summary={summary} />
+        <DailySalesChart data={dailySales} loading={loading} />
 
         <OrderFilters
           filters={filters}

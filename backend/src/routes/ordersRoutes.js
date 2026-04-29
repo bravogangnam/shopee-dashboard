@@ -433,8 +433,7 @@ router.get('/summary', async (req, res) => {
   const orderSnFilter = order_sn || null;
 
   try {
-    const [rows] = await db.query(
-      `SELECT
+    const summarySql = `SELECT
         COALESCE(SUM(o.merchandise_subtotal * er.rate_to_krw), 0) AS total_sales_krw,
         COALESCE(SUM(o.escrow_amount * er.rate_to_krw), 0) AS total_escrow_krw,
         COALESCE(SUM(o.net_profit), 0) AS total_net_profit,
@@ -448,33 +447,87 @@ router.get('/summary', async (req, res) => {
          AND (? IS NULL OR o.order_created_at < DATE_ADD(?, INTERVAL 1 DAY))
          AND (? IS NULL OR o.region = ?)
          AND (? IS NULL OR o.order_status = ?)
-         AND (? IS NULL OR o.order_sn LIKE CONCAT('%', ?, '%'))`,
-      [
-        dateFrom, dateFrom,
-        dateTo, dateTo,
-        regionFilter, regionFilter,
-        statusFilter, statusFilter,
-        orderSnFilter, orderSnFilter,
-      ]
+         AND (? IS NULL OR o.order_sn LIKE CONCAT('%', ?, '%'))`;
+
+    const buildSummaryParams = (from, to) => [
+      from, from,
+      to, to,
+      regionFilter, regionFilter,
+      statusFilter, statusFilter,
+      orderSnFilter, orderSnFilter,
+    ];
+
+    const round2 = value => Math.round(Number(value || 0) * 100) / 100;
+    const parseSummary = row => ({
+      total_sales_krw: round2(row?.total_sales_krw),
+      total_escrow_krw: round2(row?.total_escrow_krw),
+      total_net_profit: round2(row?.total_net_profit),
+      total_vat: round2(row?.total_vat),
+      order_count: parseInt(row?.order_count || 0),
+    });
+    const changeRate = (current, previous) => {
+      if (previous === null || previous === undefined || Number(previous) === 0) return null;
+      return Math.round(((Number(current) - Number(previous)) / Number(previous)) * 10000) / 100;
+    };
+
+    const [rows] = await db.query(
+      summarySql,
+      buildSummaryParams(dateFrom, dateTo)
     );
 
-    const summary = rows[0] || {};
-    const totalSalesKrw = parseFloat(summary.total_sales_krw || 0);
-    const totalEscrowKrw = parseFloat(summary.total_escrow_krw || 0);
-    const totalNetProfit = parseFloat(summary.total_net_profit || 0);
-    const profitRate = totalSalesKrw === 0
+    const currentSummary = parseSummary(rows[0] || {});
+    const profitRate = currentSummary.total_sales_krw === 0
       ? 0
-      : Math.round((totalNetProfit / totalSalesKrw) * 10000) / 100;
+      : Math.round((currentSummary.total_net_profit / currentSummary.total_sales_krw) * 10000) / 100;
+
+    let prevSummary = {
+      total_sales_krw: null,
+      total_escrow_krw: null,
+      total_net_profit: null,
+      total_vat: null,
+      order_count: null,
+    };
+
+    if (dateFrom && dateTo) {
+      const startDate = new Date(`${dateFrom}T00:00:00Z`);
+      const endDate = new Date(`${dateTo}T00:00:00Z`);
+      if (!Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime()) && endDate >= startDate) {
+        const dayMs = 24 * 60 * 60 * 1000;
+        const currentDays = Math.floor((endDate - startDate) / dayMs) + 1;
+        const prevEnd = new Date(startDate.getTime() - dayMs);
+        const prevStart = new Date(startDate.getTime() - currentDays * dayMs);
+        const prevDateFrom = prevStart.toISOString().slice(0, 10);
+        const prevDateTo = prevEnd.toISOString().slice(0, 10);
+
+        const [prevRows] = await db.query(
+          summarySql,
+          buildSummaryParams(prevDateFrom, prevDateTo)
+        );
+        prevSummary = parseSummary(prevRows[0] || {});
+      }
+    }
 
     return res.json({
       success: true,
       summary: {
-        total_sales_krw: totalSalesKrw,
-        total_escrow_krw: totalEscrowKrw,
-        total_net_profit: totalNetProfit,
-        total_vat: parseFloat(summary.total_vat || 0),
+        total_sales_krw: currentSummary.total_sales_krw,
+        total_escrow_krw: currentSummary.total_escrow_krw,
+        total_net_profit: currentSummary.total_net_profit,
+        total_vat: currentSummary.total_vat,
         profit_rate: profitRate,
-        order_count: parseInt(summary.order_count || 0),
+        order_count: currentSummary.order_count,
+
+        prev_total_sales_krw: prevSummary.total_sales_krw,
+        prev_total_escrow_krw: prevSummary.total_escrow_krw,
+        prev_total_net_profit: prevSummary.total_net_profit,
+        prev_total_vat: prevSummary.total_vat,
+        prev_order_count: prevSummary.order_count,
+
+        sales_change_rate: changeRate(currentSummary.total_sales_krw, prevSummary.total_sales_krw),
+        escrow_change_rate: changeRate(currentSummary.total_escrow_krw, prevSummary.total_escrow_krw),
+        profit_change_rate: changeRate(currentSummary.total_net_profit, prevSummary.total_net_profit),
+        vat_change_rate: changeRate(currentSummary.total_vat, prevSummary.total_vat),
+        count_change_rate: changeRate(currentSummary.order_count, prevSummary.order_count),
       },
     });
   } catch (err) {

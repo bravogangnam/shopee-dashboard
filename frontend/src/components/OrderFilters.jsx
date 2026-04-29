@@ -73,6 +73,7 @@ export default function OrderFilters({ filters, onChange, onSubmit, onReset }) {
           value={dateRangeValue}
           onChange={setDateRange}
           placeholder={['시작일', '종료일']}
+          style={{ width: 280 }}
         />
       </label>
       <div className="filter-actions">

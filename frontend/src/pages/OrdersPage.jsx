@@ -18,13 +18,30 @@ const DEFAULT_FILTERS = {
   order_sn: '',
 };
 
+function ChangeRate({ value }) {
+  if (value === null || value === undefined) return null;
+
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue === 0) return null;
+
+  const direction = numericValue > 0 ? 'positive' : 'negative';
+  const arrow = numericValue > 0 ? '▲' : '▼';
+
+  return (
+    <span className={`change-rate ${direction}`}>
+      전기간 대비 {arrow} {formatNumber(numericValue, 2)}%
+    </span>
+  );
+}
+
 function SummaryCards({ summary }) {
   const cards = [
-    { label: '매출', value: formatKrw(summary?.total_sales_krw) },
-    { label: '정산액', value: formatKrw(summary?.total_escrow_krw) },
-    { label: '순이익', value: formatKrw(summary?.total_net_profit) },
-    { label: '부가세', value: formatKrw(summary?.total_vat) },
+    { label: '매출', value: formatKrw(summary?.total_sales_krw), changeRate: summary?.sales_change_rate },
+    { label: '정산액', value: formatKrw(summary?.total_escrow_krw), changeRate: summary?.escrow_change_rate },
+    { label: '순이익', value: formatKrw(summary?.total_net_profit), changeRate: summary?.profit_change_rate },
+    { label: '부가세', value: formatKrw(summary?.total_vat), changeRate: summary?.vat_change_rate },
     { label: '순이익률', value: summary ? `${formatNumber(summary.profit_rate, 2)}%` : '-' },
+    { label: '주문건수', value: summary ? `${formatNumber(summary.order_count, 0)}건` : '-', changeRate: summary?.count_change_rate },
   ];
 
   return (
@@ -33,6 +50,7 @@ function SummaryCards({ summary }) {
         <div className={`summary-card summary-card-${index + 1}`} key={card.label}>
           <span>{card.label}</span>
           <strong>{card.value}</strong>
+          <ChangeRate value={card.changeRate} />
         </div>
       ))}
     </div>

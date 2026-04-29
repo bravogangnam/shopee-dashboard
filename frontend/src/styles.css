@@ -81,6 +81,20 @@ label {
   gap: 10px;
 }
 
+.brand-logo {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.brand-name {
+  color: #1a1a2e;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
 .brand-mark {
   display: grid;
   width: 36px;
@@ -124,7 +138,9 @@ label {
   margin-top: 26px;
 }
 
+.nav-link,
 .nav a {
+  display: block;
   border-radius: 6px;
   color: #516071;
   font-weight: 700;
@@ -132,6 +148,7 @@ label {
   text-decoration: none;
 }
 
+.nav-link.active,
 .nav a.active {
   background: #eef4ff;
   color: #1f6feb;
@@ -271,6 +288,21 @@ label {
   color: inherit;
   font-size: 21px;
   line-height: 1.2;
+}
+
+.summary-card .change-rate {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 800;
+  opacity: 1;
+}
+
+.change-rate.positive {
+  color: #389e0d;
+}
+
+.change-rate.negative {
+  color: #cf1322;
 }
 
 .table-wrap {

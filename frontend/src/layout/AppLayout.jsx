@@ -14,15 +14,18 @@ export default function AppLayout() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark">S</span>
-          <div>
-            <strong>Shopee Admin</strong>
-            <small>Order Operations</small>
-          </div>
+          <img src="/logo.png" alt="Jun's & Kang's" className="brand-logo" />
+          <strong className="brand-name">Jun&apos;s &amp; Kang&apos;s</strong>
         </div>
         <nav className="nav">
-          <NavLink to="/orders">주문 목록</NavLink>
-          <NavLink to="/settings/rates">환율 설정</NavLink>
+          <a href="/orders" className="nav-link">주문 관리</a>
+          <NavLink
+            to="/orders"
+            className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
+          >
+            정산목록
+          </NavLink>
+          <a href="/settings" className="nav-link">설정</a>
         </nav>
       </aside>
       <div className="main">

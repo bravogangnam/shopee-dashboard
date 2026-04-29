@@ -3,6 +3,8 @@ import dayjs from 'dayjs';
 import { fetchOrders, fetchStats } from '../api/orders.js';
 import { createAndDownloadInvoice } from '../api/invoice.js';
 import { startSync } from '../api/sync.js';
+import FeeDetailModal from '../components/FeeDetailModal.jsx';
+import ImagePreviewModal from '../components/ImagePreviewModal.jsx';
 import OrderManagementFilters from '../components/OrderManagementFilters.jsx';
 import OrderManagementTable from '../components/OrderManagementTable.jsx';
 import Pagination from '../components/Pagination.jsx';
@@ -38,8 +40,9 @@ export default function OrderManagementPage() {
   const [selectedOrders, setSelectedOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
-  const [invoiceLoadingMap, setInvoiceLoadingMap] = useState({});
   const [syncLoading, setSyncLoading] = useState(false);
+  const [feeOrder, setFeeOrder] = useState(null);
+  const [previewItem, setPreviewItem] = useState(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
@@ -108,10 +111,6 @@ export default function OrderManagementPage() {
     setError('');
     setMessage('');
     setInvoiceLoading(true);
-    setInvoiceLoadingMap(current => ({
-      ...current,
-      ...Object.fromEntries(orderSnList.map(orderSn => [orderSn, true])),
-    }));
 
     try {
       await createAndDownloadInvoice(orderSnList);
@@ -120,13 +119,6 @@ export default function OrderManagementPage() {
       setError(err.message || '송장 출력에 실패했습니다.');
     } finally {
       setInvoiceLoading(false);
-      setInvoiceLoadingMap(current => {
-        const next = { ...current };
-        orderSnList.forEach(orderSn => {
-          delete next[orderSn];
-        });
-        return next;
-      });
     }
   }
 
@@ -192,11 +184,18 @@ export default function OrderManagementPage() {
         orders={orders}
         selectedOrders={selectedOrders}
         onSelectionChange={setSelectedOrders}
-        onInvoiceOne={orderSn => handleInvoice([orderSn])}
+        onFeeDetail={order => setFeeOrder(order)}
+        onImagePreview={item => setPreviewItem(item)}
         loading={loading}
-        invoiceLoadingMap={invoiceLoadingMap}
       />
       <Pagination pagination={pagination} onPageChange={handlePageChange} />
+
+      {feeOrder && (
+        <FeeDetailModal order={feeOrder} onClose={() => setFeeOrder(null)} />
+      )}
+      {previewItem && (
+        <ImagePreviewModal item={previewItem} onClose={() => setPreviewItem(null)} />
+      )}
     </section>
   );
 }

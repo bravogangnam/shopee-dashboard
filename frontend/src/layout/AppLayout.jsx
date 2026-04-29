@@ -48,7 +48,7 @@ const navItems = [
   { to: '/orders', label: '주문 관리', icon: <ListIcon /> },
   { to: '/ledger', label: '정산 관리', icon: <LedgerIcon /> },
   { to: '/inventory', label: '재고 관리', icon: <InventoryIcon /> },
-  { to: '/settings/rates', label: '설정', icon: <SettingsIcon /> },
+  { to: '/settings', label: '설정', icon: <SettingsIcon /> },
 ];
 
 export default function AppLayout() {

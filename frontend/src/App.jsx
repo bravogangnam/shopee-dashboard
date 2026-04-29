@@ -5,7 +5,7 @@ import LoginPage from './pages/LoginPage.jsx';
 import InventoryPage from './pages/InventoryPage.jsx';
 import LedgerPage from './pages/LedgerPage.jsx';
 import OrderManagementPage from './pages/OrderManagementPage.jsx';
-import RatesPage from './pages/RatesPage.jsx';
+import SettingsPage from './pages/SettingsPage.jsx';
 
 export default function App() {
   return (
@@ -18,8 +18,9 @@ export default function App() {
           <Route path="/orders" element={<OrderManagementPage />} />
           <Route path="/ledger" element={<LedgerPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
-          <Route path="/settings" element={<Navigate to="/settings/rates" replace />} />
-          <Route path="/settings/rates" element={<RatesPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settings/rates" element={<Navigate to="/settings" replace />} />
+          <Route path="/settings/*" element={<Navigate to="/settings" replace />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/orders" replace />} />

@@ -8,6 +8,15 @@ function statusClass(status) {
   return `status-pill status-${String(status || '').toLowerCase()}`;
 }
 
+function getOrderSn(order) {
+  return order.order_sn || order.order_id || order.orderId || '';
+}
+
+function getOrderItems(order) {
+  const items = order.item_list || order.items || order.order_items || [];
+  return Array.isArray(items) ? items : [];
+}
+
 function getQuantity(items) {
   return items.reduce((sum, item) => {
     const count = Number(item.model_quantity_purchased || 0);
@@ -15,22 +24,33 @@ function getQuantity(items) {
   }, 0);
 }
 
+function getItemImageUrl(item) {
+  return (
+    item.image_info_image_url ||
+    item.item_image_url ||
+    item.image_url ||
+    item.image ||
+    ''
+  );
+}
+
 export default function OrderManagementTable({
   orders,
   selectedOrders,
   onSelectionChange,
-  onInvoiceOne,
+  onFeeDetail,
+  onImagePreview,
   loading,
-  invoiceLoadingMap,
 }) {
   const selectedSet = new Set(selectedOrders);
-  const allSelected = orders.length > 0 && orders.every(order => selectedSet.has(order.order_sn));
+  const allSelected = orders.length > 0 && orders.every(order => selectedSet.has(getOrderSn(order)));
 
   function toggleAll(checked) {
-    onSelectionChange(checked ? orders.map(order => order.order_sn) : []);
+    onSelectionChange(checked ? orders.map(getOrderSn).filter(Boolean) : []);
   }
 
   function toggleOne(orderSn, checked) {
+    if (!orderSn) return;
     if (checked) {
       onSelectionChange([...selectedSet, orderSn]);
     } else {
@@ -67,33 +87,34 @@ export default function OrderManagementTable({
             <th>옵션명</th>
             <th className="num">수량</th>
             <th className="num">판매가</th>
-            <th>송장</th>
+            <th className="num">수수료</th>
           </tr>
         </thead>
         <tbody>
           {orders.map(order => {
-            const items = Array.isArray(order.item_list) ? order.item_list : [];
+            const items = getOrderItems(order);
             const firstItem = items[0] || {};
+            const orderSn = getOrderSn(order);
             const quantity = getQuantity(items) || '-';
             const salesAmount = order.merchandise_subtotal ?? order.total_amount;
-            const disabled = Boolean(invoiceLoadingMap[order.order_sn]);
+            const imgUrl = getItemImageUrl(firstItem);
 
             return (
               <tr
-                key={`${order.shop_id}-${order.order_sn}`}
+                key={`${order.shop_id}-${orderSn}`}
                 className={order.order_status === 'CANCELLED' ? 'cancelled-row' : ''}
               >
                 <td>
                   <input
                     type="checkbox"
                     className="order-checkbox"
-                    checked={selectedSet.has(order.order_sn)}
-                    onChange={event => toggleOne(order.order_sn, event.target.checked)}
-                    aria-label={`${order.order_sn} 선택`}
+                    checked={selectedSet.has(orderSn)}
+                    onChange={event => toggleOne(orderSn, event.target.checked)}
+                    aria-label={`${orderSn} 선택`}
                   />
                 </td>
                 <td>
-                  <strong>{order.order_sn}</strong>
+                  <strong>{orderSn}</strong>
                   <small>{formatDateTime(order.order_created_at)}</small>
                 </td>
                 <td>
@@ -106,20 +127,27 @@ export default function OrderManagementTable({
                   </div>
                 </td>
                 <td>
-                  <div className="truncate-short" title={firstItem.model_name || ''}>
+                  <div
+                    className={`truncate-short ${imgUrl ? 'clickable' : ''}`}
+                    title={firstItem.model_name || ''}
+                    onClick={() => {
+                      if (imgUrl) onImagePreview({ ...firstItem, image_url: imgUrl });
+                    }}
+                    style={{ cursor: imgUrl ? 'pointer' : 'default' }}
+                  >
                     {firstItem.model_name || '-'}
                   </div>
                 </td>
                 <td className="num">{quantity}</td>
                 <td className="num">{formatCurrency(salesAmount, order.currency)}</td>
-                <td>
+                <td className="num">
                   <button
                     type="button"
-                    className="invoice-btn"
-                    onClick={() => onInvoiceOne(order.order_sn)}
-                    disabled={disabled}
+                    className="fee-detail-btn"
+                    onClick={() => onFeeDetail(order)}
+                    title="수수료 상세"
                   >
-                    {disabled ? '처리중' : '출력'}
+                    ⓘ
                   </button>
                 </td>
               </tr>

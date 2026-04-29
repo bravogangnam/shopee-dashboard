@@ -29,19 +29,13 @@ const path    = require('path');
 
 // ── CJK/KR 폰트 경로 ─────────────────────────────────────────────
 const CJK_FONT_CANDIDATES = [
-  process.env.CJK_FONT_PATH,
-  process.env.KR_FONT_PATH,
-  path.resolve(__dirname, '../../assets/fonts/NotoSansKR-Regular.ttf'),
+  process.env.INVOICE_KR_FONT_PATH,
+  '/usr/share/fonts/truetype/nanum/NanumGothic.ttf',
+  '/usr/share/fonts/truetype/nanum/NanumBarunGothic.ttf',
+  '/usr/share/fonts/truetype/nanum/NanumSquareR.ttf',
   path.resolve(__dirname, '../../assets/fonts/NotoSansKR-Regular.otf'),
   path.resolve(__dirname, '../../assets/fonts/NotoSansCJKkr-Regular.otf'),
   path.resolve(__dirname, '../../assets/fonts/NotoSansSC-Regular.ttf'),
-  '/usr/share/fonts/truetype/nanum/NanumGothic.ttf',
-  '/usr/share/fonts/truetype/nanum/NanumBarunGothic.ttf',
-  '/usr/share/fonts/truetype/noto/NotoSansKR-Regular.ttf',
-  '/usr/share/fonts/truetype/noto/NotoSansKR-Regular.otf',
-  '/usr/share/fonts/opentype/noto/NotoSansCJKkr-Regular.otf',
-  '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-  '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
 ].filter(Boolean);
 const CJK_REGEX = /[\u1100-\u11FF\u2E80-\u9FFF\uA960-\uA97F\uAC00-\uD7FF\uF900-\uFAFF\uFE10-\uFE6F\uFF00-\uFFEF]/;
 function hasCjk(str) { return CJK_REGEX.test(str); }

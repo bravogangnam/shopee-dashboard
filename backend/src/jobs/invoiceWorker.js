@@ -105,13 +105,23 @@ async function runInvoice(jobId, orderSnList) {
     // 할인가를 기록하고 나머지 행은 0으로 내려보냄.
     // → model_discounted_price > 0 이면 그 값, 아니면 model_original_price 사용
     const [itemRows] = await db.query(
-      `SELECT order_sn, item_name, model_name,
-              model_quantity_purchased,
-              CASE WHEN model_discounted_price > 0
-                   THEN model_discounted_price
-                   ELSE model_original_price
+      `SELECT
+              oi.order_sn,
+              COALESCE(NULLIF(p.product_name_kr, ''), oi.item_name) AS item_name,
+              CASE
+                WHEN p.product_name_kr IS NOT NULL AND p.product_name_kr != '' THEN ''
+                ELSE oi.model_name
+              END AS model_name,
+              oi.model_quantity_purchased,
+              CASE WHEN oi.model_discounted_price > 0
+                   THEN oi.model_discounted_price
+                   ELSE oi.model_original_price
               END AS unit_price
-       FROM order_items WHERE order_sn IN (${placeholders})`,
+       FROM order_items oi
+       LEFT JOIN products p
+         ON p.sku COLLATE utf8mb4_general_ci = COALESCE(NULLIF(oi.model_sku, ''), NULLIF(oi.item_sku, '')) COLLATE utf8mb4_general_ci
+       WHERE oi.order_sn IN (${placeholders})
+       ORDER BY oi.order_sn, oi.id`,
       orderSnStrings
     );
     const itemsByOrder = {};

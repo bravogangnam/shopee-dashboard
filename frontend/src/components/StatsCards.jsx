@@ -19,7 +19,7 @@ function formatKrwValue(value) {
 function Growth({ value }) {
   const numericValue = Number(value || 0);
   if (!Number.isFinite(numericValue) || numericValue === 0) {
-    return <span className="stat-growth neutral">전기간 대비 0.00%</span>;
+    return <span className="stat-growth neutral">0.00%</span>;
   }
 
   const tone = numericValue > 0 ? 'positive' : 'negative';

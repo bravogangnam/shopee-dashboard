@@ -76,9 +76,33 @@ label {
 }
 
 .brand {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  margin-left: auto;
+  border: 1px solid #d8dee8;
+  border-radius: 50%;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 900;
+  padding: 0;
+}
+
+.sidebar-toggle:hover {
+  border-color: #adc6ff;
+  color: #1f6feb;
 }
 
 .brand-logo {
@@ -121,15 +145,43 @@ label {
 }
 
 .app-shell {
-  display: grid;
+  display: flex;
   min-height: 100vh;
-  grid-template-columns: 230px minmax(0, 1fr);
 }
 
 .sidebar {
+  width: 206px;
+  flex: 0 0 206px;
   border-right: 1px solid #dfe5ee;
   background: #fff;
   padding: 18px;
+  transition: flex-basis 0.2s ease, width 0.2s ease, padding 0.2s ease;
+}
+
+.sidebar.collapsed {
+  width: 64px;
+  flex-basis: 64px;
+  padding: 18px 10px;
+}
+
+.sidebar.collapsed .brand {
+  justify-content: center;
+}
+
+.sidebar.collapsed .brand-name,
+.sidebar.collapsed .nav-text {
+  display: none;
+}
+
+.sidebar.collapsed .sidebar-toggle {
+  position: absolute;
+  right: -13px;
+}
+
+.sidebar.collapsed .nav-link {
+  justify-content: center;
+  padding-right: 0;
+  padding-left: 0;
 }
 
 .nav {
@@ -140,12 +192,28 @@ label {
 
 .nav-link,
 .nav a {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 9px;
   border-radius: 6px;
   color: #516071;
   font-weight: 700;
   padding: 10px 12px;
   text-decoration: none;
+}
+
+.nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border-radius: 6px;
+  background: #f3f7fb;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .nav-link.active,
@@ -155,7 +223,12 @@ label {
 }
 
 .main {
+  flex: 1 1 auto;
   min-width: 0;
+}
+
+.main-content {
+  transition: padding 0.2s ease;
 }
 
 .content {
@@ -584,12 +657,19 @@ label {
 
 @media (max-width: 920px) {
   .app-shell {
-    grid-template-columns: 1fr;
+    flex-direction: column;
   }
 
   .sidebar {
+    width: auto;
+    flex-basis: auto;
     border-right: 0;
     border-bottom: 1px solid #dfe5ee;
+  }
+
+  .sidebar.collapsed {
+    width: auto;
+    flex-basis: auto;
   }
 
   .summary-cards {

@@ -1,0 +1,31 @@
+import { apiRequest, buildQuery } from './client.js';
+
+function skuPath(sku) {
+  return encodeURIComponent(sku);
+}
+
+export async function fetchLowStockProducts() {
+  const result = await apiRequest('/api/products/low-stock');
+  return result.data || [];
+}
+
+export function updateProductStock(sku, payload) {
+  return apiRequest(`/api/products/${skuPath(sku)}/stock`, {
+    method: 'PATCH',
+    body: payload,
+  });
+}
+
+export function adjustProductStock(sku, payload) {
+  return apiRequest(`/api/products/${skuPath(sku)}/stock/adjust`, {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function fetchInventoryMovements(sku, limit = 50) {
+  const result = await apiRequest(
+    `/api/products/${skuPath(sku)}/inventory-movements${buildQuery({ limit })}`
+  );
+  return result.data || [];
+}

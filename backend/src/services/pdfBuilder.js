@@ -17,7 +17,7 @@
  *
  * 용지: A6 (105×148mm = 297.638×419.528 pt)
  * AWB 크롭: Tracking NO. 텍스트 하단 y + CROP_PAD pt
- * 폰트: HelveticaBold/Helvetica (영문) + NotoSansSC-Regular (CJK)
+ * 폰트: HelveticaBold/Helvetica (영문) + Noto/Nanum KR 후보 (CJK/KR)
  */
 
 'use strict';
@@ -27,10 +27,28 @@ const fontkit = require('@pdf-lib/fontkit');
 const fs      = require('fs');
 const path    = require('path');
 
-// ── CJK 폰트 경로 ────────────────────────────────────────────────
-const CJK_FONT_PATH = path.resolve(__dirname, '../../assets/fonts/NotoSansSC-Regular.ttf');
+// ── CJK/KR 폰트 경로 ─────────────────────────────────────────────
+const CJK_FONT_CANDIDATES = [
+  process.env.CJK_FONT_PATH,
+  process.env.KR_FONT_PATH,
+  path.resolve(__dirname, '../../assets/fonts/NotoSansKR-Regular.ttf'),
+  path.resolve(__dirname, '../../assets/fonts/NotoSansKR-Regular.otf'),
+  path.resolve(__dirname, '../../assets/fonts/NotoSansCJKkr-Regular.otf'),
+  path.resolve(__dirname, '../../assets/fonts/NotoSansSC-Regular.ttf'),
+  '/usr/share/fonts/truetype/nanum/NanumGothic.ttf',
+  '/usr/share/fonts/truetype/nanum/NanumBarunGothic.ttf',
+  '/usr/share/fonts/truetype/noto/NotoSansKR-Regular.ttf',
+  '/usr/share/fonts/truetype/noto/NotoSansKR-Regular.otf',
+  '/usr/share/fonts/opentype/noto/NotoSansCJKkr-Regular.otf',
+  '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+  '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
+].filter(Boolean);
 const CJK_REGEX = /[\u1100-\u11FF\u2E80-\u9FFF\uA960-\uA97F\uAC00-\uD7FF\uF900-\uFAFF\uFE10-\uFE6F\uFF00-\uFFEF]/;
 function hasCjk(str) { return CJK_REGEX.test(str); }
+function isBlankModelName(value) {
+  const text = String(value ?? '').trim();
+  return !text || text === '-';
+}
 
 // ── A6 용지 치수 ─────────────────────────────────────────────────
 const MM_TO_PT = 72 / 25.4;
@@ -126,12 +144,19 @@ async function buildInvoicePdf({ awbBuffer, items = [], orderSn, trackingNumber,
   const fontLatin  = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontLatinB = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   let fontCjk = null;
-  try {
-    const cjkBytes = fs.readFileSync(CJK_FONT_PATH);
-    fontCjk = await pdfDoc.embedFont(cjkBytes, { subset: true });
-    console.log('[pdfBuilder] CJK font loaded');
-  } catch (e) {
-    console.warn('[pdfBuilder] CJK font load failed:', e.message);
+  for (const fontPath of CJK_FONT_CANDIDATES) {
+    try {
+      if (!fs.existsSync(fontPath)) continue;
+      const cjkBytes = fs.readFileSync(fontPath);
+      fontCjk = await pdfDoc.embedFont(cjkBytes, { subset: true });
+      console.log(`[pdfBuilder] CJK/KR font loaded: ${fontPath}`);
+      break;
+    } catch (e) {
+      console.warn(`[pdfBuilder] CJK/KR font candidate failed: ${fontPath} (${e.message})`);
+    }
+  }
+  if (!fontCjk) {
+    console.warn('[pdfBuilder] CJK/KR font load failed: no usable font found');
   }
 
   function pickFont(text, bold = false) {
@@ -188,8 +213,9 @@ async function buildInvoicePdf({ awbBuffer, items = [], orderSn, trackingNumber,
   const modelLineH = modelSz + 3;
 
   const QTY_COL = fontLatin.widthOfTextAtSize('999', modelSz) + 4;
-  const W_FULL  = PAGE_W - LEFT_M - RIGHT_M;
-  const W_MODEL = W_FULL - INDENT - QTY_COL - 2;
+  const W_FULL      = PAGE_W - LEFT_M - RIGHT_M;
+  const W_ITEM_QTY  = W_FULL - QTY_COL - 2;
+  const W_MODEL     = W_FULL - INDENT - QTY_COL - 2;
 
   for (const row of rows) {
     if (row.type === 'divider') {
@@ -211,11 +237,21 @@ async function buildInvoicePdf({ awbBuffer, items = [], orderSn, trackingNumber,
       if (textY < BOT_RSV) break;
 
       const font  = pickFont(row.text, true);
-      const label = _truncateByWidth(row.text, W_FULL, font, itemSz);
+      const maxW  = row.qty ? W_ITEM_QTY : W_FULL;
+      const label = _truncateByWidth(row.text, maxW, font, itemSz);
       page.drawText(label, {
         x: LEFT_M, y: textY,
         size: itemSz, font, color: rgb(0, 0, 0),
       });
+
+      if (row.qty) {
+        const qtyStr = row.qty;
+        const qtyW   = fontLatin.widthOfTextAtSize(qtyStr, itemSz);
+        page.drawText(qtyStr, {
+          x: PAGE_W - RIGHT_M - qtyW, y: textY,
+          size: itemSz, font: fontLatin, color: rgb(0, 0, 0),
+        });
+      }
       curY -= itemLineH;
 
     } else {
@@ -266,13 +302,28 @@ function _buildRows(groups) {
   const rows = [];
   for (let gi = 0; gi < groups.length; gi++) {
     const g = groups[gi];
-    rows.push({ type: 'item', text: g.item_name });
-    for (const m of g.models) {
+    const hasAnyModelName = g.models.some(m => !isBlankModelName(m.model_name));
+
+    if (!hasAnyModelName) {
+      const qty = g.models.reduce((sum, m) => {
+        const count = Number(m.model_quantity_purchased ?? 1);
+        return sum + (Number.isFinite(count) ? count : 1);
+      }, 0);
       rows.push({
-        type: 'model',
-        text: m.model_name || '-',
-        qty:  String(m.model_quantity_purchased ?? 1),
+        type: 'item',
+        text: g.item_name,
+        qty: String(qty || 1),
       });
+    } else {
+      rows.push({ type: 'item', text: g.item_name });
+      for (const m of g.models) {
+        if (isBlankModelName(m.model_name)) continue;
+        rows.push({
+          type: 'model',
+          text: m.model_name,
+          qty:  String(m.model_quantity_purchased ?? 1),
+        });
+      }
     }
     if (gi < groups.length - 1) rows.push({ type: 'divider' });
   }

@@ -14,6 +14,10 @@ function calculateMarginRate(order) {
   return `${((netProfit / salesKrw) * 100).toFixed(2)}%`;
 }
 
+function regionClass(region) {
+  return `region-badge region-${String(region || '').toLowerCase()}`;
+}
+
 export default function OrderTable({ orders, loading }) {
   if (loading) {
     return <div className="table-state">주문을 불러오는 중...</div>;
@@ -24,7 +28,7 @@ export default function OrderTable({ orders, loading }) {
   }
 
   return (
-    <div className="table-wrap">
+    <div className="table-wrap ledger-table-wrap">
       <table className="data-table">
         <thead>
           <tr>
@@ -50,15 +54,23 @@ export default function OrderTable({ orders, loading }) {
               const count = Number(item.model_quantity_purchased || 0);
               return sum + (Number.isFinite(count) ? count : 0);
             }, 0) || firstItem.model_quantity_purchased || '-';
+            const region = order.region || order.shop_alias || order.shop_id;
 
             return (
               <tr key={`${order.shop_id}-${order.order_sn}`}>
                 <td>
-                  <strong>{order.order_sn}</strong>
+                  <a
+                    href={`/orders?order_sn=${encodeURIComponent(order.order_sn)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="order-link"
+                  >
+                    <strong>{order.order_sn}</strong>
+                  </a>
                   <small>{formatDateTime(order.order_created_at)}</small>
                 </td>
                 <td>
-                  <span className="shop-pill">{order.shop_alias || order.region || order.shop_id}</span>
+                  <span className={regionClass(order.region)}>{region}</span>
                 </td>
                 <td><span className="status-pill">{order.order_status}</span></td>
                 <td className="truncate" title={firstItem.item_name || ''}>{firstItem.item_name || '-'}</td>

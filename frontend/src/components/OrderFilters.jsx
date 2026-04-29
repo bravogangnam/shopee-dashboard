@@ -1,3 +1,8 @@
+import { DatePicker } from 'antd';
+import dayjs from 'dayjs';
+
+const { RangePicker } = DatePicker;
+
 const STATUS_OPTIONS = [
   { value: '', label: '전체 상태' },
   { value: 'UNPAID', label: 'UNPAID' },
@@ -18,8 +23,20 @@ const REGION_OPTIONS = [
 ];
 
 export default function OrderFilters({ filters, onChange, onSubmit, onReset }) {
+  const dateRangeValue = filters.date_from && filters.date_to
+    ? [dayjs(filters.date_from), dayjs(filters.date_to)]
+    : null;
+
   function setField(field, value) {
     onChange({ ...filters, [field]: value });
+  }
+
+  function setDateRange(dates) {
+    onChange({
+      ...filters,
+      date_from: dates?.[0] ? dates[0].format('YYYY-MM-DD') : '',
+      date_to: dates?.[1] ? dates[1].format('YYYY-MM-DD') : '',
+    });
   }
 
   return (
@@ -48,13 +65,15 @@ export default function OrderFilters({ filters, onChange, onSubmit, onReset }) {
           ))}
         </select>
       </label>
-      <label>
-        시작일
-        <input type="date" value={filters.date_from} onChange={event => setField('date_from', event.target.value)} />
-      </label>
-      <label>
-        종료일
-        <input type="date" value={filters.date_to} onChange={event => setField('date_to', event.target.value)} />
+      <label className="date-range-field">
+        기간
+        <RangePicker
+          allowClear
+          format="YYYY-MM-DD"
+          value={dateRangeValue}
+          onChange={setDateRange}
+          placeholder={['시작일', '종료일']}
+        />
       </label>
       <div className="filter-actions">
         <button type="submit">검색</button>

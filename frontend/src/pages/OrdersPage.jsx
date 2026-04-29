@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ConfigProvider } from 'antd';
+import koKR from 'antd/locale/ko_KR';
+import 'antd/dist/reset.css';
 import { fetchOrders, fetchSummary } from '../api/orders.js';
 import OrderFilters from '../components/OrderFilters.jsx';
 import OrderTable from '../components/OrderTable.jsx';
@@ -26,8 +29,8 @@ function SummaryCards({ summary }) {
 
   return (
     <div className="summary-cards">
-      {cards.map(card => (
-        <div className="summary-card" key={card.label}>
+      {cards.map((card, index) => (
+        <div className={`summary-card summary-card-${index + 1}`} key={card.label}>
           <span>{card.label}</span>
           <strong>{card.value}</strong>
         </div>
@@ -99,30 +102,32 @@ export default function OrdersPage() {
   }
 
   return (
-    <section className="page">
-      <div className="page-header">
-        <div>
-          <h1>정산목록</h1>
-          <p>주문별 매출, 원가, 순이익, 마진율을 확인합니다.</p>
+    <ConfigProvider locale={koKR}>
+      <section className="page ledger-page">
+        <div className="page-header">
+          <div>
+            <h1>정산목록</h1>
+            <p>주문별 매출, 원가, 순이익, 마진율을 확인합니다.</p>
+          </div>
+          <button type="button" className="ghost-button" onClick={() => setReloadKey(value => value + 1)}>
+            새로고침
+          </button>
         </div>
-        <button type="button" className="ghost-button" onClick={() => setReloadKey(value => value + 1)}>
-          새로고침
-        </button>
-      </div>
 
-      <OrderFilters
-        filters={filters}
-        onChange={setFilters}
-        onSubmit={handleSubmit}
-        onReset={handleReset}
-      />
+        <SummaryCards summary={summary} />
 
-      <SummaryCards summary={summary} />
+        <OrderFilters
+          filters={filters}
+          onChange={setFilters}
+          onSubmit={handleSubmit}
+          onReset={handleReset}
+        />
 
-      {error && <div className="alert">{error}</div>}
+        {error && <div className="alert">{error}</div>}
 
-      <OrderTable orders={orders} loading={loading} />
-      <Pagination pagination={pagination} onPageChange={handlePageChange} />
-    </section>
+        <OrderTable orders={orders} loading={loading} />
+        <Pagination pagination={pagination} onPageChange={handlePageChange} />
+      </section>
+    </ConfigProvider>
   );
 }

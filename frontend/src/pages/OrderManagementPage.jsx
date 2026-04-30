@@ -137,8 +137,9 @@ export default function OrderManagementPage() {
       if (loading || syncLoading || invoiceLoading) return;
       if (selectedOrders.length > 0) return;
 
+      setMessage(`자동 새로고침됨: ${new Date().toLocaleTimeString()}`);
       setReloadKey(value => value + 1);
-    }, 60000);
+    }, 10000);
 
     return () => window.clearInterval(intervalId);
   }, [loading, syncLoading, invoiceLoading, selectedOrders.length]);

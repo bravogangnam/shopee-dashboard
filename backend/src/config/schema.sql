@@ -213,3 +213,35 @@ CREATE TABLE IF NOT EXISTS inventory_batches (
     INDEX idx_inventory_batches_receipt (receipt_id),
     INDEX idx_inventory_batches_remaining (sku, remaining_qty, received_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS sku_compositions (
+    id                  INT AUTO_INCREMENT PRIMARY KEY,
+    source_sku          VARCHAR(100) NOT NULL,
+    base_sku            VARCHAR(100) NOT NULL,
+    factor              DECIMAL(12,4) NOT NULL DEFAULT 1,
+    composition_type    VARCHAR(50) NULL,
+    note                VARCHAR(255) NULL,
+    sheet_row           INT NULL,
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_sku_composition (source_sku, base_sku),
+    INDEX idx_sku_compositions_source (source_sku),
+    INDEX idx_sku_compositions_base (base_sku)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS inventory_allocations (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    movement_id     INT NOT NULL,
+    batch_id        INT NOT NULL,
+    order_sn        VARCHAR(50) NULL,
+    shop_id         BIGINT NULL,
+    source_sku      VARCHAR(100) NULL,
+    sku             VARCHAR(100) NOT NULL,
+    qty             INT NOT NULL,
+    unit_cost       DECIMAL(12,2) NOT NULL DEFAULT 0,
+    total_cost      DECIMAL(12,2) NOT NULL DEFAULT 0,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_inventory_allocation (movement_id, batch_id),
+    INDEX idx_inventory_allocations_order (order_sn, shop_id),
+    INDEX idx_inventory_allocations_sku (sku),
+    INDEX idx_inventory_allocations_batch (batch_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

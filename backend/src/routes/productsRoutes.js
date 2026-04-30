@@ -8,6 +8,7 @@ const {
   getInventoryMovements,
 } = require('../services/inventoryService');
 const { syncPendingInventoryReceipts } = require('../services/inventoryReceiptSync');
+const { refreshSkuCompositionsFromSheet } = require('../services/skuCompositionService');
 
 router.use(requireAuth);
 
@@ -27,6 +28,12 @@ router.get('/low-stock', async (req, res) => {
 router.post('/inventory-receipts/sync', async (req, res) => {
   const result = await syncPendingInventoryReceipts();
   return res.json({ success: true, result });
+});
+
+router.post('/sku-compositions/refresh', async (req, res) => {
+  const result = await refreshSkuCompositionsFromSheet();
+  const { compositionMap, ...safeResult } = result;
+  return res.json({ success: true, result: safeResult });
 });
 
 router.patch('/:sku/stock', async (req, res) => {

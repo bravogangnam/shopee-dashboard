@@ -1,15 +1,16 @@
-const axios = require('axios');
 const db = require('../config/database');
 const {
   insertInventoryMovement,
   isDuplicateKeyError,
   normalizeSku,
 } = require('./inventoryService');
+const { refreshSkuCompositionsFromSheet } = require('./skuCompositionService');
 
-const RECEIPT_SHEET_NAME = process.env.GOOGLE_RECEIPT_SHEET_NAME || '입고관리';
-const COMPOSITION_SHEET_NAME = process.env.GOOGLE_SKU_COMPOSITION_SHEET_NAME || '상품구성표';
+const RECEIPT_SHEET_NAME = process.env.GOOGLE_RECEIPT_SHEET_NAME || '\uC785\uACE0\uAD00\uB9AC';
 const RECEIPT_RANGE = `${RECEIPT_SHEET_NAME}!A:N`;
-const COMPOSITION_RANGE = `${COMPOSITION_SHEET_NAME}!A:E`;
+const STATUS_PENDING = '\uB300\uAE30';
+const STATUS_SYNCED = '\uB3D9\uAE30\uD654\uC644\uB8CC';
+const STATUS_ERROR = '\uC624\uB958';
 
 function isBlank(value) {
   if (value === undefined || value === null) return true;
@@ -82,6 +83,7 @@ function getSheetsUrl(range) {
 }
 
 async function fetchSheetValues(range) {
+  const axios = require('axios');
   const { data } = await axios.get(getSheetsUrl(range), { timeout: 30000 });
   return data.values || [];
 }
@@ -90,51 +92,12 @@ function isHeaderRow(row, firstHeader) {
   return cleanText(row?.[0]) === firstHeader;
 }
 
-async function loadSkuCompositionMap() {
-  const rows = await fetchSheetValues(COMPOSITION_RANGE);
-  const compositionMap = new Map();
-
-  rows.forEach((row, index) => {
-    const sheetRow = index + 1;
-    if (isHeaderRow(row, 'SKU')) return;
-
-    const sourceSku = normalizeSku(row[0]);
-    const baseSku = normalizeSku(row[1]);
-    const factor = parseNumber(row[2]);
-
-    if (!sourceSku) return;
-    if (!baseSku) {
-      console.warn(`[InventoryReceiptSync] 상품구성표 skip: 기준재고SKU 없음, row=${sheetRow}, sku=${sourceSku}`);
-      return;
-    }
-    if (!factor || factor <= 0) {
-      console.warn(`[InventoryReceiptSync] 상품구성표 skip: 기준수량 오류, row=${sheetRow}, sku=${sourceSku}, factor=${row[2] ?? ''}`);
-      return;
-    }
-
-    const item = {
-      baseSku,
-      factor,
-      type: cleanText(row[3]) || null,
-      note: cleanText(row[4]) || null,
-      sheet_row: sheetRow,
-    };
-
-    if (!compositionMap.has(sourceSku)) {
-      compositionMap.set(sourceSku, []);
-    }
-    compositionMap.get(sourceSku).push(item);
-  });
-
-  return compositionMap;
-}
-
 function parseReceiptRow(row, index) {
   const sheetRow = index + 1;
-  if (isHeaderRow(row, '입고ID')) return { skip: true, reason: 'header' };
+  if (isHeaderRow(row, '\uC785\uACE0ID')) return { skip: true, reason: 'header' };
 
   const status = cleanText(row[13]);
-  if (status !== '대기') return { skip: true, reason: `status=${status || '-'}` };
+  if (status !== STATUS_PENDING) return { skip: true, reason: `status=${status || '-'}` };
 
   const receipt = {
     receipt_id: cleanText(row[0]),
@@ -150,11 +113,11 @@ function parseReceiptRow(row, index) {
   };
 
   const errors = [];
-  if (!receipt.receipt_id) errors.push('입고ID 없음');
-  if (!receipt.source_sku) errors.push('SKU 없음');
-  if (!receipt.quantity || receipt.quantity <= 0) errors.push('입고수량 오류');
-  if (receipt.source_unit_cost === null || receipt.source_unit_cost < 0) errors.push('입고단가(VAT제외) 오류');
-  if (!receipt.receipt_type) errors.push('입고구분 없음');
+  if (!receipt.receipt_id) errors.push('missing receipt_id');
+  if (!receipt.source_sku) errors.push('missing source_sku');
+  if (!receipt.quantity || receipt.quantity <= 0) errors.push('invalid quantity');
+  if (receipt.source_unit_cost === null || receipt.source_unit_cost < 0) errors.push('invalid unit_cost');
+  if (!receipt.receipt_type) errors.push('missing receipt_type');
 
   if (errors.length) {
     return { invalid: true, receipt, reason: errors.join(', ') };
@@ -211,7 +174,7 @@ function aggregateCompositions(compositions) {
 
 function ensureIntegerQuantity(value, context) {
   if (!Number.isFinite(value) || value <= 0 || !Number.isInteger(value)) {
-    throw new Error(`${context} 기준재고 수량 오류: ${value}`);
+    throw new Error(`${context} invalid base stock quantity: ${value}`);
   }
   return value;
 }
@@ -271,7 +234,7 @@ async function processReceipt(receipt, compositionMap) {
   const baseSkus = Array.from(new Set(compositions.map(item => item.baseSku)));
 
   if (!totalFactor || totalFactor <= 0) {
-    throw new Error(`상품구성표 기준수량 합계 오류: receipt_id=${receipt.receipt_id}`);
+    throw new Error(`invalid composition factor total: receipt_id=${receipt.receipt_id}`);
   }
 
   const conn = await db.getConnection();
@@ -281,7 +244,7 @@ async function processReceipt(receipt, compositionMap) {
     const existingProducts = await getExistingProducts(conn, baseSkus);
     const missingSkus = baseSkus.filter(sku => !existingProducts.has(sku));
     if (missingSkus.length) {
-      throw new Error(`products 미등록 기준재고SKU: ${missingSkus.join(', ')}`);
+      throw new Error(`missing products for base SKU: ${missingSkus.join(', ')}`);
     }
 
     let insertedBatches = 0;
@@ -301,7 +264,7 @@ async function processReceipt(receipt, compositionMap) {
       } catch (err) {
         if (isDuplicateKeyError(err)) {
           duplicateBatches++;
-          console.log(`[InventoryReceiptSync] 중복 inventory_batch skip: receipt_id=${receipt.receipt_id}, sku=${composition.baseSku}`);
+          console.log(`[InventoryReceiptSync] duplicate inventory_batch skipped: receipt_id=${receipt.receipt_id}, sku=${composition.baseSku}`);
           continue;
         }
         throw err;
@@ -325,7 +288,7 @@ async function processReceipt(receipt, compositionMap) {
 
       insertedBatches++;
       stockAdded += baseQty;
-      console.log(`[InventoryReceiptSync] STOCK_IN 생성: receipt_id=${receipt.receipt_id}, source=${receipt.source_sku}, sku=${composition.baseSku}, qty=+${baseQty}`);
+      console.log(`[InventoryReceiptSync] STOCK_IN created: receipt_id=${receipt.receipt_id}, source=${receipt.source_sku}, sku=${composition.baseSku}, qty=+${baseQty}`);
     }
 
     await conn.commit();
@@ -353,19 +316,26 @@ async function syncPendingInventoryReceipts() {
     sheet_status_updated: 0,
     sheet_status_update_failed: 0,
     sheet_status_update_skipped: 0,
+    sku_compositions_upserted: 0,
+    sku_compositions_skipped: 0,
+    sku_compositions_errors: 0,
   };
 
-  const [compositionMap, pendingData] = await Promise.all([
-    loadSkuCompositionMap(),
+  const [compositionRefresh, pendingData] = await Promise.all([
+    refreshSkuCompositionsFromSheet(),
     loadPendingReceipts(),
   ]);
 
+  const compositionMap = compositionRefresh.compositionMap;
+  result.sku_compositions_upserted = compositionRefresh.upserted;
+  result.sku_compositions_skipped = compositionRefresh.skipped;
+  result.sku_compositions_errors = compositionRefresh.errors;
   result.skipped += pendingData.skipped;
 
   for (const invalid of pendingData.invalidRows) {
     result.errors++;
-    console.error(`[InventoryReceiptSync] 입고관리 row 오류: row=${invalid.receipt?.sheet_row || '-'}, reason=${invalid.reason}`);
-    const statusResult = await updateReceiptStatus(invalid.receipt?.sheet_row, '오류', invalid.reason);
+    console.error(`[InventoryReceiptSync] receipt row invalid: row=${invalid.receipt?.sheet_row || '-'}, reason=${invalid.reason}`);
+    const statusResult = await updateReceiptStatus(invalid.receipt?.sheet_row, STATUS_ERROR, invalid.reason);
     if (statusResult.updated) result.sheet_status_updated++;
     else result.sheet_status_update_skipped++;
   }
@@ -378,27 +348,26 @@ async function syncPendingInventoryReceipts() {
       result.stock_added += receiptResult.stockAdded;
       result.skipped += receiptResult.duplicateBatches;
 
-      const statusResult = await updateReceiptStatus(receipt.sheet_row, '동기화완료');
+      const statusResult = await updateReceiptStatus(receipt.sheet_row, STATUS_SYNCED);
       if (statusResult.updated) result.sheet_status_updated++;
       else result.sheet_status_update_skipped++;
     } catch (err) {
       result.errors++;
-      console.error(`[InventoryReceiptSync] 입고 반영 오류: receipt_id=${receipt.receipt_id || '-'}, source_sku=${receipt.source_sku || '-'}: ${err.message}`);
-      const statusResult = await updateReceiptStatus(receipt.sheet_row, '오류', err.message);
+      console.error(`[InventoryReceiptSync] receipt sync error: receipt_id=${receipt.receipt_id || '-'}, source_sku=${receipt.source_sku || '-'}: ${err.message}`);
+      const statusResult = await updateReceiptStatus(receipt.sheet_row, STATUS_ERROR, err.message);
       if (statusResult.updated) result.sheet_status_updated++;
       else result.sheet_status_update_skipped++;
     }
   }
 
   console.log(
-    `[InventoryReceiptSync] 완료: processed=${result.processed}, inserted_batches=${result.inserted_batches}, stock_added=${result.stock_added}, skipped=${result.skipped}, errors=${result.errors}, sheet_status_updated=${result.sheet_status_updated}, sheet_status_update_skipped=${result.sheet_status_update_skipped}`
+    `[InventoryReceiptSync] done: processed=${result.processed}, inserted_batches=${result.inserted_batches}, stock_added=${result.stock_added}, skipped=${result.skipped}, errors=${result.errors}, sku_compositions_upserted=${result.sku_compositions_upserted}, sheet_status_updated=${result.sheet_status_updated}, sheet_status_update_skipped=${result.sheet_status_update_skipped}`
   );
 
   return result;
 }
 
 module.exports = {
-  loadSkuCompositionMap,
   loadPendingReceipts,
   syncPendingInventoryReceipts,
 };

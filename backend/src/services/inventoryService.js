@@ -292,11 +292,13 @@ async function restoreCancelledOrder(order) {
 
 async function processInventoryForOrder(order) {
   try {
-    if (order.order_status === 'CANCELLED') {
-      await restoreCancelledOrder(order);
-    } else if (SALE_STOCK_STATUSES.has(order.order_status)) {
-      await applySaleMovementForOrder(order);
+    const { isInventoryFifoEnabled, allocateSaleInventoryForOrder } = require('./inventoryFifoService');
+    if (!isInventoryFifoEnabled()) return;
+    if (order.order_status === 'CANCELLED') return;
+    if (SALE_STOCK_STATUSES.has(order.order_status)) {
+      await allocateSaleInventoryForOrder(order);
     }
+    return;
   } catch (err) {
     console.error(`[Inventory] 주문 재고 처리 오류: 주문=${orderKey(order)}: ${err.message}`);
   }

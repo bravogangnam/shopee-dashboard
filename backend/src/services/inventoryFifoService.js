@@ -1,4 +1,11 @@
-const { normalizeSku } = require('./inventoryService');
+const {
+  SALE_STOCK_STATUSES,
+  getProductSkuForOrderItem,
+  insertInventoryMovement,
+  isDuplicateKeyError,
+  normalizeSku,
+} = require('./inventoryService');
+const { getSkuComponents } = require('./skuCompositionService');
 
 function roundMoney(value) {
   return Math.round(Number(value || 0) * 100) / 100;
@@ -147,6 +154,200 @@ async function allocateInventoryFifo(conn, {
   };
 }
 
+function isInventoryFifoEnabled() {
+  return String(process.env.INVENTORY_FIFO_ENABLED || '').trim().toLowerCase() === 'true';
+}
+
+function toPositiveQuantity(value) {
+  const qty = Number(value);
+  return Number.isFinite(qty) && qty > 0 ? Math.trunc(qty) : 0;
+}
+
+async function getOrderItemsForInventory(conn, order) {
+  const [items] = await conn.query(
+    `SELECT order_sn, shop_id, item_id, item_sku, model_id, model_sku,
+            model_quantity_purchased
+     FROM order_items
+     WHERE order_sn = ? AND shop_id = ?
+     ORDER BY id ASC`,
+    [order.order_sn, order.shop_id]
+  );
+  return items;
+}
+
+async function saleMovementExists(conn, { orderSn, shopId, sku, itemId, modelId }) {
+  const [rows] = await conn.query(
+    `SELECT id, qty_delta
+     FROM inventory_movements
+     WHERE movement_type = 'SALE'
+       AND order_sn = ?
+       AND shop_id = ?
+       AND sku = ?
+       AND item_id <=> ?
+       AND model_id <=> ?
+     LIMIT 1`,
+    [orderSn, shopId, sku, itemId ?? null, modelId ?? null]
+  );
+  return rows[0] || null;
+}
+
+async function insertSaleMovement(conn, {
+  orderSn,
+  shopId,
+  itemId,
+  modelId,
+  sourceSku,
+  baseSku,
+  requiredQty,
+}) {
+  await insertInventoryMovement(conn, {
+    sku: baseSku,
+    order_sn: orderSn,
+    shop_id: shopId,
+    item_id: itemId ?? null,
+    model_id: modelId ?? null,
+    movement_type: 'SALE',
+    qty_delta: -requiredQty,
+    note: sourceSku === baseSku
+      ? `FIFO sale ${orderSn}`
+      : `FIFO sale ${orderSn}; source_sku=${sourceSku}`,
+  });
+
+  const [rows] = await conn.query(
+    `SELECT id
+     FROM inventory_movements
+     WHERE movement_type = 'SALE'
+       AND order_sn = ?
+       AND shop_id = ?
+       AND sku = ?
+       AND item_id <=> ?
+       AND model_id <=> ?
+     LIMIT 1`,
+    [orderSn, shopId, baseSku, itemId ?? null, modelId ?? null]
+  );
+
+  return rows[0]?.id || null;
+}
+
+async function decrementProductStock(conn, sku, allocatedQty) {
+  if (!allocatedQty) return;
+  await conn.query(
+    `UPDATE products
+     SET stock_quantity = stock_quantity - ?
+     WHERE sku = ?`,
+    [allocatedQty, sku]
+  );
+}
+
+async function allocateSaleInventoryForOrderItem(conn, order, item) {
+  const sourceSku = getProductSkuForOrderItem(item);
+  if (!sourceSku) {
+    console.warn(`[InventoryFIFO] skip item without SKU: order=${order.order_sn}, shop=${order.shop_id}, item=${item.item_id || '-'}`);
+    return { skipped: true, reason: 'missing_sku' };
+  }
+
+  const itemQty = toPositiveQuantity(item.model_quantity_purchased);
+  if (!itemQty) {
+    console.warn(`[InventoryFIFO] skip item without quantity: order=${order.order_sn}, shop=${order.shop_id}, sourceSku=${sourceSku}`);
+    return { skipped: true, reason: 'missing_quantity' };
+  }
+
+  const components = await getSkuComponents(conn, sourceSku);
+  const results = [];
+
+  for (const component of components) {
+    const factor = Number(component.factor || 0);
+    const baseSku = normalizeSku(component.baseSku);
+    const requiredQty = itemQty * factor;
+
+    if (!baseSku || !factor || factor <= 0 || !Number.isInteger(requiredQty)) {
+      console.warn(`[InventoryFIFO] invalid component skipped: order=${order.order_sn}, shop=${order.shop_id}, sourceSku=${sourceSku}, baseSku=${baseSku || '-'}, factor=${factor}`);
+      results.push({ skipped: true, reason: 'invalid_component', sourceSku, baseSku, requiredQty });
+      continue;
+    }
+
+    const movementKey = {
+      orderSn: order.order_sn,
+      shopId: order.shop_id,
+      sku: baseSku,
+      itemId: item.item_id ?? 0,
+      modelId: item.model_id ?? 0,
+    };
+
+    const existingMovement = await saleMovementExists(conn, movementKey);
+    if (existingMovement) {
+      console.log(`[InventoryFIFO] duplicate SALE movement skipped: order=${order.order_sn}, shop=${order.shop_id}, sourceSku=${sourceSku}, baseSku=${baseSku}`);
+      results.push({ skipped: true, reason: 'duplicate_sale', sourceSku, baseSku, requiredQty });
+      continue;
+    }
+
+    const movementId = await insertSaleMovement(conn, {
+      orderSn: order.order_sn,
+      shopId: order.shop_id,
+      itemId: movementKey.itemId,
+      modelId: movementKey.modelId,
+      sourceSku,
+      baseSku,
+      requiredQty,
+    });
+
+    const allocation = await allocateInventoryFifo(conn, {
+      movementId,
+      orderSn: order.order_sn,
+      shopId: order.shop_id,
+      sourceSku,
+      baseSku,
+      qty: requiredQty,
+    });
+
+    await decrementProductStock(conn, baseSku, allocation.allocatedQty);
+
+    if (allocation.shortageQty > 0) {
+      console.warn(
+        `[InventoryFIFO] shortage: order=${order.order_sn}, shop=${order.shop_id}, sourceSku=${sourceSku}, baseSku=${baseSku}, required=${requiredQty}, allocated=${allocation.allocatedQty}, shortage=${allocation.shortageQty}`
+      );
+    } else {
+      console.log(`[InventoryFIFO] allocated: order=${order.order_sn}, shop=${order.shop_id}, sourceSku=${sourceSku}, baseSku=${baseSku}, qty=${allocation.allocatedQty}`);
+    }
+
+    results.push({ sourceSku, baseSku, requiredQty, ...allocation });
+  }
+
+  return { sourceSku, itemQty, results };
+}
+
+async function allocateSaleInventoryForOrder(order, conn) {
+  if (!order?.order_sn || !order?.shop_id) return;
+  if (!SALE_STOCK_STATUSES.has(order.order_status)) return;
+  if (order.order_status === 'CANCELLED') return;
+
+  const ownsConnection = !conn;
+  const workConn = conn || await require('../config/database').getConnection();
+
+  try {
+    if (ownsConnection) await workConn.beginTransaction();
+
+    const items = await getOrderItemsForInventory(workConn, order);
+    for (const item of items) {
+      await allocateSaleInventoryForOrderItem(workConn, order, item);
+    }
+
+    if (ownsConnection) await workConn.commit();
+  } catch (err) {
+    if (ownsConnection) await workConn.rollback();
+    if (isDuplicateKeyError(err)) {
+      console.log(`[InventoryFIFO] duplicate movement/allocation skipped after race: order=${order.order_sn}, shop=${order.shop_id}`);
+      return;
+    }
+    throw err;
+  } finally {
+    if (ownsConnection) workConn.release();
+  }
+}
+
 module.exports = {
+  isInventoryFifoEnabled,
   allocateInventoryFifo,
+  allocateSaleInventoryForOrder,
+  allocateSaleInventoryForOrderItem,
 };

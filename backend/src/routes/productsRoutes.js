@@ -3,6 +3,8 @@ const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const {
   getLowStockProducts,
+  getInventoryProducts,
+  getInventorySummary,
   updateProductStockSettings,
   manuallyAdjustStock,
   adjustStartBalanceStock,
@@ -22,8 +24,12 @@ function decodeSkuParam(value) {
 }
 
 router.get('/low-stock', async (req, res) => {
-  const products = await getLowStockProducts();
-  return res.json({ success: true, data: products });
+  const scope = req.query.scope === 'all' ? 'all' : 'low-stock';
+  const products = scope === 'all'
+    ? await getInventoryProducts({ scope })
+    : await getLowStockProducts();
+  const summary = await getInventorySummary();
+  return res.json({ success: true, data: products, summary });
 });
 
 router.post('/inventory-receipts/sync', async (req, res) => {

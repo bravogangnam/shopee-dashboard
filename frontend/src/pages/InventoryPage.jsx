@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   adjustProductStock,
   fetchInventoryMovements,
-  fetchLowStockProducts,
+  fetchInventoryProducts,
   syncInventoryReceipts,
   updateProductStock,
 } from '../api/products.js';
@@ -39,9 +39,9 @@ function getProductName(product) {
 function getStockStatus(product) {
   const stock = Number(product.stock_quantity || 0);
   const threshold = Number(product.low_stock_threshold || 0);
-  if (stock <= 0) return { key: 'out', label: '품절' };
-  if (stock <= threshold) return { key: 'low', label: '부족' };
-  return { key: 'normal', label: '정상' };
+  if (stock <= 0) return { key: 'out_of_stock', label: '품절' };
+  if (stock <= threshold) return { key: 'low_stock', label: '재고부족' };
+  return { key: 'in_stock', label: '재고보유' };
 }
 
 function movementLabel(type) {
@@ -58,20 +58,53 @@ function movementTone(movement) {
   return '';
 }
 
-function InventoryStats({ products, refreshedAt }) {
-  const outOfStockCount = products.filter(product => Number(product.stock_quantity || 0) <= 0).length;
-  const thresholdValues = products
-    .map(product => Number(product.low_stock_threshold))
-    .filter(value => Number.isFinite(value));
-  const averageThreshold = thresholdValues.length
-    ? Math.round(thresholdValues.reduce((sum, value) => sum + value, 0) / thresholdValues.length)
-    : 0;
+function formatKrw(value) {
+  return `₩${Math.round(Number(value || 0)).toLocaleString('ko-KR')}`;
+}
+
+function InventoryStats({ products, summary }) {
+  const fallbackSummary = {
+    out_of_stock_count: products.filter(product => Number(product.stock_quantity || 0) <= 0).length,
+    low_stock_count: products.filter(product => (
+      Number(product.stock_quantity || 0) <= Number(product.low_stock_threshold || 0)
+    )).length,
+    in_stock_sku_count: products.filter(product => Number(product.stock_quantity || 0) > 0).length,
+    total_stock_quantity: products.reduce((sum, product) => sum + Number(product.stock_quantity || 0), 0),
+    total_inventory_value: 0,
+  };
+  const stats = summary || fallbackSummary;
 
   const cards = [
-    { label: '재고 부족 상품', value: `${products.length.toLocaleString('ko-KR')}개`, tone: 'inventory-card-low' },
-    { label: '품절 상품', value: `${outOfStockCount.toLocaleString('ko-KR')}개`, tone: 'inventory-card-out' },
-    { label: '평균 경고 기준', value: `${averageThreshold.toLocaleString('ko-KR')}개`, tone: 'inventory-card-threshold' },
-    { label: '마지막 새로고침', value: refreshedAt ? refreshedAt.toLocaleTimeString('ko-KR') : '-', tone: 'inventory-card-refresh' },
+    {
+      label: '품절 상품',
+      value: `${Number(stats.out_of_stock_count || 0).toLocaleString('ko-KR')}개`,
+      sub: '재고 0개',
+      tone: 'inventory-card-out',
+    },
+    {
+      label: '재고 부족 상품',
+      value: `${Number(stats.low_stock_count || 0).toLocaleString('ko-KR')}개`,
+      sub: '부족 기준 이하',
+      tone: 'inventory-card-low',
+    },
+    {
+      label: '보유 재고 SKU',
+      value: `${Number(stats.in_stock_sku_count || 0).toLocaleString('ko-KR')}개`,
+      sub: '재고 보유 중',
+      tone: 'inventory-card-in-stock',
+    },
+    {
+      label: '총 보유 수량',
+      value: `${Number(stats.total_stock_quantity || 0).toLocaleString('ko-KR')}개`,
+      sub: '입고관리 기준',
+      tone: 'inventory-card-quantity',
+    },
+    {
+      label: '총 재고액',
+      value: formatKrw(stats.total_inventory_value),
+      sub: 'VAT 제외 / FIFO 잔량 기준',
+      tone: 'inventory-card-value',
+    },
   ];
 
   return (
@@ -80,6 +113,7 @@ function InventoryStats({ products, refreshedAt }) {
         <div className={`inventory-stat-card ${card.tone}`} key={card.label}>
           <span>{card.label}</span>
           <strong>{card.value}</strong>
+          <small>{card.sub}</small>
         </div>
       ))}
     </div>
@@ -356,6 +390,7 @@ function MovementsModal({ product, movements, loading, onClose }) {
 
 export default function InventoryPage() {
   const [products, setProducts] = useState([]);
+  const [inventorySummary, setInventorySummary] = useState(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [loading, setLoading] = useState(false);
@@ -374,8 +409,13 @@ export default function InventoryPage() {
   const filteredProducts = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     return products.filter(product => {
-      const status = getStockStatus(product);
-      const matchesStatus = statusFilter === 'ALL' || status.key === statusFilter;
+      const stockQty = Number(product.stock_quantity || 0);
+      const threshold = Number(product.low_stock_threshold || 0);
+      const matchesStatus =
+        statusFilter === 'ALL' ||
+        (statusFilter === 'in_stock' && stockQty > 0) ||
+        (statusFilter === 'low_stock' && stockQty <= threshold) ||
+        (statusFilter === 'out_of_stock' && stockQty <= 0);
       const haystack = `${product.sku || ''} ${getProductName(product)} ${product.product_name_en || ''}`.toLowerCase();
       const matchesKeyword = !keyword || haystack.includes(keyword);
       return matchesStatus && matchesKeyword;
@@ -386,12 +426,14 @@ export default function InventoryPage() {
     setLoading(true);
     setError('');
     try {
-      const result = await fetchLowStockProducts();
-      setProducts(result);
+      const result = await fetchInventoryProducts();
+      setProducts(result.data);
+      setInventorySummary(result.summary);
       setRefreshedAt(new Date());
     } catch (err) {
       setError(err.message || '재고 목록을 불러오지 못했습니다.');
       setProducts([]);
+      setInventorySummary(null);
     } finally {
       setLoading(false);
     }
@@ -492,7 +534,7 @@ export default function InventoryPage() {
           <button
             type="button"
             className={`action-btn ${statusFilter !== 'ALL' ? 'primary' : ''}`}
-            onClick={() => setStatusFilter(current => (current === 'ALL' ? 'low' : 'ALL'))}
+            onClick={() => setStatusFilter(current => (current === 'ALL' ? 'low_stock' : 'ALL'))}
           >
             재고 부족만 보기
           </button>
@@ -506,8 +548,8 @@ export default function InventoryPage() {
         <div>
           <strong>입고관리 동기화</strong>
           <p>
-            구글시트 입고관리탭에서 상태가 대기인 행을 DB 재고로 반영합니다.
-            동기화 성공 후 시트 상태는 수동으로 동기화완료 처리해야 합니다.
+            구글시트 입고관리탭의 ‘대기’ 행을 DB 재고와 FIFO batch에 반영합니다.
+            성공한 행은 시트에서 ‘동기화완료’로 변경하세요.
           </p>
         </div>
         <button type="button" className="action-btn primary" onClick={handleReceiptSync} disabled={syncLoading}>
@@ -517,7 +559,10 @@ export default function InventoryPage() {
 
       <ReceiptSyncResultCard result={syncResult} />
 
-      <InventoryStats products={products} refreshedAt={refreshedAt} />
+      <InventoryStats products={products} summary={inventorySummary} />
+      <div className="inventory-refresh-note">
+        마지막 갱신: {refreshedAt ? refreshedAt.toLocaleTimeString('ko-KR') : '-'}
+      </div>
 
       <div className="inventory-filters">
         <label className="filter-field order-search-field">
@@ -532,8 +577,9 @@ export default function InventoryPage() {
           상태
           <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
             <option value="ALL">전체</option>
-            <option value="out">품절</option>
-            <option value="low">부족</option>
+            <option value="in_stock">재고보유</option>
+            <option value="low_stock">재고부족</option>
+            <option value="out_of_stock">품절</option>
           </select>
         </label>
       </div>

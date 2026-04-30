@@ -1015,6 +1015,12 @@ label {
   line-height: 1.2;
 }
 
+.inventory-stat-card small {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.72;
+}
+
 .inventory-card-low {
   background: #fff7e6;
   color: #d48806;
@@ -1028,6 +1034,21 @@ label {
 .inventory-card-threshold {
   background: #e6f7ff;
   color: #1890ff;
+}
+
+.inventory-card-in-stock {
+  background: #e6f7ff;
+  color: #1677ff;
+}
+
+.inventory-card-quantity {
+  background: #f6ffed;
+  color: #389e0d;
+}
+
+.inventory-card-value {
+  background: #f9f0ff;
+  color: #722ed1;
 }
 
 .inventory-card-refresh {
@@ -1044,6 +1065,14 @@ label {
   background: #fff;
   padding: 16px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.inventory-refresh-note {
+  margin-top: -8px;
+  color: #7b8797;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
 }
 
 .receipt-sync-panel,
@@ -1180,19 +1209,22 @@ label {
 }
 
 .stock-status-out,
+.stock-status-out_of_stock,
 .movement-sale {
   border-color: #ffa39e;
   background: #fff1f0;
   color: #cf1322;
 }
 
-.stock-status-low {
+.stock-status-low,
+.stock-status-low_stock {
   border-color: #ffe58f;
   background: #fff7e6;
   color: #d48806;
 }
 
 .stock-status-normal,
+.stock-status-in_stock,
 .movement-cancel_restore,
 .movement-manual_adjust {
   border-color: #b7eb8f;

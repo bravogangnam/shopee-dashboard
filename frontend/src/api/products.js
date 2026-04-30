@@ -9,6 +9,14 @@ export async function fetchLowStockProducts() {
   return result.data || [];
 }
 
+export async function fetchInventoryProducts() {
+  const result = await apiRequest(`/api/products/low-stock${buildQuery({ scope: 'all' })}`);
+  return {
+    data: result.data || [],
+    summary: result.summary || null,
+  };
+}
+
 export function updateProductStock(sku, payload) {
   return apiRequest(`/api/products/${skuPath(sku)}/stock`, {
     method: 'PATCH',

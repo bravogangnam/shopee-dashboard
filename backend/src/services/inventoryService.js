@@ -554,15 +554,46 @@ async function adjustStartBalanceStock({ sku, target_stock_quantity, note }) {
   }
 }
 
-async function getLowStockProducts() {
+async function getInventoryProducts({ scope = 'low-stock' } = {}) {
+  const whereClause = scope === 'all'
+    ? ''
+    : 'WHERE stock_quantity <= COALESCE(low_stock_threshold, 0)';
+
   const [rows] = await db.query(
     `SELECT sku, brand, product_name_kr, product_name_en, option_name,
             stock_quantity, low_stock_threshold, stock_tracking_started_at
      FROM products
-     WHERE stock_quantity <= low_stock_threshold
+     ${whereClause}
      ORDER BY stock_quantity ASC, sku ASC`
   );
   return rows;
+}
+
+async function getInventorySummary() {
+  const [productRows] = await db.query(
+    `SELECT
+       COALESCE(SUM(CASE WHEN stock_quantity <= 0 THEN 1 ELSE 0 END), 0) AS out_of_stock_count,
+       COALESCE(SUM(CASE WHEN stock_quantity <= COALESCE(low_stock_threshold, 0) THEN 1 ELSE 0 END), 0) AS low_stock_count,
+       COALESCE(SUM(CASE WHEN stock_quantity > 0 THEN 1 ELSE 0 END), 0) AS in_stock_sku_count,
+       COALESCE(SUM(stock_quantity), 0) AS total_stock_quantity
+     FROM products`
+  );
+  const [valueRows] = await db.query(
+    `SELECT COALESCE(SUM(remaining_qty * unit_cost), 0) AS total_inventory_value
+     FROM inventory_batches`
+  );
+
+  return {
+    out_of_stock_count: Number(productRows[0]?.out_of_stock_count || 0),
+    low_stock_count: Number(productRows[0]?.low_stock_count || 0),
+    in_stock_sku_count: Number(productRows[0]?.in_stock_sku_count || 0),
+    total_stock_quantity: Number(productRows[0]?.total_stock_quantity || 0),
+    total_inventory_value: Number(valueRows[0]?.total_inventory_value || 0),
+  };
+}
+
+async function getLowStockProducts() {
+  return getInventoryProducts();
 }
 
 async function updateProductStockSettings(sku, data) {
@@ -627,6 +658,8 @@ module.exports = {
   processInventoryForOrders,
   manuallyAdjustStock,
   adjustStartBalanceStock,
+  getInventoryProducts,
+  getInventorySummary,
   getLowStockProducts,
   updateProductStockSettings,
   getInventoryMovements,

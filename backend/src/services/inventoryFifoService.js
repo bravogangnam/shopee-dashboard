@@ -155,7 +155,7 @@ async function allocateInventoryFifo(conn, {
 }
 
 function isInventoryFifoEnabled() {
-  return String(process.env.INVENTORY_FIFO_ENABLED || '').trim().toLowerCase() === 'true';
+  return String(process.env.INVENTORY_FIFO_ENABLED || '').trim() === 'true';
 }
 
 function toPositiveQuantity(value) {
@@ -231,12 +231,15 @@ async function insertSaleMovement(conn, {
 
 async function decrementProductStock(conn, sku, allocatedQty) {
   if (!allocatedQty) return;
-  await conn.query(
+  const [result] = await conn.query(
     `UPDATE products
-     SET stock_quantity = stock_quantity - ?
+     SET stock_quantity = GREATEST(stock_quantity - ?, 0)
      WHERE sku = ?`,
     [allocatedQty, sku]
   );
+  if (result.affectedRows === 0) {
+    console.warn(`[InventoryFIFO] product not found for stock decrement: sku=${sku}, allocatedQty=${allocatedQty}`);
+  }
 }
 
 async function allocateSaleInventoryForOrderItem(conn, order, item) {
@@ -317,6 +320,7 @@ async function allocateSaleInventoryForOrderItem(conn, order, item) {
 }
 
 async function allocateSaleInventoryForOrder(order, conn) {
+  if (!isInventoryFifoEnabled()) return;
   if (!order?.order_sn || !order?.shop_id) return;
   if (!SALE_STOCK_STATUSES.has(order.order_status)) return;
   if (order.order_status === 'CANCELLED') return;

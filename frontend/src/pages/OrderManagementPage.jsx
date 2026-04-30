@@ -131,6 +131,18 @@ export default function OrderManagementPage() {
     loadMonthlyStats();
   }, [reloadKey]);
 
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      if (document.hidden) return;
+      if (loading || syncLoading || invoiceLoading) return;
+      if (selectedOrders.length > 0) return;
+
+      setReloadKey(value => value + 1);
+    }, 60000);
+
+    return () => window.clearInterval(intervalId);
+  }, [loading, syncLoading, invoiceLoading, selectedOrders.length]);
+
   function handleSubmit(event) {
     event.preventDefault();
     setMessage('');

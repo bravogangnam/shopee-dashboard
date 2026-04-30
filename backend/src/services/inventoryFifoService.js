@@ -163,6 +163,53 @@ function toPositiveQuantity(value) {
   return Number.isFinite(qty) && qty > 0 ? Math.trunc(qty) : 0;
 }
 
+function parseOrderDate(order) {
+  if (order?.order_created_at) return new Date(order.order_created_at);
+  if (order?.pay_time) {
+    const payTime = Number(order.pay_time);
+    if (Number.isFinite(payTime) && payTime > 0) return new Date(payTime * 1000);
+  }
+  if (order?.create_time) {
+    const createTime = Number(order.create_time);
+    if (Number.isFinite(createTime) && createTime > 0) return new Date(createTime * 1000);
+  }
+  if (order?.created_at) return new Date(order.created_at);
+  return null;
+}
+
+async function getProductTrackingInfo(conn, sku) {
+  const [rows] = await conn.query(
+    `SELECT sku, stock_tracking_started_at
+     FROM products
+     WHERE sku = ?
+     LIMIT 1`,
+    [sku]
+  );
+  return rows[0] || null;
+}
+
+async function shouldSkipByTrackingStart(conn, order, baseSku) {
+  const product = await getProductTrackingInfo(conn, baseSku);
+  if (!product) {
+    console.warn(`[InventoryFIFO] product not found, skip sale allocation: order=${order.order_sn}, shop=${order.shop_id}, baseSku=${baseSku}`);
+    return true;
+  }
+
+  if (!product.stock_tracking_started_at) {
+    console.log(`[InventoryFIFO] tracking start not set, skip sale allocation: order=${order.order_sn}, shop=${order.shop_id}, baseSku=${baseSku}`);
+    return true;
+  }
+
+  const orderDate = parseOrderDate(order);
+  const trackingStartedAt = new Date(product.stock_tracking_started_at);
+  if (orderDate && orderDate < trackingStartedAt) {
+    console.log(`[InventoryFIFO] order before tracking start, skip sale allocation: order=${order.order_sn}, shop=${order.shop_id}, baseSku=${baseSku}, orderDate=${orderDate.toISOString()}, trackingStartedAt=${trackingStartedAt.toISOString()}`);
+    return true;
+  }
+
+  return false;
+}
+
 async function getOrderItemsForInventory(conn, order) {
   const [items] = await conn.query(
     `SELECT order_sn, shop_id, item_id, item_sku, model_id, model_sku,
@@ -266,6 +313,11 @@ async function allocateSaleInventoryForOrderItem(conn, order, item) {
     if (!baseSku || !factor || factor <= 0 || !Number.isInteger(requiredQty)) {
       console.warn(`[InventoryFIFO] invalid component skipped: order=${order.order_sn}, shop=${order.shop_id}, sourceSku=${sourceSku}, baseSku=${baseSku || '-'}, factor=${factor}`);
       results.push({ skipped: true, reason: 'invalid_component', sourceSku, baseSku, requiredQty });
+      continue;
+    }
+
+    if (await shouldSkipByTrackingStart(conn, order, baseSku)) {
+      results.push({ skipped: true, reason: 'tracking_not_started', sourceSku, baseSku, requiredQty });
       continue;
     }
 

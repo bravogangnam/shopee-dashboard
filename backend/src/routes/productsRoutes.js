@@ -5,6 +5,7 @@ const {
   getLowStockProducts,
   updateProductStockSettings,
   manuallyAdjustStock,
+  adjustStartBalanceStock,
   getInventoryMovements,
 } = require('../services/inventoryService');
 const { syncPendingInventoryReceipts } = require('../services/inventoryReceiptSync');
@@ -57,6 +58,18 @@ router.post('/:sku/stock/adjust', async (req, res) => {
 
   await manuallyAdjustStock({ sku, qty_delta, note });
   return res.json({ success: true, message: 'Stock adjusted' });
+});
+
+router.post('/:sku/stock/start-balance-adjust', async (req, res) => {
+  const sku = decodeSkuParam(req.params.sku);
+  const { target_stock_quantity, note } = req.body;
+
+  const result = await adjustStartBalanceStock({ sku, target_stock_quantity, note });
+  return res.json({
+    success: true,
+    message: 'Start balance adjusted',
+    result,
+  });
 });
 
 router.get('/:sku/inventory-movements', async (req, res) => {

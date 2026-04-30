@@ -106,7 +106,7 @@ async function cancelRestoreMovementExists(conn, saleMovement) {
 }
 
 async function insertMovement(conn, movement) {
-  await conn.query(
+  const [result] = await conn.query(
     `INSERT INTO inventory_movements
        (sku, order_sn, shop_id, item_id, model_id, movement_type, qty_delta, note)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -121,6 +121,7 @@ async function insertMovement(conn, movement) {
       movement.note ?? null,
     ]
   );
+  return result.insertId;
 }
 
 async function applySaleMovementForOrder(order) {
@@ -369,6 +370,190 @@ async function manuallyAdjustStock({ sku, qty_delta, note }) {
   }
 }
 
+function toNonNegativeInteger(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0) {
+    throw new Error(`${fieldName} must be a non-negative integer`);
+  }
+  return number;
+}
+
+function roundMoney(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function truncateNote(value) {
+  if (value === null || value === undefined) return null;
+  return String(value).slice(0, 255);
+}
+
+async function getProductStockForUpdate(conn, sku) {
+  const [rows] = await conn.query(
+    `SELECT sku, stock_quantity
+     FROM products
+     WHERE sku = ?
+     LIMIT 1
+     FOR UPDATE`,
+    [sku]
+  );
+  return rows[0] || null;
+}
+
+async function buildStartBalanceAllocationPlan(conn, sku, adjustQty) {
+  const [batches] = await conn.query(
+    `SELECT id, sku, remaining_qty, unit_cost, received_at
+     FROM inventory_batches
+     WHERE sku = ?
+       AND remaining_qty > 0
+     ORDER BY received_at IS NULL, received_at ASC, id ASC
+     FOR UPDATE`,
+    [sku]
+  );
+
+  let remainingToAdjust = adjustQty;
+  let allocatedQty = 0;
+  const allocations = [];
+
+  for (const batch of batches) {
+    if (remainingToAdjust <= 0) break;
+
+    const availableQty = Number(batch.remaining_qty || 0);
+    if (availableQty <= 0) continue;
+
+    const qty = Math.min(remainingToAdjust, availableQty);
+    const unitCost = Number(batch.unit_cost || 0);
+    const totalCost = roundMoney(qty * unitCost);
+
+    allocations.push({
+      batchId: batch.id,
+      sku,
+      qty,
+      unitCost,
+      totalCost,
+    });
+    remainingToAdjust -= qty;
+    allocatedQty += qty;
+  }
+
+  const shortageQty = Math.max(0, adjustQty - allocatedQty);
+  if (shortageQty > 0) {
+    throw new Error(
+      `Insufficient FIFO batch balance for start adjustment: sku=${sku}, required=${adjustQty}, allocated=${allocatedQty}, shortage=${shortageQty}`
+    );
+  }
+
+  return allocations;
+}
+
+async function adjustStartBalanceStock({ sku, target_stock_quantity, note }) {
+  const normalizedSku = normalizeSku(sku);
+  if (!normalizedSku) throw new Error('sku is required');
+
+  const targetStockQuantity = toNonNegativeInteger(target_stock_quantity, 'target_stock_quantity');
+
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const product = await getProductStockForUpdate(conn, normalizedSku);
+    if (!product) {
+      throw new Error(`Product not found: ${normalizedSku}`);
+    }
+
+    const previousStockQuantity = toNonNegativeInteger(product.stock_quantity, 'current stock_quantity');
+    if (targetStockQuantity > previousStockQuantity) {
+      throw new Error('target_stock_quantity cannot exceed current stock; use inventory receipt sync for stock increases');
+    }
+
+    if (targetStockQuantity === previousStockQuantity) {
+      await conn.commit();
+      return {
+        sku: normalizedSku,
+        previous_stock_quantity: previousStockQuantity,
+        target_stock_quantity: targetStockQuantity,
+        adjusted_qty: 0,
+        movement_id: null,
+        allocations: [],
+        noop: true,
+      };
+    }
+
+    const adjustQty = previousStockQuantity - targetStockQuantity;
+    const allocations = await buildStartBalanceAllocationPlan(conn, normalizedSku, adjustQty);
+    const movementNote = truncateNote(
+      `START_BALANCE_ADJUST; previous=${previousStockQuantity}; target=${targetStockQuantity}; adjusted=-${adjustQty}; note=${note || ''}`
+    );
+
+    const movementId = await insertMovement(conn, {
+      sku: normalizedSku,
+      movement_type: 'MANUAL_ADJUST',
+      qty_delta: -adjustQty,
+      note: movementNote,
+    });
+
+    for (const allocation of allocations) {
+      const [batchUpdate] = await conn.query(
+        `UPDATE inventory_batches
+         SET remaining_qty = remaining_qty - ?
+         WHERE id = ?
+           AND remaining_qty >= ?`,
+        [allocation.qty, allocation.batchId, allocation.qty]
+      );
+      if (batchUpdate.affectedRows !== 1) {
+        throw new Error(`FIFO batch update failed: batch_id=${allocation.batchId}`);
+      }
+
+      await conn.query(
+        `INSERT INTO inventory_allocations
+           (movement_id, batch_id, order_sn, shop_id, source_sku, sku,
+            qty, unit_cost, total_cost)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          movementId,
+          allocation.batchId,
+          null,
+          null,
+          normalizedSku,
+          normalizedSku,
+          allocation.qty,
+          allocation.unitCost,
+          allocation.totalCost,
+        ]
+      );
+    }
+
+    const [productUpdate] = await conn.query(
+      `UPDATE products
+       SET stock_quantity = ?
+       WHERE sku = ?`,
+      [targetStockQuantity, normalizedSku]
+    );
+    if (productUpdate.affectedRows !== 1) {
+      throw new Error(`Product stock update failed: ${normalizedSku}`);
+    }
+
+    await conn.commit();
+    console.log(
+      `[Inventory] START_BALANCE_ADJUST created: sku=${normalizedSku}, previous=${previousStockQuantity}, target=${targetStockQuantity}, adjusted=-${adjustQty}`
+    );
+
+    return {
+      sku: normalizedSku,
+      previous_stock_quantity: previousStockQuantity,
+      target_stock_quantity: targetStockQuantity,
+      adjusted_qty: adjustQty,
+      movement_id: movementId,
+      allocations,
+    };
+  } catch (err) {
+    await conn.rollback();
+    console.error(`[Inventory] START_BALANCE_ADJUST error: sku=${normalizedSku}: ${err.message}`);
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
 async function getLowStockProducts() {
   const [rows] = await db.query(
     `SELECT sku, brand, product_name_kr, product_name_en, option_name,
@@ -441,6 +626,7 @@ module.exports = {
   processInventoryForOrder,
   processInventoryForOrders,
   manuallyAdjustStock,
+  adjustStartBalanceStock,
   getLowStockProducts,
   updateProductStockSettings,
   getInventoryMovements,

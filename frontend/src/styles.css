@@ -1171,16 +1171,19 @@ label {
 
 .order-management-table th:nth-child(5),
 .order-management-table td:nth-child(5) {
+  text-align: left;
   width: 33%;
 }
 
 .order-management-table th:nth-child(6),
 .order-management-table td:nth-child(6) {
+  text-align: left;
   width: 19%;
 }
 
 .order-management-table th:nth-child(7),
 .order-management-table td:nth-child(7) {
+  text-align: center;
   width: 50px;
 }
 
@@ -1213,10 +1216,24 @@ label {
   gap: 4px;
 }
 
+.order-management-table td:nth-child(5) .order-item-lines,
+.order-management-table td:nth-child(6) .order-item-lines {
+  justify-content: center;
+}
+
+.order-management-table td:nth-child(7) .order-item-lines {
+  align-items: center;
+  justify-content: center;
+}
+
 .order-management-table .order-item-line {
   min-height: 18px;
   line-height: 1.35;
   word-break: break-word;
+}
+
+.order-management-table td:nth-child(7) .order-item-line {
+  text-align: center;
 }
 
 .order-management-table .order-product-line {
@@ -1245,7 +1262,7 @@ label {
 .order-management-table td:nth-child(5),
 .order-management-table td:nth-child(6),
 .order-management-table td:nth-child(7) {
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 /* Fee detail modal */

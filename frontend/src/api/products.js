@@ -31,6 +31,13 @@ export function adjustProductStock(sku, payload) {
   });
 }
 
+export function adjustProductStartBalance(sku, payload) {
+  return apiRequest(`/api/products/${skuPath(sku)}/stock/start-balance-adjust`, {
+    method: 'POST',
+    body: payload,
+  });
+}
+
 export function syncInventoryReceipts() {
   return apiRequest('/api/products/inventory-receipts/sync', {
     method: 'POST',

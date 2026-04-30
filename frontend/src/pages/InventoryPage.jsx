@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  adjustProductStock,
+  adjustProductStartBalance,
   fetchInventoryMovements,
   fetchInventoryProducts,
   syncInventoryReceipts,
@@ -263,15 +263,19 @@ function StockSettingsModal({ product, saving, onClose, onSave }) {
 }
 
 function StockAdjustModal({ product, saving, onClose, onSave }) {
-  const [qtyDelta, setQtyDelta] = useState('');
+  const currentStock = Number(product.stock_quantity || 0);
+  const [targetStockQuantity, setTargetStockQuantity] = useState(String(currentStock));
   const [note, setNote] = useState('');
-  const presets = [1, 5, -1, -5];
+  const parsedTarget = Number.parseInt(targetStockQuantity, 10);
+  const isValidTarget = Number.isInteger(parsedTarget) && parsedTarget >= 0;
+  const isSameTarget = isValidTarget && parsedTarget === currentStock;
+  const isIncreaseTarget = isValidTarget && parsedTarget > currentStock;
+  const canSubmit = isValidTarget && parsedTarget < currentStock && !saving;
 
   function handleSubmit(event) {
     event.preventDefault();
-    const parsedDelta = Number.parseInt(qtyDelta, 10);
-    if (!Number.isFinite(parsedDelta) || parsedDelta === 0) return;
-    onSave({ qty_delta: parsedDelta, note });
+    if (!canSubmit) return;
+    onSave({ target_stock_quantity: parsedTarget, note });
   }
 
   return (
@@ -279,52 +283,57 @@ function StockAdjustModal({ product, saving, onClose, onSave }) {
       <form className="modal-card inventory-modal" onSubmit={handleSubmit}>
         <div className="modal-header">
           <div>
-            <h2>재고 조정</h2>
+            <h2>재고 보정</h2>
             <p>{product.sku}</p>
           </div>
           <button type="button" className="ghost-button" onClick={onClose}>닫기</button>
         </div>
 
         <div className="inventory-help-text">
-          입고는 구글시트 입고관리탭에 입력하세요.
-          재고조정은 파손, 분실, 실사 차이, 오입력 보정 같은 예외 상황에서만 사용합니다.
+          파손/분실/실사 차이로 재고를 줄일 때 사용합니다.
+          재고 증가는 입고관리탭에 입력 후 입고관리 동기화로 처리하세요.
+          이 보정은 products 재고와 FIFO batch 잔량을 함께 줄입니다.
         </div>
 
-        <div className="adjust-presets">
-          {presets.map(value => (
-            <button
-              type="button"
-              className="action-btn"
-              onClick={() => setQtyDelta(String(value))}
-              key={value}
-            >
-              {value > 0 ? `+${value}` : value}
-            </button>
-          ))}
+        <div className="stock-adjust-current">
+          현재 재고: <strong>{currentStock.toLocaleString('ko-KR')}</strong>
         </div>
 
         <label>
-          조정 수량
+          실제 재고 수량
           <input
             type="number"
             step="1"
-            value={qtyDelta}
-            onChange={event => setQtyDelta(event.target.value)}
-            placeholder="예: -1 또는 5"
+            min="0"
+            max={currentStock}
+            value={targetStockQuantity}
+            onChange={event => setTargetStockQuantity(event.target.value)}
+            placeholder="현재 실사 재고 수량"
           />
         </label>
+        {!isValidTarget && (
+          <div className="field-warning">0 이상의 정수를 입력하세요.</div>
+        )}
+        {isSameTarget && (
+          <div className="field-warning">현재 재고와 동일합니다. 보정할 차감 수량이 없습니다.</div>
+        )}
+        {isIncreaseTarget && (
+          <div className="field-warning">
+            현재 재고보다 큰 값은 입력할 수 없습니다. 추가 입고는 입고관리탭에서 처리하세요.
+          </div>
+        )}
         <label>
           메모
           <input
             value={note}
             onChange={event => setNote(event.target.value)}
-            placeholder="manual correction"
+            placeholder="단위 입력 오류 보정"
           />
         </label>
 
         <div className="modal-actions">
           <button type="button" className="ghost-button" onClick={onClose}>취소</button>
-          <button type="submit" disabled={saving || Number.parseInt(qtyDelta, 10) === 0}>
+          <button type="submit" disabled={!canSubmit}>
             저장
           </button>
         </div>
@@ -460,23 +469,27 @@ export default function InventoryPage() {
   }
 
   async function handleAdjustStock(payload) {
-    if (!payload.qty_delta) {
-      setError('조정 수량은 0일 수 없습니다.');
+    if (!Number.isInteger(payload.target_stock_quantity) || payload.target_stock_quantity < 0) {
+      setError('실제 재고 수량은 0 이상의 정수여야 합니다.');
       return;
     }
     setSaving(true);
     setError('');
     setMessage('');
     try {
-      await adjustProductStock(adjustProduct.sku, payload);
-      setMessage('재고를 조정했습니다.');
+      const response = await adjustProductStartBalance(adjustProduct.sku, payload);
+      const result = response.result || {};
+      const adjustedQtyText = result.adjusted_qty
+        ? ` 차감 수량: ${Number(result.adjusted_qty).toLocaleString('ko-KR')}개`
+        : '';
+      setMessage(`재고 보정이 완료되었습니다.${adjustedQtyText}`);
       setAdjustProduct(null);
       await loadProducts();
       if (historyProduct?.sku === adjustProduct.sku) {
         await openHistory(adjustProduct);
       }
     } catch (err) {
-      setError(err.message || '재고 조정에 실패했습니다.');
+      setError(err.message || '재고 보정에 실패했습니다.');
     } finally {
       setSaving(false);
     }
@@ -523,7 +536,8 @@ export default function InventoryPage() {
           <p>
             재고 수량은 구글시트 입고관리탭을 기준으로 반영할 예정입니다.
             현재 보유 재고와 추가 입고는 입고관리탭에 입력하세요.
-            이 화면의 재고조정은 파손, 분실, 실사 차이 같은 예외 보정용입니다.
+            재고 증가는 입고관리탭에서 처리합니다.
+            재고 보정은 파손/분실/실사 차이처럼 재고를 줄일 때만 사용합니다.
             Shopee 실제 재고와는 연동하지 않습니다.
           </p>
         </div>
@@ -626,7 +640,7 @@ export default function InventoryPage() {
                           부족기준 설정
                         </button>
                         <button type="button" className="invoice-btn" onClick={() => setAdjustProduct(product)}>
-                          재고조정
+                          재고 보정
                         </button>
                         <button type="button" className="invoice-btn" onClick={() => openHistory(product)}>
                           이력보기

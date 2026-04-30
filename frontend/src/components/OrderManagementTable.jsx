@@ -17,11 +17,36 @@ function getOrderItems(order) {
   return Array.isArray(items) ? items : [];
 }
 
-function getQuantity(items) {
-  return items.reduce((sum, item) => {
-    const count = Number(item.model_quantity_purchased || 0);
-    return sum + (Number.isFinite(count) ? count : 0);
-  }, 0);
+function getItemProductName(item, order) {
+  return (
+    item.product_name ||
+    item.item_name ||
+    item.product_name_en ||
+    item.name ||
+    order.product_name ||
+    '-'
+  );
+}
+
+function getItemOptionName(item) {
+  return (
+    item.model_name ||
+    item.option_name ||
+    item.variation_name ||
+    item.model_sku ||
+    '-'
+  );
+}
+
+function getItemQuantity(item, order) {
+  const value =
+    item.model_quantity_purchased ??
+    item.quantity ??
+    item.qty ??
+    order.quantity ??
+    1;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : value || '-';
 }
 
 function getItemImageUrl(item) {
@@ -31,6 +56,65 @@ function getItemImageUrl(item) {
     item.image_url ||
     item.image ||
     ''
+  );
+}
+
+function renderProductLines(items, order) {
+  const sourceItems = items.length ? items : [{}];
+  return (
+    <div className="order-item-lines">
+      {sourceItems.map((item, index) => (
+        <div
+          className="order-item-line"
+          key={`${item.item_id || 'item'}-${item.model_id || index}-${index}`}
+          title={getItemProductName(item, order)}
+        >
+          {getItemProductName(item, order)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function renderOptionLines(items, onImagePreview) {
+  const sourceItems = items.length ? items : [{}];
+  return (
+    <div className="order-item-lines">
+      {sourceItems.map((item, index) => {
+        const imgUrl = getItemImageUrl(item);
+        const optionName = getItemOptionName(item);
+        return (
+          <div
+            className={`order-item-line ${imgUrl ? 'clickable' : ''}`}
+            key={`${item.item_id || 'option'}-${item.model_id || index}-${index}`}
+            title={optionName}
+            onClick={() => {
+              if (imgUrl && onImagePreview) {
+                onImagePreview({ ...item, image_url: imgUrl });
+              }
+            }}
+          >
+            {optionName}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function renderQuantityLines(items, order) {
+  const sourceItems = items.length ? items : [{}];
+  return (
+    <div className="order-item-lines">
+      {sourceItems.map((item, index) => (
+        <div
+          className="order-item-line"
+          key={`${item.item_id || 'qty'}-${item.model_id || index}-${index}`}
+        >
+          {getItemQuantity(item, order)}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -93,11 +177,8 @@ export default function OrderManagementTable({
         <tbody>
           {orders.map(order => {
             const items = getOrderItems(order);
-            const firstItem = items[0] || {};
             const orderSn = getOrderSn(order);
-            const quantity = getQuantity(items) || '-';
             const salesAmount = order.merchandise_subtotal ?? order.total_amount;
-            const imgUrl = getItemImageUrl(firstItem);
 
             return (
               <tr
@@ -121,24 +202,9 @@ export default function OrderManagementTable({
                   <span className={regionClass(order.region)}>{order.region || order.shop_alias || order.shop_id}</span>
                 </td>
                 <td><span className={statusClass(order.order_status)}>{order.order_status}</span></td>
-                <td>
-                  <div className="truncate" title={firstItem.item_name || ''}>
-                    {firstItem.item_name || '-'}
-                  </div>
-                </td>
-                <td>
-                  <div
-                    className={`truncate-short ${imgUrl ? 'clickable' : ''}`}
-                    title={firstItem.model_name || ''}
-                    onClick={() => {
-                      if (imgUrl) onImagePreview({ ...firstItem, image_url: imgUrl });
-                    }}
-                    style={{ cursor: imgUrl ? 'pointer' : 'default' }}
-                  >
-                    {firstItem.model_name || '-'}
-                  </div>
-                </td>
-                <td className="num">{quantity}</td>
+                <td>{renderProductLines(items, order)}</td>
+                <td>{renderOptionLines(items, onImagePreview)}</td>
+                <td className="num">{renderQuantityLines(items, order)}</td>
                 <td className="num">{formatCurrency(salesAmount, order.currency)}</td>
                 <td className="num">
                   <button

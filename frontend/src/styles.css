@@ -1208,6 +1208,33 @@ label {
   line-height: 1.35;
 }
 
+.order-management-table .order-item-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.order-management-table .order-item-line {
+  min-height: 18px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.order-management-table .order-item-line.clickable {
+  cursor: pointer;
+  color: #2563eb;
+}
+
+.order-management-table .order-item-line.clickable:hover {
+  text-decoration: underline;
+}
+
+.order-management-table td:nth-child(5),
+.order-management-table td:nth-child(6),
+.order-management-table td:nth-child(7) {
+  vertical-align: top;
+}
+
 /* Fee detail modal */
 .modal-overlay {
   position: fixed;

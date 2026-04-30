@@ -1171,12 +1171,12 @@ label {
 
 .order-management-table th:nth-child(5),
 .order-management-table td:nth-child(5) {
-  width: 28%;
+  width: 33%;
 }
 
 .order-management-table th:nth-child(6),
 .order-management-table td:nth-child(6) {
-  width: 24%;
+  width: 19%;
 }
 
 .order-management-table th:nth-child(7),
@@ -1199,7 +1199,6 @@ label {
   max-width: none;
 }
 
-.order-management-table td:nth-child(5) .truncate,
 .order-management-table td:nth-child(6) .truncate-short {
   white-space: normal;
   overflow: visible;
@@ -1217,6 +1216,20 @@ label {
 .order-management-table .order-item-line {
   min-height: 18px;
   line-height: 1.35;
+  word-break: break-word;
+}
+
+.order-management-table .order-product-line {
+  display: block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+}
+
+.order-management-table .order-option-line {
+  white-space: normal;
   word-break: break-word;
 }
 

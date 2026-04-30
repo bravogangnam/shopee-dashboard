@@ -65,7 +65,7 @@ function renderProductLines(items, order) {
     <div className="order-item-lines">
       {sourceItems.map((item, index) => (
         <div
-          className="order-item-line"
+          className="order-item-line order-product-line"
           key={`${item.item_id || 'item'}-${item.model_id || index}-${index}`}
           title={getItemProductName(item, order)}
         >
@@ -85,7 +85,7 @@ function renderOptionLines(items, onImagePreview) {
         const optionName = getItemOptionName(item);
         return (
           <div
-            className={`order-item-line ${imgUrl ? 'clickable' : ''}`}
+            className={`order-item-line order-option-line ${imgUrl ? 'clickable' : ''}`}
             key={`${item.item_id || 'option'}-${item.model_id || index}-${index}`}
             title={optionName}
             onClick={() => {

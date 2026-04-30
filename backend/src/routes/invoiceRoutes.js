@@ -28,7 +28,7 @@ function normalizeInvoiceFailureMessage(message) {
     /\bKYC\b/i.test(text) ||
     /package is ready to be shipped/i.test(text)
   ) {
-    return '대만 KYC 승인 대기 주문입니다. 구매자 인증 완료 후 송장 출력 가능합니다.';
+    return '대만 KYC 승인 대기 또는 송장 준비 전 주문입니다. 구매자 인증/배송 준비 완료 후 다시 시도하세요.';
   }
   if (/PDF|file|파일|not found|not ready/i.test(text)) {
     return '송장 PDF가 아직 준비되지 않았습니다. 잠시 후 주문 동기화 후 다시 시도하세요.';

@@ -212,7 +212,7 @@ export default function OrderManagementTable({
                 <td>
                   <span className={statusClass(order.order_status)}>{order.order_status}</span>
                   {isTwKycPending(order) && (
-                    <span className="status-sub-badge status-tw-kyc">TW KYC 대기</span>
+                    <span className="status-sub-badge status-tw-kyc">TW KYC/송장대기</span>
                   )}
                 </td>
                 <td>{renderProductLines(items, order)}</td>

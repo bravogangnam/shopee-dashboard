@@ -7,6 +7,7 @@ const {
   manuallyAdjustStock,
   getInventoryMovements,
 } = require('../services/inventoryService');
+const { syncPendingInventoryReceipts } = require('../services/inventoryReceiptSync');
 
 router.use(requireAuth);
 
@@ -21,6 +22,11 @@ function decodeSkuParam(value) {
 router.get('/low-stock', async (req, res) => {
   const products = await getLowStockProducts();
   return res.json({ success: true, data: products });
+});
+
+router.post('/inventory-receipts/sync', async (req, res) => {
+  const result = await syncPendingInventoryReceipts();
+  return res.json({ success: true, result });
 });
 
 router.patch('/:sku/stock', async (req, res) => {

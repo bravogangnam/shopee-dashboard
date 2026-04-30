@@ -430,6 +430,9 @@ async function getInventoryMovements(sku, limit = 100) {
 
 module.exports = {
   SALE_STOCK_STATUSES,
+  normalizeSku,
+  isDuplicateKeyError,
+  insertInventoryMovement: insertMovement,
   getProductSkuForOrderItem,
   applySaleMovementForOrder,
   restoreCancelledOrder,

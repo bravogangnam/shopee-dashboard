@@ -179,11 +179,37 @@ CREATE TABLE IF NOT EXISTS inventory_movements (
     shop_id         BIGINT NULL,
     item_id         BIGINT NULL,
     model_id        BIGINT NULL,
-    movement_type   ENUM('SALE','CANCEL_RESTORE','MANUAL_ADJUST') NOT NULL,
+    movement_type   ENUM('SALE','CANCEL_RESTORE','MANUAL_ADJUST','STOCK_IN') NOT NULL,
     qty_delta       INT NOT NULL,
     note            VARCHAR(255) NULL,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_inventory_sale (movement_type, order_sn, shop_id, sku, item_id, model_id),
     INDEX idx_inventory_sku (sku),
     INDEX idx_inventory_order (order_sn, shop_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 운영 DB에 기존 inventory_movements 테이블이 있으면 아래 ALTER를 수동 실행:
+-- ALTER TABLE inventory_movements
+--   MODIFY movement_type ENUM('SALE', 'CANCEL_RESTORE', 'MANUAL_ADJUST', 'STOCK_IN') NOT NULL;
+
+CREATE TABLE IF NOT EXISTS inventory_batches (
+    id                  INT AUTO_INCREMENT PRIMARY KEY,
+    receipt_id          VARCHAR(100) NOT NULL,
+    receipt_no          INT NULL,
+    source_sku          VARCHAR(100) NOT NULL,
+    sku                 VARCHAR(100) NOT NULL,
+    received_at         DATETIME NULL,
+    receipt_type        VARCHAR(50) NULL,
+    initial_qty         INT NOT NULL,
+    remaining_qty       INT NOT NULL,
+    unit_cost           DECIMAL(12,2) NOT NULL DEFAULT 0,
+    source_unit_cost    DECIMAL(12,2) NULL,
+    conversion_factor   DECIMAL(12,4) NOT NULL DEFAULT 1,
+    note                VARCHAR(255) NULL,
+    sheet_row           INT NULL,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_inventory_batch_receipt_sku (receipt_id, sku),
+    INDEX idx_inventory_batches_sku (sku),
+    INDEX idx_inventory_batches_receipt (receipt_id),
+    INDEX idx_inventory_batches_remaining (sku, remaining_qty, received_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

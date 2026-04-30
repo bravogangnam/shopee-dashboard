@@ -23,6 +23,12 @@ export function adjustProductStock(sku, payload) {
   });
 }
 
+export function syncInventoryReceipts() {
+  return apiRequest('/api/products/inventory-receipts/sync', {
+    method: 'POST',
+  });
+}
+
 export async function fetchInventoryMovements(sku, limit = 50) {
   const result = await apiRequest(
     `/api/products/${skuPath(sku)}/inventory-movements${buildQuery({ limit })}`

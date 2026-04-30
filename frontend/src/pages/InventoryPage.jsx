@@ -3,6 +3,7 @@ import {
   adjustProductStock,
   fetchInventoryMovements,
   fetchLowStockProducts,
+  syncInventoryReceipts,
   updateProductStock,
 } from '../api/products.js';
 
@@ -81,6 +82,74 @@ function InventoryStats({ products, refreshedAt }) {
           <strong>{card.value}</strong>
         </div>
       ))}
+    </div>
+  );
+}
+
+function SyncDetailList({ title, items }) {
+  if (!items?.length) return null;
+  const visibleItems = items.slice(0, 20);
+  const hiddenCount = Math.max(0, items.length - visibleItems.length);
+
+  return (
+    <div className="receipt-sync-detail">
+      <strong>{title}</strong>
+      <ul>
+        {visibleItems.map((item, index) => (
+          <li key={`${title}-${index}`}>
+            {[
+              item.sheet_row ? `row ${item.sheet_row}` : null,
+              item.receipt_id ? `receipt ${item.receipt_id}` : null,
+              item.source_sku ? `source ${item.source_sku}` : null,
+              item.sku ? `sku ${item.sku}` : null,
+              item.reason || '-',
+            ].filter(Boolean).join(' / ')}
+          </li>
+        ))}
+      </ul>
+      {hiddenCount > 0 && <p>외 {hiddenCount.toLocaleString('ko-KR')}건</p>}
+    </div>
+  );
+}
+
+function ReceiptSyncResultCard({ result }) {
+  if (!result) return null;
+
+  const metrics = [
+    ['처리 성공', result.processed, '건'],
+    ['입고 batch 생성', result.inserted_batches, '건'],
+    ['재고 증가 합계', result.stock_added, '개'],
+    ['스킵', result.skipped, '건'],
+    ['오류', result.errors, '건'],
+    ['상품구성표 갱신', result.sku_compositions_upserted, '건'],
+    ['상품구성표 오류', result.sku_compositions_errors, '건'],
+    ['시트 상태 변경', result.sheet_status_updated, '건'],
+    ['시트 상태 변경 실패', result.sheet_status_update_failed, '건'],
+    ['시트 상태 skipped', result.sheet_status_update_skipped, '건'],
+  ];
+
+  return (
+    <div className="receipt-sync-result">
+      <div className="receipt-sync-result-header">
+        <h2>입고관리 동기화 결과</h2>
+        <span>{new Date().toLocaleTimeString('ko-KR')}</span>
+      </div>
+      <div className="receipt-sync-metrics">
+        {metrics.map(([label, value, unit]) => (
+          <div className="receipt-sync-metric" key={label}>
+            <span>{label}</span>
+            <strong>{Number(value || 0).toLocaleString('ko-KR')}{unit}</strong>
+          </div>
+        ))}
+      </div>
+      {Number(result.sheet_status_update_skipped || 0) > 0 && (
+        <div className="receipt-sync-warning">
+          구글시트 상태 자동 변경은 현재 비활성화되어 있습니다. 성공한 행은 시트에서 수동으로 동기화완료 처리하세요.
+        </div>
+      )}
+      <SyncDetailList title="오류 상세" items={result.error_details || []} />
+      <SyncDetailList title="유효하지 않은 행" items={result.invalid_rows || []} />
+      <SyncDetailList title="중복 스킵" items={result.duplicate_details || []} />
     </div>
   );
 }
@@ -293,6 +362,8 @@ export default function InventoryPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
   const [refreshedAt, setRefreshedAt] = useState(null);
   const [settingsProduct, setSettingsProduct] = useState(null);
   const [adjustProduct, setAdjustProduct] = useState(null);
@@ -384,6 +455,24 @@ export default function InventoryPage() {
     }
   }
 
+  async function handleReceiptSync() {
+    setSyncLoading(true);
+    setError('');
+    setMessage('');
+    setSyncResult(null);
+    try {
+      const response = await syncInventoryReceipts();
+      const result = response.result || response;
+      setSyncResult(result);
+      setMessage('입고관리 동기화가 완료되었습니다. 성공한 행은 구글시트에서 수동으로 동기화완료 처리하세요.');
+      await loadProducts();
+    } catch (err) {
+      setError(`입고관리 동기화에 실패했습니다: ${err.message || '알 수 없는 오류'}`);
+    } finally {
+      setSyncLoading(false);
+    }
+  }
+
   return (
     <section className="page inventory-page">
       <div className="page-header">
@@ -412,6 +501,21 @@ export default function InventoryPage() {
 
       {message && <div className="notice">{message}</div>}
       {error && <div className="alert">{error}</div>}
+
+      <div className="receipt-sync-panel">
+        <div>
+          <strong>입고관리 동기화</strong>
+          <p>
+            구글시트 입고관리탭에서 상태가 대기인 행을 DB 재고로 반영합니다.
+            동기화 성공 후 시트 상태는 수동으로 동기화완료 처리해야 합니다.
+          </p>
+        </div>
+        <button type="button" className="action-btn primary" onClick={handleReceiptSync} disabled={syncLoading}>
+          {syncLoading ? '동기화 중...' : '입고관리 동기화'}
+        </button>
+      </div>
+
+      <ReceiptSyncResultCard result={syncResult} />
 
       <InventoryStats products={products} refreshedAt={refreshedAt} />
 

@@ -250,6 +250,7 @@ async function processReceipt(receipt, compositionMap) {
     let insertedBatches = 0;
     let stockAdded = 0;
     let duplicateBatches = 0;
+    const duplicateDetails = [];
     const baseUnitCost = receipt.source_unit_cost / totalFactor;
 
     for (const composition of compositions) {
@@ -264,6 +265,12 @@ async function processReceipt(receipt, compositionMap) {
       } catch (err) {
         if (isDuplicateKeyError(err)) {
           duplicateBatches++;
+          duplicateDetails.push({
+            receipt_id: receipt.receipt_id,
+            source_sku: receipt.source_sku,
+            sku: composition.baseSku,
+            reason: 'duplicate inventory batch',
+          });
           console.log(`[InventoryReceiptSync] duplicate inventory_batch skipped: receipt_id=${receipt.receipt_id}, sku=${composition.baseSku}`);
           continue;
         }
@@ -292,13 +299,22 @@ async function processReceipt(receipt, compositionMap) {
     }
 
     await conn.commit();
-    return { insertedBatches, stockAdded, duplicateBatches };
+    return { insertedBatches, stockAdded, duplicateBatches, duplicateDetails };
   } catch (err) {
     await conn.rollback();
     throw err;
   } finally {
     conn.release();
   }
+}
+
+function receiptDetail(receipt, reason) {
+  return {
+    sheet_row: receipt?.sheet_row ?? null,
+    receipt_id: receipt?.receipt_id ?? null,
+    source_sku: receipt?.source_sku ?? null,
+    reason,
+  };
 }
 
 async function updateReceiptStatus(sheetRow, status, reason) {
@@ -319,6 +335,9 @@ async function syncPendingInventoryReceipts() {
     sku_compositions_upserted: 0,
     sku_compositions_skipped: 0,
     sku_compositions_errors: 0,
+    error_details: [],
+    invalid_rows: [],
+    duplicate_details: [],
   };
 
   const [compositionRefresh, pendingData] = await Promise.all([
@@ -334,6 +353,7 @@ async function syncPendingInventoryReceipts() {
 
   for (const invalid of pendingData.invalidRows) {
     result.errors++;
+    result.invalid_rows.push(receiptDetail(invalid.receipt, invalid.reason));
     console.error(`[InventoryReceiptSync] receipt row invalid: row=${invalid.receipt?.sheet_row || '-'}, reason=${invalid.reason}`);
     const statusResult = await updateReceiptStatus(invalid.receipt?.sheet_row, STATUS_ERROR, invalid.reason);
     if (statusResult.updated) result.sheet_status_updated++;
@@ -347,12 +367,14 @@ async function syncPendingInventoryReceipts() {
       result.inserted_batches += receiptResult.insertedBatches;
       result.stock_added += receiptResult.stockAdded;
       result.skipped += receiptResult.duplicateBatches;
+      result.duplicate_details.push(...receiptResult.duplicateDetails);
 
       const statusResult = await updateReceiptStatus(receipt.sheet_row, STATUS_SYNCED);
       if (statusResult.updated) result.sheet_status_updated++;
       else result.sheet_status_update_skipped++;
     } catch (err) {
       result.errors++;
+      result.error_details.push(receiptDetail(receipt, err.message));
       console.error(`[InventoryReceiptSync] receipt sync error: receipt_id=${receipt.receipt_id || '-'}, source_sku=${receipt.source_sku || '-'}: ${err.message}`);
       const statusResult = await updateReceiptStatus(receipt.sheet_row, STATUS_ERROR, err.message);
       if (statusResult.updated) result.sheet_status_updated++;

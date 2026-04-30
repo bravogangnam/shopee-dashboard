@@ -579,7 +579,7 @@ async function getInventorySummary() {
      FROM products`
   );
   const [valueRows] = await db.query(
-    `SELECT COALESCE(SUM(remaining_qty * unit_cost), 0) AS total_inventory_value
+    `SELECT COALESCE(SUM(remaining_qty * unit_cost * 1.1), 0) AS total_inventory_value
      FROM inventory_batches`
   );
 

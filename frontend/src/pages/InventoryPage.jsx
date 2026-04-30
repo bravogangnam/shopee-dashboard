@@ -102,7 +102,7 @@ function InventoryStats({ products, summary }) {
     {
       label: '총 재고액',
       value: formatKrw(stats.total_inventory_value),
-      sub: 'VAT 제외 / FIFO 잔량 기준',
+      sub: 'VAT 포함 / FIFO 잔량 기준',
       tone: 'inventory-card-value',
     },
   ];

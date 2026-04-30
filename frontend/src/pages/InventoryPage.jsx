@@ -110,16 +110,16 @@ function StockSettingsModal({ product, saving, onClose, onSave }) {
       <form className="modal-card inventory-modal" onSubmit={handleSubmit}>
         <div className="modal-header">
           <div>
-            <h2>재고 최초설정</h2>
+            <h2>재고 기준 설정</h2>
             <p>{product.sku}</p>
           </div>
           <button type="button" className="ghost-button" onClick={onClose}>닫기</button>
         </div>
 
         <div className="inventory-help-text">
-          최초설정은 재고관리를 처음 시작할 때 현재 재고, 부족 기준, 추적 시작일을 한 번 설정하는 용도입니다.
-          이후 입고, 파손, 실사 차이는 재고조정으로 기록하세요.
-          추적 시작일 이후 주문부터 자동 차감됩니다. 처음 설정 후에는 특별한 이유가 없으면 변경하지 마세요.
+          현재 재고 수량은 입고관리탭/FIFO 반영 후 관리하는 것을 권장합니다.
+          이 설정은 부족 기준과 추적 시작일 같은 재고 관리 기준을 조정하는 용도입니다.
+          현재 재고 직접 수정은 파손, 분실, 실사 차이 같은 예외 상황에서만 사용하세요.
         </div>
 
         <label>
@@ -152,7 +152,7 @@ function StockSettingsModal({ product, saving, onClose, onSave }) {
 
         <div className="modal-actions">
           <button type="button" className="ghost-button" onClick={onClose}>취소</button>
-          <button type="submit" disabled={saving}>최초설정 저장</button>
+          <button type="submit" disabled={saving}>기준 저장</button>
         </div>
       </form>
     </div>
@@ -180,6 +180,11 @@ function StockAdjustModal({ product, saving, onClose, onSave }) {
             <p>{product.sku}</p>
           </div>
           <button type="button" className="ghost-button" onClick={onClose}>닫기</button>
+        </div>
+
+        <div className="inventory-help-text">
+          입고는 구글시트 입고관리탭에 입력하세요.
+          재고조정은 파손, 분실, 실사 차이, 오입력 보정 같은 예외 상황에서만 사용합니다.
         </div>
 
         <div className="adjust-presets">
@@ -331,11 +336,11 @@ export default function InventoryPage() {
     setMessage('');
     try {
       await updateProductStock(settingsProduct.sku, payload);
-      setMessage('최초설정을 저장했습니다.');
+      setMessage('재고 기준을 저장했습니다.');
       setSettingsProduct(null);
       await loadProducts();
     } catch (err) {
-      setError(err.message || '최초설정 저장에 실패했습니다.');
+      setError(err.message || '재고 기준 저장에 실패했습니다.');
     } finally {
       setSaving(false);
     }
@@ -384,7 +389,12 @@ export default function InventoryPage() {
       <div className="page-header">
         <div>
           <h1>재고 관리</h1>
-          <p>내부 DB 기준 재고를 관리합니다. Shopee 실제 재고와는 연동하지 않습니다.</p>
+          <p>
+            재고 수량은 구글시트 입고관리탭을 기준으로 반영할 예정입니다.
+            현재 보유 재고와 추가 입고는 입고관리탭에 입력하세요.
+            이 화면의 재고조정은 파손, 분실, 실사 차이 같은 예외 보정용입니다.
+            Shopee 실제 재고와는 연동하지 않습니다.
+          </p>
         </div>
         <div className="action-buttons">
           <button type="button" className="action-btn" onClick={loadProducts} disabled={loading}>
@@ -463,7 +473,7 @@ export default function InventoryPage() {
                     <td>
                       <div className="inventory-actions">
                         <button type="button" className="invoice-btn" onClick={() => setSettingsProduct(product)}>
-                          최초설정
+                          부족기준 설정
                         </button>
                         <button type="button" className="invoice-btn" onClick={() => setAdjustProduct(product)}>
                           재고조정

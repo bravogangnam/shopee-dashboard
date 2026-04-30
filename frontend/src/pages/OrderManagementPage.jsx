@@ -133,7 +133,6 @@ export default function OrderManagementPage() {
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
-      if (document.hidden) return;
       if (loading || syncLoading || invoiceLoading) return;
       if (selectedOrders.length > 0) return;
 

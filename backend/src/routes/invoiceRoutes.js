@@ -1,24 +1,48 @@
-/**
- * invoiceRoutes.js
- *
- * POST /api/invoice/start    - 송장 Job 시작 (order_sn_list 배열 전달)
- * GET  /api/invoice/download/:jobId - 생성된 합성 PDF 다운로드
- * GET  /api/invoice/:orderSn/download - 캐시된 단일 PDF 다운로드
- */
-
-const express  = require('express');
-const router   = express.Router();
-const path     = require('path');
-const fs       = require('fs');
-const { requireAuth }  = require('../middleware/auth');
+const express = require('express');
+const router = express.Router();
+const fs = require('fs');
+const { requireAuth } = require('../middleware/auth');
 const { createJob, getJob, getRunningJob } = require('../services/jobManager');
-const { runInvoice }   = require('../jobs/invoiceWorker');
-const labelStorage     = require('../services/labelStorageService');
-const db               = require('../config/database');
+const { runInvoice } = require('../jobs/invoiceWorker');
+const labelStorage = require('../services/labelStorageService');
 
 router.use(requireAuth);
 
-// ─── POST /api/invoice/start ──────────────────────────────────────
+function parseJobResultData(job) {
+  if (!job?.result_data) return null;
+  if (typeof job.result_data === 'string') {
+    try {
+      return JSON.parse(job.result_data);
+    } catch (err) {
+      return null;
+    }
+  }
+  return job.result_data;
+}
+
+function normalizeInvoiceFailureMessage(message) {
+  const text = String(message || '');
+  if (
+    /Shipping parameters can only be obtained when package is ready to be shipped/i.test(text) ||
+    /buyer TW KYC/i.test(text) ||
+    /\bKYC\b/i.test(text) ||
+    /package is ready to be shipped/i.test(text)
+  ) {
+    return '대만 KYC 승인 대기 주문입니다. 구매자 인증 완료 후 송장 출력 가능합니다.';
+  }
+  if (/PDF|file|파일|not found|not ready/i.test(text)) {
+    return '송장 PDF가 아직 준비되지 않았습니다. 잠시 후 주문 동기화 후 다시 시도하세요.';
+  }
+  return text || '송장 출력에 실패했습니다.';
+}
+
+function getInvoiceFailureDetail(job) {
+  const resultData = parseJobResultData(job);
+  const results = Array.isArray(resultData?.results) ? resultData.results : [];
+  const failed = results.find(item => item.status === 'error') || results.find(item => item.status === 'skipped');
+  return failed?.reason || job?.error_message || job?.progress_message || '';
+}
+
 router.post('/start', async (req, res) => {
   const { order_sn_list } = req.body;
 
@@ -30,7 +54,6 @@ router.post('/start', async (req, res) => {
     return res.status(400).json({ success: false, error: '한 번에 최대 50건까지 가능합니다.' });
   }
 
-  // 중복 실행 방지
   const running = await getRunningJob('invoice');
   if (running) {
     return res.status(409).json({
@@ -43,7 +66,6 @@ router.post('/start', async (req, res) => {
 
   const jobId = await createJob('invoice');
 
-  // 백그라운드 실행
   runInvoice(jobId, order_sn_list).catch(err => {
     console.error('[InvoiceRoute] Unhandled error:', err.message);
   });
@@ -55,8 +77,6 @@ router.post('/start', async (req, res) => {
   });
 });
 
-// ─── GET /api/invoice/download/:jobId ────────────────────────────
-// Job 완료 후 합성 PDF 다운로드
 router.get('/download/:jobId', async (req, res) => {
   const { jobId } = req.params;
   const job = await getJob(jobId);
@@ -66,29 +86,34 @@ router.get('/download/:jobId', async (req, res) => {
   }
 
   if (job.status !== 'completed') {
-    return res.status(400).json({ success: false, error: `Job status: ${job.status}` });
+    const detail = getInvoiceFailureDetail(job);
+    return res.status(400).json({
+      success: false,
+      error: normalizeInvoiceFailureMessage(detail || `Job status: ${job.status}`),
+      detail,
+    });
   }
 
-  const resultData = typeof job.result_data === 'string'
-    ? JSON.parse(job.result_data)
-    : job.result_data;
-
+  const resultData = parseJobResultData(job);
   const mergedPath = resultData?.merged_pdf_path;
   if (!mergedPath || !fs.existsSync(mergedPath)) {
-    return res.status(404).json({ success: false, error: 'PDF 파일을 찾을 수 없습니다.' });
+    const detail = getInvoiceFailureDetail(job);
+    return res.status(404).json({
+      success: false,
+      error: normalizeInvoiceFailureMessage(detail || 'PDF file not found'),
+      detail,
+    });
   }
 
-  const fileName = `invoices_${new Date().toISOString().slice(0,10)}.pdf`;
+  const fileName = `invoices_${new Date().toISOString().slice(0, 10)}.pdf`;
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
   fs.createReadStream(mergedPath).pipe(res);
 });
 
-// ─── GET /api/invoice/:orderSn/download ──────────────────────────
-// 단일 주문 캐시된 PDF 다운로드 (shop_id 필요 → query param)
 router.get('/:orderSn/download', async (req, res) => {
   const { orderSn } = req.params;
-  const shopId      = req.query.shop_id;
+  const shopId = req.query.shop_id;
 
   if (!shopId) {
     return res.status(400).json({ success: false, error: 'shop_id required' });

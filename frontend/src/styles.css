@@ -617,6 +617,25 @@ label {
   white-space: nowrap;
 }
 
+.status-sub-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid #ffd591;
+  background: #fff7e6;
+  color: #ad6800;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-tw-kyc {
+  display: flex;
+}
+
 .status-completed {
   border-color: #b7eb8f;
   background: #f6ffed;

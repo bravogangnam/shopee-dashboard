@@ -47,6 +47,16 @@ function isAlreadyShippedError(err) {
   );
 }
 
+function isPackageNotReadyError(err) {
+  const msg = err?.message || '';
+  return (
+    /Shipping parameters can only be obtained when package is ready to be shipped/i.test(msg) ||
+    /buyer TW KYC/i.test(msg) ||
+    /\bKYC\b/i.test(msg) ||
+    /package is ready to be shipped/i.test(msg)
+  );
+}
+
 // ─── 인증 헬퍼 ───────────────────────────────────────────────────
 // shop별 onAuthError 핸들러 — 403 발생 시 해당 shop 토큰만 갱신
 function makeAuthErrorHandler(shopId) {
@@ -526,6 +536,14 @@ async function processInvoiceForOrder({ shopId, orderSn, orderStatus, accessToke
       if (isAlreadyShippedError(paramErr)) {
         console.warn(`[Logistics] get_shipping_parameter skipped (already shipped): ${orderSn} — ${paramErr.message}`);
         shipSkipped = true;
+      } else if (isPackageNotReadyError(paramErr)) {
+        console.warn(`[Logistics] get_shipping_parameter skipped (package not ready / KYC pending): ${orderSn} — ${paramErr.message}`);
+        return {
+          pdfBuffer: null,
+          trackingNumber,
+          skipped: true,
+          reason: `Shipping parameters can only be obtained when package is ready to be shipped: ${paramErr.message}`,
+        };
       } else {
         throw paramErr;
       }

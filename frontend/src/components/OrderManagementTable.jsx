@@ -8,6 +8,14 @@ function statusClass(status) {
   return `status-pill status-${String(status || '').toLowerCase()}`;
 }
 
+function isTwKycPending(order) {
+  return (
+    order?.region === 'TW' &&
+    order?.order_status === 'READY_TO_SHIP' &&
+    !order?.tracking_number
+  );
+}
+
 function getOrderSn(order) {
   return order.order_sn || order.order_id || order.orderId || '';
 }
@@ -201,7 +209,12 @@ export default function OrderManagementTable({
                 <td>
                   <span className={regionClass(order.region)}>{order.region || order.shop_alias || order.shop_id}</span>
                 </td>
-                <td><span className={statusClass(order.order_status)}>{order.order_status}</span></td>
+                <td>
+                  <span className={statusClass(order.order_status)}>{order.order_status}</span>
+                  {isTwKycPending(order) && (
+                    <span className="status-sub-badge status-tw-kyc">TW KYC 대기</span>
+                  )}
+                </td>
                 <td>{renderProductLines(items, order)}</td>
                 <td>{renderOptionLines(items, onImagePreview)}</td>
                 <td className="num">{renderQuantityLines(items, order)}</td>

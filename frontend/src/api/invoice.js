@@ -5,10 +5,26 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+function formatInvoiceError(message) {
+  const text = typeof message === 'string' ? message : JSON.stringify(message || '');
+  if (
+    /Shipping parameters can only be obtained when package is ready to be shipped/i.test(text) ||
+    /buyer TW KYC/i.test(text) ||
+    /\bKYC\b/i.test(text) ||
+    /package is ready to be shipped/i.test(text)
+  ) {
+    return '대만 KYC 승인 대기 주문입니다. 구매자 인증 완료 후 송장 출력 가능합니다.';
+  }
+  if (/PDF|file|파일|not found|not ready/i.test(text)) {
+    return '송장 PDF가 아직 준비되지 않았습니다. 잠시 후 주문 동기화 후 다시 시도하세요.';
+  }
+  return text || '송장 출력에 실패했습니다.';
+}
+
 async function parseJsonResponse(response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.error || payload.message || `Request failed: ${response.status}`);
+    throw new Error(formatInvoiceError(payload.error || payload.message || payload.detail || `Request failed: ${response.status}`));
   }
   return payload;
 }
@@ -43,8 +59,14 @@ export async function downloadInvoice(jobId) {
   });
 
   if (!response.ok) {
+    const contentType = response.headers.get('Content-Type') || '';
+    if (contentType.includes('application/json')) {
+      const payload = await response.json().catch(() => ({}));
+      const message = [payload.error, payload.detail].filter(Boolean).join(' ');
+      throw new Error(formatInvoiceError(message || `Download failed: ${response.status}`));
+    }
     const message = await response.text().catch(() => '');
-    throw new Error(message || `Download failed: ${response.status}`);
+    throw new Error(formatInvoiceError(message || `Download failed: ${response.status}`));
   }
 
   return response.blob();
@@ -102,7 +124,7 @@ export async function pollInvoiceJob(jobId) {
 
     if (status === 'completed') return job;
     if (status === 'failed') {
-      throw new Error(job.error || job.message || '송장 생성에 실패했습니다.');
+      throw new Error(formatInvoiceError(job.error_message || job.error || job.message || '송장 생성에 실패했습니다.'));
     }
 
     await new Promise(resolve => setTimeout(resolve, 1000));

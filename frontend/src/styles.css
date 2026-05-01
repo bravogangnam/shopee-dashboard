@@ -1115,9 +1115,14 @@ label {
   color: #d48806;
 }
 
-.inventory-card-out {
+.inventory-card-purchase-needed {
   background: #fff1f0;
   color: #cf1322;
+}
+
+.inventory-card-out {
+  background: #f3f7fb;
+  color: #475569;
 }
 
 .inventory-card-threshold {
@@ -1305,7 +1310,7 @@ label {
   color: #cf1322;
 }
 
-.stock-status-unsecured {
+.stock-status-purchase_needed {
   border-color: #fca5a5;
   background: #fef2f2;
   color: #b91c1c;

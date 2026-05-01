@@ -6,12 +6,23 @@
   - Set to `true` to enable FIFO inventory deduction during order sync.
   - Unset, empty, `false`, `0`, and any value other than `true` keep FIFO deduction disabled.
 
+- `PURCHASE_ALERT_ENABLED=false`
+  - Set to `true` to enable purchase-needed alerts.
+  - Alerts are skipped unless this is exactly `true`.
+- `PURCHASE_ALERT_CHANNEL=telegram`
+  - First supported alert channel.
+- `TELEGRAM_BOT_TOKEN=`
+  - Telegram bot token for purchase-needed alerts.
+- `TELEGRAM_CHAT_ID=`
+  - Telegram chat id for purchase-needed alerts.
+
 ## Inventory adjustments
 
 - `products.stock_quantity`
   - Represents sellable stock.
   - Can be negative when orders arrive before enough stock has been received.
-  - A negative value means unsecured stock that still needs receipt allocation.
+  - A negative value means purchase-needed stock that still needs receipt allocation.
+  - 구매필요: `products.stock_quantity < 0`. Orders exist, but purchase/receipt is still required.
 
 - `inventory_batches.remaining_qty`
   - Represents physical FIFO batch balance.

@@ -39,9 +39,9 @@ function getProductName(product) {
 function getStockStatus(product) {
   const stock = Number(product.stock_quantity || 0);
   const threshold = Number(product.low_stock_threshold || 0);
-  if (stock < 0) return { key: 'unsecured', label: '미확보' };
+  if (stock < 0) return { key: 'purchase_needed', label: '구매필요' };
   if (stock === 0) return { key: 'out_of_stock', label: '품절' };
-  if (stock <= threshold) return { key: 'low_stock', label: '재고부족' };
+  if (stock > 0 && stock <= threshold) return { key: 'low_stock', label: '재고부족' };
   return { key: 'in_stock', label: '재고보유' };
 }
 
@@ -65,25 +65,33 @@ function formatKrw(value) {
 
 function InventoryStats({ products, summary }) {
   const fallbackSummary = {
+    purchase_needed_sku_count: products.filter(product => Number(product.stock_quantity || 0) < 0).length,
     out_of_stock_count: products.filter(product => Number(product.stock_quantity || 0) === 0).length,
-    low_stock_count: products.filter(product => (
-      Number(product.stock_quantity || 0) <= Number(product.low_stock_threshold || 0)
-    )).length,
+    low_stock_count: products.filter(product => {
+      const stockQty = Number(product.stock_quantity || 0);
+      const threshold = Number(product.low_stock_threshold || 0);
+      return stockQty > 0 && stockQty <= threshold;
+    }).length,
     in_stock_sku_count: products.filter(product => Number(product.stock_quantity || 0) > 0).length,
-    total_stock_quantity: products.reduce((sum, product) => sum + Number(product.stock_quantity || 0), 0),
     total_inventory_value: 0,
   };
   const stats = summary || fallbackSummary;
 
   const cards = [
     {
-      label: '품절 상품',
+      label: '구매필요 SKU',
+      value: `${Number(stats.purchase_needed_sku_count || 0).toLocaleString('ko-KR')}개`,
+      sub: '주문 대비 부족',
+      tone: 'inventory-card-purchase-needed',
+    },
+    {
+      label: '품절 SKU',
       value: `${Number(stats.out_of_stock_count || 0).toLocaleString('ko-KR')}개`,
-      sub: '재고 0개',
+      sub: '재고 0',
       tone: 'inventory-card-out',
     },
     {
-      label: '재고 부족 상품',
+      label: '재고부족 SKU',
       value: `${Number(stats.low_stock_count || 0).toLocaleString('ko-KR')}개`,
       sub: '부족 기준 이하',
       tone: 'inventory-card-low',
@@ -93,12 +101,6 @@ function InventoryStats({ products, summary }) {
       value: `${Number(stats.in_stock_sku_count || 0).toLocaleString('ko-KR')}개`,
       sub: '재고 보유 중',
       tone: 'inventory-card-in-stock',
-    },
-    {
-      label: '총 보유 수량',
-      value: `${Number(stats.total_stock_quantity || 0).toLocaleString('ko-KR')}개`,
-      sub: '입고관리 기준',
-      tone: 'inventory-card-quantity',
     },
     {
       label: '총 재고액',
@@ -423,9 +425,9 @@ export default function InventoryPage() {
       const threshold = Number(product.low_stock_threshold || 0);
       const matchesStatus =
         statusFilter === 'ALL' ||
+        (statusFilter === 'purchase_needed' && stockQty < 0) ||
         (statusFilter === 'in_stock' && stockQty > 0) ||
-        (statusFilter === 'unsecured' && stockQty < 0) ||
-        (statusFilter === 'low_stock' && stockQty <= threshold) ||
+        (statusFilter === 'low_stock' && stockQty > 0 && stockQty <= threshold) ||
         (statusFilter === 'out_of_stock' && stockQty === 0);
       const haystack = `${product.sku || ''} ${getProductName(product)} ${product.product_name_en || ''}`.toLowerCase();
       const matchesKeyword = !keyword || haystack.includes(keyword);
@@ -550,9 +552,9 @@ export default function InventoryPage() {
           <button
             type="button"
             className={`action-btn ${statusFilter !== 'ALL' ? 'primary' : ''}`}
-            onClick={() => setStatusFilter(current => (current === 'ALL' ? 'low_stock' : 'ALL'))}
+            onClick={() => setStatusFilter(current => (current === 'ALL' ? 'purchase_needed' : 'ALL'))}
           >
-            재고 부족만 보기
+            구매필요만 보기
           </button>
         </div>
       </div>
@@ -593,10 +595,10 @@ export default function InventoryPage() {
           상태
           <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
             <option value="ALL">전체</option>
-            <option value="in_stock">재고보유</option>
-            <option value="unsecured">미확보</option>
-            <option value="low_stock">재고부족</option>
+            <option value="purchase_needed">구매필요</option>
             <option value="out_of_stock">품절</option>
+            <option value="low_stock">재고부족</option>
+            <option value="in_stock">재고보유</option>
           </select>
         </label>
       </div>

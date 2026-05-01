@@ -5,6 +5,7 @@ const {
   isDuplicateKeyError,
   normalizeSku,
 } = require('./inventoryService');
+const { notifyPurchaseNeeded } = require('./purchaseAlertService');
 const { getSkuComponents } = require('./skuCompositionService');
 
 function roundMoney(value) {
@@ -322,6 +323,19 @@ function toPositiveQuantity(value) {
   return Number.isFinite(qty) && qty > 0 ? Math.trunc(qty) : 0;
 }
 
+async function sendPurchaseNeededAlerts(alerts) {
+  for (const alert of alerts) {
+    try {
+      const result = await notifyPurchaseNeeded(alert);
+      if (!result?.skipped) {
+        console.log(`[InventoryFIFO] purchase needed alert result: sku=${alert.sku}, order=${alert.orderSn}, result=${JSON.stringify(result)}`);
+      }
+    } catch (err) {
+      console.warn(`[InventoryFIFO] purchase needed alert failed: sku=${alert.sku}, order=${alert.orderSn}: ${err.message}`);
+    }
+  }
+}
+
 function parseOrderDate(order) {
   if (order?.order_created_at) return new Date(order.order_created_at);
   if (order?.pay_time) {
@@ -371,8 +385,9 @@ async function shouldSkipByTrackingStart(conn, order, baseSku) {
 
 async function getOrderItemsForInventory(conn, order) {
   const [items] = await conn.query(
-    `SELECT order_sn, shop_id, item_id, item_sku, model_id, model_sku,
-            model_quantity_purchased
+    `SELECT order_sn, shop_id, item_id, item_name, item_sku,
+            model_id, model_name, model_sku, model_quantity_purchased,
+            image_info_image_url, item_image_url
      FROM order_items
      WHERE order_sn = ? AND shop_id = ?
      ORDER BY id ASC`,
@@ -435,17 +450,62 @@ async function insertSaleMovement(conn, {
   return rows[0]?.id || null;
 }
 
+async function getRecentUnitCostVatIncluded(conn, sku) {
+  const [batchRows] = await conn.query(
+    `SELECT unit_cost
+     FROM inventory_batches
+     WHERE sku = ?
+     ORDER BY received_at IS NULL, received_at DESC, id DESC
+     LIMIT 1`,
+    [sku]
+  );
+  if (batchRows.length && Number(batchRows[0].unit_cost || 0) > 0) {
+    return Number(batchRows[0].unit_cost || 0) * 1.1;
+  }
+
+  const [productRows] = await conn.query(
+    `SELECT cost_price_with_vat, cost_price
+     FROM products
+     WHERE sku = ?
+     LIMIT 1`,
+    [sku]
+  );
+  const product = productRows[0] || {};
+  if (Number(product.cost_price_with_vat || 0) > 0) return Number(product.cost_price_with_vat);
+  if (Number(product.cost_price || 0) > 0) return Number(product.cost_price) * 1.1;
+  return null;
+}
+
 async function decrementProductStock(conn, sku, requiredQty) {
-  if (!requiredQty) return;
+  if (!requiredQty) return null;
+  const [productRows] = await conn.query(
+    `SELECT sku, product_name_kr, product_name_en, option_name, stock_quantity
+     FROM products
+     WHERE sku = ?
+     LIMIT 1
+     FOR UPDATE`,
+    [sku]
+  );
+  const product = productRows[0] || null;
+  if (!product) {
+    console.warn(`[InventoryFIFO] product not found for stock decrement: sku=${sku}, requiredQty=${requiredQty}`);
+    return null;
+  }
+
+  const beforeStock = Number(product.stock_quantity || 0);
   const [result] = await conn.query(
     `UPDATE products
      SET stock_quantity = stock_quantity - ?
      WHERE sku = ?`,
     [requiredQty, sku]
   );
-  if (result.affectedRows === 0) {
-    console.warn(`[InventoryFIFO] product not found for stock decrement: sku=${sku}, requiredQty=${requiredQty}`);
-  }
+  if (result.affectedRows === 0) return null;
+
+  return {
+    beforeStock,
+    afterStock: beforeStock - requiredQty,
+    product,
+  };
 }
 
 async function allocateSaleInventoryForOrderItem(conn, order, item) {
@@ -463,6 +523,7 @@ async function allocateSaleInventoryForOrderItem(conn, order, item) {
 
   const components = await getSkuComponents(conn, sourceSku);
   const results = [];
+  const purchaseAlerts = [];
 
   for (const component of components) {
     const factor = Number(component.factor || 0);
@@ -514,7 +575,26 @@ async function allocateSaleInventoryForOrderItem(conn, order, item) {
       qty: requiredQty,
     });
 
-    await decrementProductStock(conn, baseSku, requiredQty);
+    const stockChange = await decrementProductStock(conn, baseSku, requiredQty);
+
+    if (stockChange?.beforeStock >= 0 && stockChange.afterStock < 0) {
+      const purchaseNeededQty = Math.abs(stockChange.afterStock);
+      const productName = stockChange.product?.product_name_kr ||
+        stockChange.product?.product_name_en ||
+        item.item_name ||
+        baseSku;
+      const imageUrl = item.image_info_image_url || item.item_image_url || null;
+      const unitCostVatIncluded = await getRecentUnitCostVatIncluded(conn, baseSku);
+      purchaseAlerts.push({
+        sku: baseSku,
+        productName,
+        shortageQty: purchaseNeededQty,
+        currentStock: stockChange.afterStock,
+        unitCostVatIncluded,
+        orderSn: order.order_sn,
+        imageUrl,
+      });
+    }
 
     if (allocation.shortageQty > 0) {
       console.warn(
@@ -527,7 +607,7 @@ async function allocateSaleInventoryForOrderItem(conn, order, item) {
     results.push({ sourceSku, baseSku, requiredQty, ...allocation });
   }
 
-  return { sourceSku, itemQty, results };
+  return { sourceSku, itemQty, results, purchaseAlerts };
 }
 
 async function allocateSaleInventoryForOrder(order, conn) {
@@ -538,16 +618,21 @@ async function allocateSaleInventoryForOrder(order, conn) {
 
   const ownsConnection = !conn;
   const workConn = conn || await require('../config/database').getConnection();
+  const pendingPurchaseAlerts = [];
 
   try {
     if (ownsConnection) await workConn.beginTransaction();
 
     const items = await getOrderItemsForInventory(workConn, order);
     for (const item of items) {
-      await allocateSaleInventoryForOrderItem(workConn, order, item);
+      const itemResult = await allocateSaleInventoryForOrderItem(workConn, order, item);
+      if (Array.isArray(itemResult?.purchaseAlerts)) {
+        pendingPurchaseAlerts.push(...itemResult.purchaseAlerts);
+      }
     }
 
     if (ownsConnection) await workConn.commit();
+    await sendPurchaseNeededAlerts(pendingPurchaseAlerts);
   } catch (err) {
     if (ownsConnection) await workConn.rollback();
     if (isDuplicateKeyError(err)) {

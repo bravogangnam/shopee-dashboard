@@ -8,6 +8,26 @@
 
 ## Inventory adjustments
 
+- `products.stock_quantity`
+  - Represents sellable stock.
+  - Can be negative when orders arrive before enough stock has been received.
+  - A negative value means unsecured stock that still needs receipt allocation.
+
+- `inventory_batches.remaining_qty`
+  - Represents physical FIFO batch balance.
+  - Must never be negative.
+
+- Receipt sync
+  - Increases `products.stock_quantity`.
+  - Creates FIFO batches from the receipt management sheet.
+  - Automatically allocates newly created batch quantity to older open SALE shortages for the same SKU.
+
+- Shortage reconciliation script
+  - Dry-run: `node backend/scripts/reconcileInventoryShortages.js --dry-run`
+  - Single SKU dry-run: `node backend/scripts/reconcileInventoryShortages.js --dry-run --sku GS_01239`
+  - Apply only after review: `node backend/scripts/reconcileInventoryShortages.js --apply`
+  - Recalculates target stock as `SUM(inventory_batches.remaining_qty) - open_shortage_qty`.
+
 - Dashboard stock adjustment (`POST /api/products/:sku/stock/adjust`)
   - Adjusts `products.stock_quantity` only.
   - Records an `inventory_movements` row with `movement_type = 'MANUAL_ADJUST'`.

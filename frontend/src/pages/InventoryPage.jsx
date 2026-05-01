@@ -39,7 +39,8 @@ function getProductName(product) {
 function getStockStatus(product) {
   const stock = Number(product.stock_quantity || 0);
   const threshold = Number(product.low_stock_threshold || 0);
-  if (stock <= 0) return { key: 'out_of_stock', label: '품절' };
+  if (stock < 0) return { key: 'unsecured', label: '미확보' };
+  if (stock === 0) return { key: 'out_of_stock', label: '품절' };
   if (stock <= threshold) return { key: 'low_stock', label: '재고부족' };
   return { key: 'in_stock', label: '재고보유' };
 }
@@ -64,7 +65,7 @@ function formatKrw(value) {
 
 function InventoryStats({ products, summary }) {
   const fallbackSummary = {
-    out_of_stock_count: products.filter(product => Number(product.stock_quantity || 0) <= 0).length,
+    out_of_stock_count: products.filter(product => Number(product.stock_quantity || 0) === 0).length,
     low_stock_count: products.filter(product => (
       Number(product.stock_quantity || 0) <= Number(product.low_stock_threshold || 0)
     )).length,
@@ -423,8 +424,9 @@ export default function InventoryPage() {
       const matchesStatus =
         statusFilter === 'ALL' ||
         (statusFilter === 'in_stock' && stockQty > 0) ||
+        (statusFilter === 'unsecured' && stockQty < 0) ||
         (statusFilter === 'low_stock' && stockQty <= threshold) ||
-        (statusFilter === 'out_of_stock' && stockQty <= 0);
+        (statusFilter === 'out_of_stock' && stockQty === 0);
       const haystack = `${product.sku || ''} ${getProductName(product)} ${product.product_name_en || ''}`.toLowerCase();
       const matchesKeyword = !keyword || haystack.includes(keyword);
       return matchesStatus && matchesKeyword;
@@ -592,6 +594,7 @@ export default function InventoryPage() {
           <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
             <option value="ALL">전체</option>
             <option value="in_stock">재고보유</option>
+            <option value="unsecured">미확보</option>
             <option value="low_stock">재고부족</option>
             <option value="out_of_stock">품절</option>
           </select>

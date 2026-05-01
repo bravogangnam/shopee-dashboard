@@ -154,6 +154,165 @@ async function allocateInventoryFifo(conn, {
   };
 }
 
+async function getOpenSaleShortages(conn, sku) {
+  const [rows] = await conn.query(
+    `SELECT
+       m.id,
+       m.order_sn,
+       m.shop_id,
+       m.sku,
+       ABS(m.qty_delta) AS required_qty,
+       COALESCE(SUM(a.qty), 0) AS allocated_qty,
+       ABS(m.qty_delta) - COALESCE(SUM(a.qty), 0) AS shortage_qty,
+       m.created_at
+     FROM inventory_movements m
+     LEFT JOIN inventory_allocations a ON a.movement_id = m.id
+     WHERE m.movement_type = 'SALE'
+       AND m.sku = ?
+     GROUP BY m.id, m.order_sn, m.shop_id, m.sku, m.qty_delta, m.created_at
+     HAVING shortage_qty > 0
+     ORDER BY m.created_at ASC, m.id ASC`,
+    [normalizeSku(sku)]
+  );
+  return rows;
+}
+
+async function getMovementShortage(conn, movementId) {
+  const [movementRows] = await conn.query(
+    `SELECT id, order_sn, shop_id, sku, ABS(qty_delta) AS required_qty
+     FROM inventory_movements
+     WHERE id = ?
+       AND movement_type = 'SALE'
+     FOR UPDATE`,
+    [movementId]
+  );
+  const movement = movementRows[0];
+  if (!movement) return null;
+
+  const [allocationRows] = await conn.query(
+    `SELECT COALESCE(SUM(qty), 0) AS allocated_qty
+     FROM inventory_allocations
+     WHERE movement_id = ?`,
+    [movementId]
+  );
+  const requiredQty = Number(movement.required_qty || 0);
+  const allocatedQty = Number(allocationRows[0]?.allocated_qty || 0);
+  return {
+    id: movement.id,
+    orderSn: movement.order_sn,
+    shopId: movement.shop_id,
+    sourceSku: movement.sku,
+    sku: movement.sku,
+    requiredQty,
+    allocatedQty,
+    shortageQty: Math.max(0, requiredQty - allocatedQty),
+  };
+}
+
+async function allocateOpenShortagesForBatch(conn, {
+  batchId,
+  sku,
+  availableQty = null,
+  receiptId = null,
+}) {
+  const normalizedSku = normalizeSku(sku);
+  if (!batchId) throw new Error('batchId is required');
+  if (!normalizedSku) throw new Error('sku is required');
+
+  const [batchRows] = await conn.query(
+    `SELECT id, sku, remaining_qty, unit_cost
+     FROM inventory_batches
+     WHERE id = ?
+       AND sku = ?
+     FOR UPDATE`,
+    [batchId, normalizedSku]
+  );
+  const batch = batchRows[0];
+  if (!batch) throw new Error(`inventory batch not found: batch_id=${batchId}, sku=${normalizedSku}`);
+
+  let remainingBatchQty = Math.min(
+    Number(batch.remaining_qty || 0),
+    availableQty === null || availableQty === undefined
+      ? Number(batch.remaining_qty || 0)
+      : Number(availableQty || 0)
+  );
+  const unitCost = Number(batch.unit_cost || 0);
+  let allocatedQty = 0;
+  const allocations = [];
+
+  if (remainingBatchQty <= 0) {
+    return { allocatedQty: 0, allocations };
+  }
+
+  const openMovements = await getOpenSaleShortages(conn, normalizedSku);
+  for (const openMovement of openMovements) {
+    if (remainingBatchQty <= 0) break;
+
+    const movementShortage = await getMovementShortage(conn, openMovement.id);
+    if (!movementShortage || movementShortage.shortageQty <= 0) continue;
+
+    const allocationQty = Math.min(remainingBatchQty, movementShortage.shortageQty);
+    const totalCost = roundMoney(allocationQty * unitCost);
+
+    try {
+      await conn.query(
+        `INSERT INTO inventory_allocations
+           (movement_id, batch_id, order_sn, shop_id, source_sku, sku,
+            qty, unit_cost, total_cost)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          movementShortage.id,
+          batchId,
+          movementShortage.orderSn,
+          movementShortage.shopId,
+          movementShortage.sourceSku,
+          normalizedSku,
+          allocationQty,
+          unitCost,
+          totalCost,
+        ]
+      );
+    } catch (err) {
+      if (isDuplicateKeyError(err)) {
+        console.log(`[InventoryFIFO] duplicate shortage allocation skipped: movement=${movementShortage.id}, batch=${batchId}`);
+        continue;
+      }
+      throw err;
+    }
+
+    const [updateResult] = await conn.query(
+      `UPDATE inventory_batches
+       SET remaining_qty = remaining_qty - ?
+       WHERE id = ?
+         AND remaining_qty >= ?`,
+      [allocationQty, batchId, allocationQty]
+    );
+    if (updateResult.affectedRows !== 1) {
+      throw new Error(`FIFO shortage batch update failed: batch_id=${batchId}`);
+    }
+
+    remainingBatchQty -= allocationQty;
+    allocatedQty += allocationQty;
+    allocations.push({
+      movementId: movementShortage.id,
+      orderSn: movementShortage.orderSn,
+      shopId: movementShortage.shopId,
+      sourceSku: movementShortage.sourceSku,
+      sku: normalizedSku,
+      qty: allocationQty,
+      batchId,
+      unitCost,
+      totalCost,
+    });
+  }
+
+  if (allocatedQty > 0) {
+    console.log(`[InventoryFIFO] open shortage allocated from receipt batch: receipt=${receiptId || '-'}, batch=${batchId}, sku=${normalizedSku}, qty=${allocatedQty}`);
+  }
+
+  return { allocatedQty, allocations };
+}
+
 function isInventoryFifoEnabled() {
   return String(process.env.INVENTORY_FIFO_ENABLED || '').trim() === 'true';
 }
@@ -276,16 +435,16 @@ async function insertSaleMovement(conn, {
   return rows[0]?.id || null;
 }
 
-async function decrementProductStock(conn, sku, allocatedQty) {
-  if (!allocatedQty) return;
+async function decrementProductStock(conn, sku, requiredQty) {
+  if (!requiredQty) return;
   const [result] = await conn.query(
     `UPDATE products
-     SET stock_quantity = GREATEST(stock_quantity - ?, 0)
+     SET stock_quantity = stock_quantity - ?
      WHERE sku = ?`,
-    [allocatedQty, sku]
+    [requiredQty, sku]
   );
   if (result.affectedRows === 0) {
-    console.warn(`[InventoryFIFO] product not found for stock decrement: sku=${sku}, allocatedQty=${allocatedQty}`);
+    console.warn(`[InventoryFIFO] product not found for stock decrement: sku=${sku}, requiredQty=${requiredQty}`);
   }
 }
 
@@ -355,7 +514,7 @@ async function allocateSaleInventoryForOrderItem(conn, order, item) {
       qty: requiredQty,
     });
 
-    await decrementProductStock(conn, baseSku, allocation.allocatedQty);
+    await decrementProductStock(conn, baseSku, requiredQty);
 
     if (allocation.shortageQty > 0) {
       console.warn(
@@ -404,6 +563,7 @@ async function allocateSaleInventoryForOrder(order, conn) {
 module.exports = {
   isInventoryFifoEnabled,
   allocateInventoryFifo,
+  allocateOpenShortagesForBatch,
   allocateSaleInventoryForOrder,
   allocateSaleInventoryForOrderItem,
 };

@@ -572,7 +572,7 @@ async function getInventoryProducts({ scope = 'low-stock' } = {}) {
 async function getInventorySummary() {
   const [productRows] = await db.query(
     `SELECT
-       COALESCE(SUM(CASE WHEN stock_quantity <= 0 THEN 1 ELSE 0 END), 0) AS out_of_stock_count,
+       COALESCE(SUM(CASE WHEN stock_quantity = 0 THEN 1 ELSE 0 END), 0) AS out_of_stock_count,
        COALESCE(SUM(CASE WHEN stock_quantity <= COALESCE(low_stock_threshold, 0) THEN 1 ELSE 0 END), 0) AS low_stock_count,
        COALESCE(SUM(CASE WHEN stock_quantity > 0 THEN 1 ELSE 0 END), 0) AS in_stock_sku_count,
        COALESCE(SUM(stock_quantity), 0) AS total_stock_quantity

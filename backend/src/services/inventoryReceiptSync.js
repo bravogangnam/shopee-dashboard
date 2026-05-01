@@ -4,6 +4,7 @@ const {
   isDuplicateKeyError,
   normalizeSku,
 } = require('./inventoryService');
+const { allocateOpenShortagesForBatch } = require('./inventoryFifoService');
 const { refreshSkuCompositionsFromSheet } = require('./skuCompositionService');
 
 const RECEIPT_SHEET_NAME = process.env.GOOGLE_RECEIPT_SHEET_NAME || '\uC785\uACE0\uAD00\uB9AC';
@@ -212,7 +213,7 @@ async function insertInventoryBatch(conn, receipt, composition, baseQty, baseUni
       receipt.sheet_row,
     ]
   );
-  return result.affectedRows === 1;
+  return result.affectedRows === 1 ? result.insertId : null;
 }
 
 function buildStockInNote(receipt, composition, baseQty, baseUnitCost) {
@@ -259,9 +260,9 @@ async function processReceipt(receipt, compositionMap) {
         `receipt_id=${receipt.receipt_id}, sku=${composition.baseSku}`
       );
 
-      let inserted = false;
+      let batchId = null;
       try {
-        inserted = await insertInventoryBatch(conn, receipt, composition, baseQty, baseUnitCost, totalFactor);
+        batchId = await insertInventoryBatch(conn, receipt, composition, baseQty, baseUnitCost, totalFactor);
       } catch (err) {
         if (isDuplicateKeyError(err)) {
           duplicateBatches++;
@@ -277,7 +278,7 @@ async function processReceipt(receipt, compositionMap) {
         throw err;
       }
 
-      if (!inserted) continue;
+      if (!batchId) continue;
 
       await conn.query(
         `UPDATE products
@@ -293,9 +294,16 @@ async function processReceipt(receipt, compositionMap) {
         note: buildStockInNote(receipt, composition, baseQty, baseUnitCost),
       });
 
+      const shortageAllocation = await allocateOpenShortagesForBatch(conn, {
+        batchId,
+        sku: composition.baseSku,
+        availableQty: baseQty,
+        receiptId: receipt.receipt_id,
+      });
+
       insertedBatches++;
       stockAdded += baseQty;
-      console.log(`[InventoryReceiptSync] STOCK_IN created: receipt_id=${receipt.receipt_id}, source=${receipt.source_sku}, sku=${composition.baseSku}, qty=+${baseQty}`);
+      console.log(`[InventoryReceiptSync] STOCK_IN created: receipt_id=${receipt.receipt_id}, source=${receipt.source_sku}, sku=${composition.baseSku}, qty=+${baseQty}, shortage_allocated=${shortageAllocation.allocatedQty}`);
     }
 
     await conn.commit();

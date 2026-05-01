@@ -816,6 +816,95 @@ label {
   opacity: 0.5;
 }
 
+.invoice-job-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  padding: 14px 16px;
+}
+
+.invoice-job-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.invoice-job-header div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.invoice-job-header strong {
+  color: #1d4ed8;
+  font-size: 14px;
+}
+
+.invoice-job-header span,
+.invoice-job-meta,
+.invoice-job-warning {
+  color: #475569;
+  font-size: 12px;
+}
+
+.invoice-progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dbeafe;
+}
+
+.invoice-progress-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: #2563eb;
+  transition: width 0.2s ease;
+}
+
+.invoice-job-meta {
+  display: flex;
+  gap: 12px;
+}
+
+.invoice-job-warning {
+  margin: 0;
+  color: #b45309;
+}
+
+.invoice-errors {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.invoice-errors strong {
+  color: #991b1b;
+  font-size: 13px;
+}
+
+.invoice-errors table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.invoice-errors th,
+.invoice-errors td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 7px 8px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.invoice-errors th {
+  color: #64748b;
+  font-weight: 700;
+}
+
 .stats-cards-row {
   display: flex;
   flex-wrap: wrap;

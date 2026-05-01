@@ -55,7 +55,9 @@ app.use('/api/products', require('./routes/productsRoutes'));
 
 // ─── 송장 라우트 (격리: 오류 시 기존 서비스 영향 없음) ──────────
 try {
-  app.use('/api/invoice', require('./routes/invoiceRoutes'));
+  const invoiceRoutes = require('./routes/invoiceRoutes');
+  app.use('/api/invoice', invoiceRoutes);
+  app.use('/api/invoices', invoiceRoutes);
   console.log('[App] invoiceRoutes registered');
 } catch (e) {
   console.error('[App] invoiceRoutes FAILED to load — invoice disabled, orders unaffected:', e.message);

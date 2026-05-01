@@ -71,6 +71,17 @@ async function updateProgress(job_id, current, total, message) {
 }
 
 /**
+ * Job 중간 결과 업데이트
+ * - 긴 작업에서 프론트가 실패/성공 상세를 폴링으로 확인할 수 있게 한다.
+ */
+async function updateJobResult(job_id, result_data = {}) {
+  await db.query(
+    `UPDATE jobs SET result_data=?, updated_at=NOW() WHERE id=?`,
+    [JSON.stringify(result_data), job_id]
+  );
+}
+
+/**
  * Job 완료
  * @param {string} job_id
  * @param {object} result_data - 결과 JSON
@@ -147,6 +158,7 @@ module.exports = {
   getRunningJob,
   startJob,
   updateProgress,
+  updateJobResult,
   completeJob,
   failJob,
   cleanOldJobs,

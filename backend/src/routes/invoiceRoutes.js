@@ -8,6 +8,15 @@ const labelStorage = require('../services/labelStorageService');
 
 router.use(requireAuth);
 
+function normalizeOrderSnList(body = {}) {
+  const rawList = body.order_sns || body.order_sn_list || body.orderSnList || [];
+  if (!Array.isArray(rawList)) return [];
+  return rawList
+    .map(item => (typeof item === 'string' ? item : item?.order_sn || item?.orderSn || ''))
+    .map(orderSn => String(orderSn || '').trim())
+    .filter(Boolean);
+}
+
 function parseJobResultData(job) {
   if (!job?.result_data) return null;
   if (typeof job.result_data === 'string') {
@@ -43,65 +52,120 @@ function getInvoiceFailureDetail(job) {
   return failed?.reason || job?.error_message || job?.progress_message || '';
 }
 
-router.post('/start', async (req, res) => {
-  const { order_sn_list } = req.body;
+function getInvoiceErrors(job) {
+  const resultData = parseJobResultData(job);
+  const results = Array.isArray(resultData?.results) ? resultData.results : [];
+  return results
+    .filter(item => item.status === 'error' || item.status === 'skipped')
+    .map(item => ({
+      order_sn: item.order_sn,
+      shop_id: item.shop_id || item.shopId || null,
+      message: normalizeInvoiceFailureMessage(item.reason || item.message || item.error || ''),
+      detail: item.reason || item.message || item.error || '',
+      code: item.code || item.status,
+    }));
+}
 
-  if (!Array.isArray(order_sn_list) || order_sn_list.length === 0) {
+function formatInvoiceJob(job) {
+  const resultData = parseJobResultData(job) || {};
+  const results = Array.isArray(resultData.results) ? resultData.results : [];
+  const errors = getInvoiceErrors(job);
+  const total = Number(job.progress_total || resultData.total || results.length || 0);
+  const processed = Number(job.progress_current || results.length || 0);
+  const successCount = Number(resultData.success || results.filter(item => item.status === 'success').length || 0);
+  const failedCount = Number(resultData.error || 0) + Number(resultData.skipped || 0);
+  const hasDownload = Boolean(resultData.merged_pdf_path);
+  const dbStatus = String(job.status || '').toLowerCase();
+  let status = dbStatus === 'pending' ? 'queued' : dbStatus;
+
+  if (dbStatus === 'completed' && errors.length > 0) {
+    status = successCount > 0 ? 'partial_failed' : 'failed';
+  }
+
+  return {
+    jobId: job.id,
+    id: job.id,
+    status,
+    db_status: job.status,
+    total,
+    completed: processed,
+    failed: failedCount || errors.length,
+    current_order_sn: extractCurrentOrderSn(job.progress_message),
+    message: job.progress_message || '',
+    percent: total > 0 ? Math.round((processed / total) * 100) : 0,
+    download_url: hasDownload ? `/api/invoices/jobs/${job.id}/download` : null,
+    legacy_download_url: hasDownload ? `/api/invoice/download/${job.id}` : null,
+    results,
+    errors,
+    error_message: normalizeInvoiceFailureMessage(job.error_message || ''),
+    detail: job.error_message || '',
+    created_at: job.created_at,
+    updated_at: job.updated_at,
+  };
+}
+
+function extractCurrentOrderSn(message) {
+  const match = String(message || '').match(/(26[0-9A-Z]+)/);
+  return match ? match[1] : null;
+}
+
+async function startInvoiceJob(req, res, { legacy = false } = {}) {
+  const orderSnList = normalizeOrderSnList(req.body);
+
+  if (orderSnList.length === 0) {
     return res.status(400).json({ success: false, error: '주문 목록이 비어있습니다.' });
   }
 
-  if (order_sn_list.length > 50) {
+  if (orderSnList.length > 50) {
     return res.status(400).json({ success: false, error: '한 번에 최대 50건까지 가능합니다.' });
   }
 
   const running = await getRunningJob('invoice');
   if (running) {
+    const runningJob = formatInvoiceJob(running);
     return res.status(409).json({
       success: false,
+      code: 'ALREADY_RUNNING',
       error: 'ALREADY_RUNNING',
-      message: '송장출력 작업이 이미 진행 중입니다.',
+      message: '이미 송장 생성 작업이 진행 중입니다.',
+      jobId: running.id,
       job_id: running.id,
+      job: runningJob,
     });
   }
 
   const jobId = await createJob('invoice');
 
-  runInvoice(jobId, order_sn_list).catch(err => {
+  runInvoice(jobId, orderSnList).catch(err => {
     console.error('[InvoiceRoute] Unhandled error:', err.message);
   });
 
   return res.json({
     success: true,
+    jobId,
     job_id: jobId,
-    message: `송장출력 시작: ${order_sn_list.length}건`,
+    message: legacy
+      ? `송장출력 시작: ${orderSnList.length}건`
+      : '송장 생성 작업을 시작했습니다.',
   });
-});
+}
 
-router.get('/download/:jobId', async (req, res) => {
-  const { jobId } = req.params;
+async function sendInvoiceJobDownload(req, res, jobId) {
   const job = await getJob(jobId);
 
   if (!job) {
     return res.status(404).json({ success: false, error: 'Job not found' });
   }
 
-  if (job.status !== 'completed') {
-    const detail = getInvoiceFailureDetail(job);
-    return res.status(400).json({
-      success: false,
-      error: normalizeInvoiceFailureMessage(detail || `Job status: ${job.status}`),
-      detail,
-    });
-  }
-
   const resultData = parseJobResultData(job);
   const mergedPath = resultData?.merged_pdf_path;
-  if (!mergedPath || !fs.existsSync(mergedPath)) {
+  if (job.status !== 'completed' || !mergedPath || !fs.existsSync(mergedPath)) {
     const detail = getInvoiceFailureDetail(job);
-    return res.status(404).json({
+    return res.status(job.status === 'completed' ? 404 : 400).json({
       success: false,
-      error: normalizeInvoiceFailureMessage(detail || 'PDF file not found'),
+      error: normalizeInvoiceFailureMessage(detail || '송장 PDF가 아직 준비되지 않았습니다.'),
       detail,
+      job: formatInvoiceJob(job),
     });
   }
 
@@ -109,6 +173,34 @@ router.get('/download/:jobId', async (req, res) => {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
   fs.createReadStream(mergedPath).pipe(res);
+}
+
+router.post('/jobs', async (req, res) => {
+  return startInvoiceJob(req, res);
+});
+
+router.get('/jobs/:jobId', async (req, res) => {
+  const job = await getJob(req.params.jobId);
+  if (!job) {
+    return res.status(404).json({ success: false, error: 'Job not found' });
+  }
+
+  return res.json({
+    success: true,
+    job: formatInvoiceJob(job),
+  });
+});
+
+router.get('/jobs/:jobId/download', async (req, res) => {
+  return sendInvoiceJobDownload(req, res, req.params.jobId);
+});
+
+router.post('/start', async (req, res) => {
+  return startInvoiceJob(req, res, { legacy: true });
+});
+
+router.get('/download/:jobId', async (req, res) => {
+  return sendInvoiceJobDownload(req, res, req.params.jobId);
 });
 
 router.get('/:orderSn/download', async (req, res) => {

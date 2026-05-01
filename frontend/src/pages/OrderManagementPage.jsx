@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchOrders, fetchStats } from '../api/orders.js';
-import { createAndDownloadInvoice } from '../api/invoice.js';
+import {
+  downloadBlob,
+  downloadInvoiceJob,
+  formatInvoiceJobError,
+  getInvoiceJob,
+  startInvoiceJob,
+} from '../api/invoice.js';
 import { startSync } from '../api/sync.js';
 import FeeDetailModal from '../components/FeeDetailModal.jsx';
 import ImagePreviewModal from '../components/ImagePreviewModal.jsx';
@@ -65,6 +71,27 @@ function toOrderQuery(filters) {
   };
 }
 
+function isInvoiceJobActive(job) {
+  const status = String(job?.status || '').toLowerCase();
+  return status === 'queued' || status === 'running';
+}
+
+function isInvoiceJobDone(job) {
+  const status = String(job?.status || '').toLowerCase();
+  return status === 'completed' || status === 'partial_failed';
+}
+
+function invoiceStatusLabel(status) {
+  const value = String(status || '').toLowerCase();
+  if (value === 'queued') return '대기 중';
+  if (value === 'running') return '송장 생성 중';
+  if (value === 'completed') return '송장 생성 완료';
+  if (value === 'partial_failed') return '일부 주문 송장 생성 실패';
+  if (value === 'failed') return '송장 생성 실패';
+  if (value === 'cancelled') return '취소됨';
+  return status || '-';
+}
+
 export default function OrderManagementPage() {
   const [filters, setFilters] = useState(() => createDefaultFilters());
   const [query, setQuery] = useState(() => createDefaultFilters());
@@ -75,6 +102,8 @@ export default function OrderManagementPage() {
   const [selectedOrders, setSelectedOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceJob, setInvoiceJob] = useState(null);
+  const [invoicePollingError, setInvoicePollingError] = useState('');
   const [syncLoading, setSyncLoading] = useState(false);
   const [feeOrder, setFeeOrder] = useState(null);
   const [previewItem, setPreviewItem] = useState(null);
@@ -134,13 +163,41 @@ export default function OrderManagementPage() {
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       if (loading || syncLoading || invoiceLoading) return;
+      if (isInvoiceJobActive(invoiceJob)) return;
       if (selectedOrders.length > 0) return;
 
       setReloadKey(value => value + 1);
     }, 60000);
 
     return () => window.clearInterval(intervalId);
-  }, [loading, syncLoading, invoiceLoading, selectedOrders.length]);
+  }, [loading, syncLoading, invoiceLoading, invoiceJob, selectedOrders.length]);
+
+  useEffect(() => {
+    if (!invoiceJob?.jobId || !isInvoiceJobActive(invoiceJob)) return undefined;
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const result = await getInvoiceJob(invoiceJob.jobId);
+        if (!cancelled) {
+          setInvoiceJob(result.job || null);
+          setInvoicePollingError('');
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setInvoicePollingError('작업 상태 확인에 실패했습니다. 서버 작업은 계속 진행 중일 수 있습니다. 잠시 후 새로고침해 주세요.');
+        }
+      }
+    };
+
+    const intervalId = window.setInterval(poll, 2000);
+    poll();
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [invoiceJob?.jobId, invoiceJob?.status]);
 
   function handleSubmit(event) {
     event.preventDefault();
@@ -171,13 +228,50 @@ export default function OrderManagementPage() {
     if (!orderSnList.length) return;
     setError('');
     setMessage('');
+    setInvoicePollingError('');
+    setInvoiceJob(null);
     setInvoiceLoading(true);
 
     try {
-      await createAndDownloadInvoice(orderSnList);
-      setMessage(`송장 출력이 완료되었습니다. (${orderSnList.length}건)`);
+      const result = await startInvoiceJob(orderSnList);
+      setInvoiceJob(result.job || {
+        jobId: result.jobId || result.job_id,
+        status: 'queued',
+        total: orderSnList.length,
+        completed: 0,
+        failed: 0,
+        message: '송장 생성 작업을 시작했습니다.',
+        errors: [],
+      });
+      setMessage('송장 생성 작업을 시작했습니다.');
     } catch (err) {
-      setError(err.message || '송장 출력에 실패했습니다.');
+      if (err.code === 'ALREADY_RUNNING' && (err.job || err.jobId)) {
+        setInvoiceJob(err.job || {
+          jobId: err.jobId,
+          status: 'running',
+          message: '이미 송장 생성 작업이 진행 중입니다.',
+          errors: [],
+        });
+        setMessage('이미 송장 생성 작업이 진행 중입니다. 현재 작업 상태를 확인하세요.');
+      } else {
+        setError(formatInvoiceJobError(err.message || '송장 출력에 실패했습니다.'));
+      }
+    } finally {
+      setInvoiceLoading(false);
+    }
+  }
+
+  async function handleInvoiceDownload() {
+    if (!invoiceJob?.jobId) return;
+    setError('');
+    setMessage('');
+    setInvoiceLoading(true);
+    try {
+      const blob = await downloadInvoiceJob(invoiceJob.jobId);
+      downloadBlob(blob, `invoice-${invoiceJob.jobId}.pdf`);
+      setMessage('송장 PDF를 열었습니다.');
+    } catch (err) {
+      setError(formatInvoiceJobError(err.message || '송장 PDF 다운로드에 실패했습니다.'));
     } finally {
       setInvoiceLoading(false);
     }
@@ -218,9 +312,9 @@ export default function OrderManagementPage() {
             type="button"
             className="action-btn primary"
             onClick={() => handleInvoice(selectedOrders)}
-            disabled={!selectedOrders.length || invoiceLoading}
+            disabled={!selectedOrders.length || invoiceLoading || isInvoiceJobActive(invoiceJob)}
           >
-            {invoiceLoading ? '송장 처리중' : `송장출력 (${selectedOrders.length})`}
+            {invoiceLoading || isInvoiceJobActive(invoiceJob) ? '송장 생성 중...' : `송장출력 (${selectedOrders.length})`}
           </button>
           <button type="button" className="action-btn" onClick={handleSync} disabled={syncLoading}>
             {syncLoading ? '동기화 중' : '동기화'}
@@ -230,6 +324,60 @@ export default function OrderManagementPage() {
 
       {message && <div className="notice">{message}</div>}
       {error && <div className="alert">{error}</div>}
+      {invoiceJob && (
+        <div className="invoice-job-panel">
+          <div className="invoice-job-header">
+            <div>
+              <strong>{invoiceStatusLabel(invoiceJob.status)}</strong>
+              <span>{invoiceJob.message || `송장 생성 중 ${invoiceJob.completed || 0}/${invoiceJob.total || 0}`}</span>
+            </div>
+            {isInvoiceJobDone(invoiceJob) && invoiceJob.download_url && (
+              <button
+                type="button"
+                className="action-btn primary"
+                onClick={handleInvoiceDownload}
+                disabled={invoiceLoading}
+              >
+                다운로드
+              </button>
+            )}
+          </div>
+          <div className="invoice-progress-track" aria-label="송장 생성 진행률">
+            <div
+              className="invoice-progress-bar"
+              style={{ width: `${Math.min(Number(invoiceJob.percent || 0), 100)}%` }}
+            />
+          </div>
+          <div className="invoice-job-meta">
+            <span>진행 {invoiceJob.completed || 0}/{invoiceJob.total || 0}</span>
+            <span>실패 {invoiceJob.failed || 0}건</span>
+          </div>
+          {invoicePollingError && <p className="invoice-job-warning">{invoicePollingError}</p>}
+          {Array.isArray(invoiceJob.errors) && invoiceJob.errors.length > 0 && (
+            <div className="invoice-errors">
+              <strong>실패 주문</strong>
+              <table>
+                <thead>
+                  <tr>
+                    <th>주문번호</th>
+                    <th>쇼핑몰</th>
+                    <th>오류 메시지</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoiceJob.errors.map((item, index) => (
+                    <tr key={`${item.order_sn || 'error'}-${index}`}>
+                      <td>{item.order_sn || '-'}</td>
+                      <td>{item.shop_id || '-'}</td>
+                      <td>{item.message || item.detail || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       <StatsCards
         monthlyStats={monthlyStats}

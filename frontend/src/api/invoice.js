@@ -24,9 +24,32 @@ function formatInvoiceError(message) {
 async function parseJsonResponse(response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(formatInvoiceError(payload.error || payload.message || payload.detail || `Request failed: ${response.status}`));
+    const error = new Error(formatInvoiceError(payload.error || payload.message || payload.detail || `Request failed: ${response.status}`));
+    error.code = payload.code || payload.error;
+    error.jobId = payload.jobId || payload.job_id;
+    error.job = payload.job;
+    error.payload = payload;
+    throw error;
   }
   return payload;
+}
+
+export function formatInvoiceJobError(message) {
+  return formatInvoiceError(message);
+}
+
+export async function startInvoiceJob(orderSnList) {
+  const response = await fetch('/api/invoices/jobs', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      ...authHeaders(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ order_sns: orderSnList }),
+  });
+
+  return parseJsonResponse(response);
 }
 
 export async function startInvoice(orderSnList) {
@@ -43,8 +66,8 @@ export async function startInvoice(orderSnList) {
   return parseJsonResponse(response);
 }
 
-export async function getInvoiceJobStatus(jobId) {
-  const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/status`, {
+export async function getInvoiceJob(jobId) {
+  const response = await fetch(`/api/invoices/jobs/${encodeURIComponent(jobId)}`, {
     credentials: 'include',
     headers: authHeaders(),
   });
@@ -52,8 +75,12 @@ export async function getInvoiceJobStatus(jobId) {
   return parseJsonResponse(response);
 }
 
-export async function downloadInvoice(jobId) {
-  const response = await fetch(`/api/invoice/download/${encodeURIComponent(jobId)}`, {
+export async function getInvoiceJobStatus(jobId) {
+  return getInvoiceJob(jobId);
+}
+
+export async function downloadInvoiceJob(jobId) {
+  const response = await fetch(`/api/invoices/jobs/${encodeURIComponent(jobId)}/download`, {
     credentials: 'include',
     headers: authHeaders(),
   });
@@ -70,6 +97,10 @@ export async function downloadInvoice(jobId) {
   }
 
   return response.blob();
+}
+
+export async function downloadInvoice(jobId) {
+  return downloadInvoiceJob(jobId);
 }
 
 export function downloadBlob(blob, filename) {
@@ -122,8 +153,8 @@ export async function pollInvoiceJob(jobId) {
     const job = result.job || result.data || result;
     const status = String(job.status || '').toLowerCase();
 
-    if (status === 'completed') return job;
-    if (status === 'failed') {
+    if (status === 'completed' || status === 'partial_failed') return job;
+    if (status === 'failed' || status === 'cancelled') {
       throw new Error(formatInvoiceError(job.error_message || job.error || job.message || '송장 생성에 실패했습니다.'));
     }
 
@@ -134,12 +165,12 @@ export async function pollInvoiceJob(jobId) {
 }
 
 export async function createAndDownloadInvoice(orderSnList) {
-  const startResult = await startInvoice(orderSnList);
+  const startResult = await startInvoiceJob(orderSnList);
   const jobId = startResult.job_id || startResult.jobId;
   if (!jobId) throw new Error('송장 작업 ID를 받지 못했습니다.');
 
   await pollInvoiceJob(jobId);
-  const blob = await downloadInvoice(jobId);
+  const blob = await downloadInvoiceJob(jobId);
   const suffix = orderSnList.length === 1 ? orderSnList[0] : `${orderSnList.length}-orders`;
   downloadBlob(blob, `invoice-${suffix}.pdf`);
 

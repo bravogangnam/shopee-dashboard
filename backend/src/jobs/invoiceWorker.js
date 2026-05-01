@@ -31,7 +31,7 @@ const labelStorage                = require('../services/labelStorageService');
 const { processInvoiceForOrder }  = require('../services/shopeeLogistics');
 const { getOrRefreshShopToken } = require('../services/shopeeAuth');
 const {
-  startJob, updateProgress, completeJob, failJob,
+  startJob, updateProgress, updateJobResult, completeJob, failJob,
 } = require('../services/jobManager');
 const path = require('path');
 const fs   = require('fs');
@@ -133,6 +133,25 @@ async function runInvoice(jobId, orderSnList) {
     // ── 주문별 처리 ───────────────────────────────────────────
     const results    = [];
     const pdfBuffers = [];
+    const markOrderProcessed = async (index, orderSn) => {
+      const processed = index + 1;
+      const successCount = results.filter(r => r.status === 'success').length;
+      const skippedCount = results.filter(r => r.status === 'skipped').length;
+      const errorCount = results.filter(r => r.status === 'error').length;
+      await updateProgress(
+        jobId,
+        processed,
+        orderRows.length,
+        `송장 생성 중 ${processed}/${orderRows.length}: ${orderSn}`
+      );
+      await updateJobResult(jobId, {
+        success: successCount,
+        skipped: skippedCount,
+        error: errorCount,
+        total: orderRows.length,
+        results,
+      });
+    };
 
     for (let i = 0; i < orderRows.length; i++) {
       const order = orderRows[i];
@@ -149,6 +168,7 @@ async function runInvoice(jobId, orderSnList) {
       if (HARD_SKIP_STATUSES.has(order_status)) {
         console.log(`[InvoiceWorker] hard-skip ${order_sn}: ${order_status}`);
         results.push({ order_sn, status: 'skipped', reason: `${order_status}: 송장 발행 불가` });
+        await markOrderProcessed(i, order_sn);
         continue;
       }
 
@@ -156,6 +176,7 @@ async function runInvoice(jobId, orderSnList) {
       if (order_status === 'COMPLETED') {
         console.log(`[InvoiceWorker] completed-skip ${order_sn}`);
         results.push({ order_sn, status: 'skipped', reason: COMPLETED_SKIP_REASON });
+        await markOrderProcessed(i, order_sn);
         continue;
       }
 
@@ -164,6 +185,7 @@ async function runInvoice(jobId, orderSnList) {
       if (order_status !== 'READY_TO_SHIP' && !tracking_number) {
         console.log(`[InvoiceWorker] ${order_sn}: tracking_number 없음 — 스킵 (동기화 후 재시도)`);
         results.push({ order_sn, status: 'skipped', reason: '트래킹 번호 없음 — 동기화 후 다시 시도' });
+        await markOrderProcessed(i, order_sn);
         continue;
       }
 
@@ -176,6 +198,7 @@ async function runInvoice(jobId, orderSnList) {
           pdfBuffers.push(cached);
           results.push({ order_sn, status: 'success', reason: 'cache',
             filePath: labelStorage.filePath(shop_id, order_sn) });
+          await markOrderProcessed(i, order_sn);
           continue;
         }
       }
@@ -196,6 +219,7 @@ async function runInvoice(jobId, orderSnList) {
       } catch (authErr) {
         console.error(`[InvoiceWorker] auth error (shop_id=${shop_id}): ${authErr.message}`);
         results.push({ order_sn, status: 'error', reason: `인증 실패: ${authErr.message}` });
+        await markOrderProcessed(i, order_sn);
         continue;
       }
 
@@ -212,6 +236,7 @@ async function runInvoice(jobId, orderSnList) {
         if (lr.skipped) {
           console.log(`[InvoiceWorker] logistics skipped ${order_sn}: ${lr.reason}`);
           results.push({ order_sn, status: 'skipped', reason: lr.reason || 'AWB 다운로드 불가' });
+          await markOrderProcessed(i, order_sn);
           continue;
         }
 
@@ -231,12 +256,14 @@ async function runInvoice(jobId, orderSnList) {
       } catch (awbErr) {
         console.error(`[InvoiceWorker] AWB error ${order_sn}: ${awbErr.message}`);
         results.push({ order_sn, status: 'error', reason: `AWB 다운로드 실패: ${awbErr.message}` });
+        await markOrderProcessed(i, order_sn);
         continue;
       }
 
       if (!awbBuffer || awbBuffer.length === 0) {
         console.warn(`[InvoiceWorker] AWB buffer empty: ${order_sn}`);
         results.push({ order_sn, status: 'skipped', reason: 'AWB PDF 없음' });
+        await markOrderProcessed(i, order_sn);
         continue;
       }
 
@@ -255,6 +282,7 @@ async function runInvoice(jobId, orderSnList) {
       } catch (buildErr) {
         console.error(`[InvoiceWorker] buildInvoicePdf error ${order_sn}: ${buildErr.message}`);
         results.push({ order_sn, status: 'error', reason: `PDF 생성 실패: ${buildErr.message}` });
+        await markOrderProcessed(i, order_sn);
         continue;
       }
 
@@ -268,6 +296,7 @@ async function runInvoice(jobId, orderSnList) {
         pdfBuffers.push(finalPdf);   // 저장 실패해도 병합에 포함
         results.push({ order_sn, status: 'success', reason: 'save_warn', filePath: null });
       }
+      await markOrderProcessed(i, order_sn);
     } // end for
 
     // ── PDF 병합 ───────────────────────────────────────────────
@@ -303,6 +332,8 @@ async function runInvoice(jobId, orderSnList) {
   } catch (fatalErr) {
     console.error(`[InvoiceWorker] fatal: ${fatalErr.message}`, fatalErr.stack);
     await failJob(jobId, fatalErr.message);
+  } finally {
+    console.log(`[InvoiceWorker] release invoice lock for job=${jobId}`);
   }
 }
 

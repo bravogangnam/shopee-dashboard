@@ -191,6 +191,133 @@ function ReceiptSyncResultCard({ result }) {
   );
 }
 
+function uniqReceiptDetails(items = []) {
+  const map = new Map();
+  for (const item of items) {
+    const receiptId = item.receipt_id || item.receiptId || '';
+    const key = `${item.sheet_row || ''}:${receiptId}:${item.source_sku || ''}:${item.reason || ''}`;
+    if (!map.has(key)) map.set(key, { ...item, receipt_id: receiptId });
+  }
+  return Array.from(map.values());
+}
+
+function formatReceiptLine(item, includeReason = false) {
+  return [
+    item.sheet_row ? `row ${item.sheet_row}` : null,
+    item.receipt_id || '-',
+    includeReason ? item.reason || '-' : null,
+  ].filter(Boolean).join(' / ');
+}
+
+function buildReceiptReminder(result) {
+  const completed = uniqReceiptDetails(result?.processed_details || result?.success_details || []);
+  const duplicates = uniqReceiptDetails(result?.duplicate_details || []);
+  const errors = uniqReceiptDetails([
+    ...(result?.error_details || []),
+    ...(result?.invalid_rows || []),
+  ]);
+
+  return {
+    completed,
+    duplicates,
+    errors,
+    hasAny: completed.length > 0 || duplicates.length > 0 || errors.length > 0,
+  };
+}
+
+function ReceiptSyncReminderModal({ result, onClose }) {
+  const [copyMessage, setCopyMessage] = useState('');
+  const reminder = useMemo(() => buildReceiptReminder(result), [result]);
+
+  if (!reminder.hasAny) return null;
+
+  const completedIds = reminder.completed
+    .map(item => item.receipt_id)
+    .filter(Boolean);
+  const duplicateIds = reminder.duplicates
+    .map(item => item.receipt_id)
+    .filter(Boolean);
+
+  async function handleCopy() {
+    const text = [
+      '동기화완료 처리 필요:',
+      ...(completedIds.length ? completedIds : ['-']),
+      '',
+      '이미 동기화됨:',
+      ...(duplicateIds.length ? duplicateIds : ['-']),
+    ].join('\n');
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyMessage('입고ID 목록을 복사했습니다.');
+    } catch (err) {
+      setCopyMessage('복사에 실패했습니다. 목록을 직접 선택해서 복사하세요.');
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-card receipt-sync-reminder-modal">
+        <div className="modal-header">
+          <div>
+            <h2>구글시트 상태 변경 필요</h2>
+            <p>아래 입고ID는 DB 동기화가 완료되었습니다.</p>
+          </div>
+          <button type="button" className="ghost-button" onClick={onClose}>닫기</button>
+        </div>
+
+        <div className="receipt-sync-reminder-alert">
+          구글시트 입고관리 탭에서 해당 행의 상태를 반드시 <strong>동기화완료</strong>로 변경하세요.
+        </div>
+
+        <div className="receipt-sync-reminder-section">
+          <h3>동기화완료로 변경할 입고ID</h3>
+          {reminder.completed.length ? (
+            <ul>
+              {reminder.completed.map((item, index) => (
+                <li key={`completed-${index}`}>{formatReceiptLine(item)}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>새로 성공 처리된 입고ID가 없습니다.</p>
+          )}
+        </div>
+
+        <div className="receipt-sync-reminder-section">
+          <h3>이미 동기화된 입고ID</h3>
+          {reminder.duplicates.length ? (
+            <ul>
+              {reminder.duplicates.map((item, index) => (
+                <li key={`duplicate-${index}`}>{formatReceiptLine(item)}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>중복으로 확인된 입고ID가 없습니다.</p>
+          )}
+        </div>
+
+        {reminder.errors.length > 0 && (
+          <div className="receipt-sync-reminder-section receipt-sync-reminder-error">
+            <h3>수정 필요</h3>
+            <p>아래 항목은 오류로 처리되지 않았습니다. 수정 후 다시 대기 상태로 동기화하세요.</p>
+            <ul>
+              {reminder.errors.map((item, index) => (
+                <li key={`error-${index}`}>{formatReceiptLine(item, true)}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="modal-actions">
+          {copyMessage && <span className="receipt-sync-copy-message">{copyMessage}</span>}
+          <button type="button" className="action-btn" onClick={handleCopy}>입고ID 목록 복사</button>
+          <button type="button" className="action-btn primary" onClick={onClose}>확인했습니다</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StockSettingsModal({ product, saving, onClose, onSave }) {
   const [form, setForm] = useState(() => ({
     stock_quantity: product.stock_quantity ?? 0,
@@ -411,6 +538,7 @@ export default function InventoryPage() {
   const [message, setMessage] = useState('');
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
+  const [receiptReminderResult, setReceiptReminderResult] = useState(null);
   const [refreshedAt, setRefreshedAt] = useState(null);
   const [settingsProduct, setSettingsProduct] = useState(null);
   const [adjustProduct, setAdjustProduct] = useState(null);
@@ -440,7 +568,8 @@ export default function InventoryPage() {
     saving ||
     Boolean(settingsProduct) ||
     Boolean(adjustProduct) ||
-    Boolean(historyProduct);
+    Boolean(historyProduct) ||
+    Boolean(receiptReminderResult);
 
   const loadProducts = useCallback(async () => {
     setLoading(true);
@@ -547,10 +676,14 @@ export default function InventoryPage() {
     setError('');
     setMessage('');
     setSyncResult(null);
+    setReceiptReminderResult(null);
     try {
       const response = await syncInventoryReceipts();
       const result = response.result || response;
       setSyncResult(result);
+      if (buildReceiptReminder(result).hasAny) {
+        setReceiptReminderResult(result);
+      }
       setMessage('입고관리 동기화가 완료되었습니다. 성공한 행은 구글시트에서 수동으로 동기화완료 처리하세요.');
       await loadProducts();
     } catch (err) {
@@ -714,6 +847,12 @@ export default function InventoryPage() {
           movements={movements}
           loading={movementsLoading}
           onClose={() => setHistoryProduct(null)}
+        />
+      )}
+      {receiptReminderResult && (
+        <ReceiptSyncReminderModal
+          result={receiptReminderResult}
+          onClose={() => setReceiptReminderResult(null)}
         />
       )}
     </section>

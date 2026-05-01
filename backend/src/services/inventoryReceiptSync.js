@@ -343,6 +343,7 @@ async function syncPendingInventoryReceipts() {
     sku_compositions_upserted: 0,
     sku_compositions_skipped: 0,
     sku_compositions_errors: 0,
+    processed_details: [],
     error_details: [],
     invalid_rows: [],
     duplicate_details: [],
@@ -375,6 +376,7 @@ async function syncPendingInventoryReceipts() {
       result.inserted_batches += receiptResult.insertedBatches;
       result.stock_added += receiptResult.stockAdded;
       result.skipped += receiptResult.duplicateBatches;
+      result.processed_details.push(receiptDetail(receipt, 'synced'));
       result.duplicate_details.push(...receiptResult.duplicateDetails);
 
       const statusResult = await updateReceiptStatus(receipt.sheet_row, STATUS_SYNCED);

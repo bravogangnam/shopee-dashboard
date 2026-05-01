@@ -1273,6 +1273,71 @@ label {
   font-size: 12px;
 }
 
+.receipt-sync-reminder-modal {
+  width: min(720px, 100%);
+}
+
+.receipt-sync-reminder-alert {
+  margin: 14px 0;
+  padding: 14px 16px;
+  border: 1px solid #ffe58f;
+  border-radius: 8px;
+  background: #fffbe6;
+  color: #7a4f01;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.receipt-sync-reminder-alert strong {
+  color: #d48806;
+}
+
+.receipt-sync-reminder-section {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #edf1f7;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.receipt-sync-reminder-section h3 {
+  margin: 0 0 8px;
+  color: #172033;
+  font-size: 14px;
+}
+
+.receipt-sync-reminder-section p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.receipt-sync-reminder-section ul {
+  max-height: 180px;
+  margin: 0;
+  padding-left: 20px;
+  overflow: auto;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.receipt-sync-reminder-error {
+  border-color: #fecaca;
+  background: #fff1f0;
+}
+
+.receipt-sync-reminder-error h3 {
+  color: #cf1322;
+}
+
+.receipt-sync-copy-message {
+  margin-right: auto;
+  color: #1677ff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .inventory-table {
   min-width: 980px;
 }

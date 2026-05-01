@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   adjustProductStartBalance,
   fetchInventoryMovements,
@@ -435,7 +435,14 @@ export default function InventoryPage() {
     });
   }, [products, search, statusFilter]);
 
-  async function loadProducts() {
+  const autoRefreshPaused = loading ||
+    syncLoading ||
+    saving ||
+    Boolean(settingsProduct) ||
+    Boolean(adjustProduct) ||
+    Boolean(historyProduct);
+
+  const loadProducts = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -450,11 +457,32 @@ export default function InventoryPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     loadProducts();
-  }, []);
+  }, [loadProducts]);
+
+  useEffect(() => {
+    if (autoRefreshPaused) return undefined;
+
+    const intervalId = window.setInterval(() => {
+      loadProducts();
+    }, 60000);
+
+    return () => window.clearInterval(intervalId);
+  }, [autoRefreshPaused, loadProducts]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !autoRefreshPaused) {
+        loadProducts();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [autoRefreshPaused, loadProducts]);
 
   async function handleSaveSettings(payload) {
     setSaving(true);

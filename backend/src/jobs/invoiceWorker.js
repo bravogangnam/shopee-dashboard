@@ -164,6 +164,7 @@ async function runInvoice(jobId, orderSnList) {
       const processed = index + 1;
       const successCount = results.filter(r => r.status === 'success').length;
       const skippedCount = results.filter(r => r.status === 'skipped').length;
+      const waitingCount = results.filter(r => r.status === 'waiting_label' || r.status === 'waiting_document').length;
       const errorCount = results.filter(r => r.status === 'error').length;
       await updateProgress(
         jobId,
@@ -174,6 +175,7 @@ async function runInvoice(jobId, orderSnList) {
       await safeUpdateJobResult(jobId, {
         success: successCount,
         skipped: skippedCount,
+        waiting: waitingCount,
         error: errorCount,
         total: orderRows.length,
         results,
@@ -262,7 +264,11 @@ async function runInvoice(jobId, orderSnList) {
 
         if (lr.skipped) {
           console.log(`[InvoiceWorker] logistics skipped ${order_sn}: ${lr.reason}`);
-          results.push({ order_sn, status: 'skipped', reason: lr.reason || 'AWB 다운로드 불가' });
+          results.push({
+            order_sn,
+            status: lr.status || 'skipped',
+            reason: lr.reason || 'AWB 다운로드 불가',
+          });
           await markOrderProcessed(i, order_sn);
           continue;
         }
@@ -342,11 +348,13 @@ async function runInvoice(jobId, orderSnList) {
     // ── 집계 & 완료 ───────────────────────────────────────────
     const successCount = results.filter(r => r.status === 'success').length;
     const skippedCount = results.filter(r => r.status === 'skipped').length;
+    const waitingCount = results.filter(r => r.status === 'waiting_label' || r.status === 'waiting_document').length;
     const errorCount   = results.filter(r => r.status === 'error').length;
 
     const finalResult = {
       success: successCount,
       skipped: skippedCount,
+      waiting: waitingCount,
       error:   errorCount,
       total:   orderRows.length,
       merged_pdf_path: mergedPath,
@@ -356,7 +364,7 @@ async function runInvoice(jobId, orderSnList) {
     await updateProgress(jobId, orderRows.length, orderRows.length, '완료');
     await safeUpdateJobResult(jobId, finalResult, 'final');
 
-    if (successCount > 0) {
+    if (successCount > 0 || skippedCount > 0 || waitingCount > 0) {
       await safeCompleteJob(jobId, finalResult);
     } else {
       const failMessage = errorCount > 0
@@ -365,7 +373,7 @@ async function runInvoice(jobId, orderSnList) {
       await safeFailJob(jobId, failMessage, 'no-success');
     }
 
-    console.log(`[InvoiceWorker] done job=${jobId}: success=${successCount} skipped=${skippedCount} error=${errorCount}`);
+    console.log(`[InvoiceWorker] done job=${jobId}: success=${successCount} skipped=${skippedCount} waiting=${waitingCount} error=${errorCount}`);
 
   } catch (fatalErr) {
     console.error(`[InvoiceWorker] fatal: ${fatalErr.message}`, fatalErr.stack);

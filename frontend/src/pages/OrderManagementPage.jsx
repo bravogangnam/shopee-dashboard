@@ -111,6 +111,8 @@ export default function OrderManagementPage() {
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const skipStatsOnceRef = useRef(false);
+  const invoicePrintWindowRef = useRef(null);
+  const autoPrintedInvoiceJobRef = useRef('');
 
   const queryKey = useMemo(() => JSON.stringify(query), [query]);
 
@@ -199,6 +201,14 @@ export default function OrderManagementPage() {
     };
   }, [invoiceJob?.jobId, invoiceJob?.status]);
 
+  useEffect(() => {
+    if (!invoiceJob?.jobId || !isInvoiceJobDone(invoiceJob) || !invoiceJob.download_url) return;
+    if (autoPrintedInvoiceJobRef.current === invoiceJob.jobId) return;
+
+    autoPrintedInvoiceJobRef.current = invoiceJob.jobId;
+    autoOpenInvoicePrintWindow(invoiceJob);
+  }, [invoiceJob?.jobId, invoiceJob?.status, invoiceJob?.download_url]);
+
   function handleSubmit(event) {
     event.preventDefault();
     setMessage('');
@@ -224,6 +234,76 @@ export default function OrderManagementPage() {
     setReloadKey(value => value + 1);
   }
 
+  function openInvoicePrintWindow() {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      setInvoicePollingError('자동 인쇄창을 열 수 없습니다. 다운로드 버튼을 눌러 송장을 출력하세요.');
+      return null;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(`
+      <html>
+        <head><title>송장 준비 중</title></head>
+        <body style="font-family: sans-serif; padding: 24px;">
+          <h2>송장 준비 중입니다...</h2>
+          <p>완료되면 자동으로 인쇄창이 열립니다.</p>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    return printWindow;
+  }
+
+  async function autoOpenInvoicePrintWindow(job) {
+    try {
+      const blob = await downloadInvoiceJob(job.jobId);
+      const url = window.URL.createObjectURL(blob);
+      const printWindow = invoicePrintWindowRef.current;
+
+      if (printWindow && !printWindow.closed) {
+        const pdfSrc = JSON.stringify(url);
+        printWindow.document.open();
+        printWindow.document.write(`
+          <html>
+            <head>
+              <title>송장 출력</title>
+              <style>
+                html, body { margin: 0; width: 100%; height: 100%; }
+                iframe { border: 0; width: 100%; height: 100%; }
+              </style>
+            </head>
+            <body>
+              <iframe id="invoice-pdf" src=${pdfSrc}></iframe>
+              <script>
+                const frame = document.getElementById('invoice-pdf');
+                frame.onload = function () {
+                  setTimeout(function () {
+                    try {
+                      frame.contentWindow.focus();
+                      frame.contentWindow.print();
+                    } catch (error) {
+                      try { window.print(); } catch (_) {}
+                    }
+                  }, 700);
+                };
+              </script>
+            </body>
+          </html>
+        `);
+        printWindow.document.close();
+        setMessage('송장 PDF가 준비되어 자동 인쇄창을 열었습니다.');
+      } else {
+        setInvoicePollingError('자동 인쇄창을 열 수 없습니다. 다운로드 버튼을 눌러 송장을 출력하세요.');
+        downloadBlob(blob, `invoice-${job.jobId}.pdf`);
+      }
+
+      setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+    } catch (err) {
+      setInvoicePollingError(formatInvoiceJobError(err.message || '자동 인쇄창을 열지 못했습니다. 다운로드 버튼을 눌러 송장을 출력하세요.'));
+    }
+  }
+
   async function handleInvoice(orderSnList) {
     if (!orderSnList.length) return;
     setError('');
@@ -231,6 +311,8 @@ export default function OrderManagementPage() {
     setInvoicePollingError('');
     setInvoiceJob(null);
     setInvoiceLoading(true);
+    invoicePrintWindowRef.current = openInvoicePrintWindow();
+    autoPrintedInvoiceJobRef.current = '';
 
     try {
       const result = await startInvoiceJob(orderSnList);
@@ -353,6 +435,11 @@ export default function OrderManagementPage() {
             <span>실패 {invoiceJob.failed || 0}건</span>
           </div>
           {invoicePollingError && <p className="invoice-job-warning">{invoicePollingError}</p>}
+          {Array.isArray(invoiceJob.waiting_items) && invoiceJob.waiting_items.length > 0 && (
+            <div className="invoice-job-warning">
+              송장 생성 대기 중입니다. 잠시 후 다시 송장출력을 눌러 다운로드하세요.
+            </div>
+          )}
           {Array.isArray(invoiceJob.errors) && invoiceJob.errors.length > 0 && (
             <div className="invoice-errors">
               <strong>실패 주문</strong>

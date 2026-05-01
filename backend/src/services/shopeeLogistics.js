@@ -57,6 +57,25 @@ function isPackageNotReadyError(err) {
   );
 }
 
+function isDocumentWaitingError(err) {
+  const msg = err?.message || '';
+  return Boolean(err?.waitingDocument) ||
+    /Shipping document not ready/i.test(msg) ||
+    /document.*not ready/i.test(msg) ||
+    /label.*not ready/i.test(msg);
+}
+
+function toWaitingDocumentResult(reason, trackingNumber, extra = {}) {
+  return {
+    pdfBuffer: null,
+    trackingNumber,
+    skipped: true,
+    status: 'waiting_label',
+    reason: reason || '송장 생성 대기 중입니다. Shopee에서 송장 준비가 끝난 뒤 다시 송장출력을 눌러주세요.',
+    ...extra,
+  };
+}
+
 // ─── 인증 헬퍼 ───────────────────────────────────────────────────
 // shop별 onAuthError 핸들러 — 403 발생 시 해당 shop 토큰만 갱신
 function makeAuthErrorHandler(shopId) {
@@ -310,7 +329,7 @@ async function createShippingDocument(shopId, orderList, accessToken) {
  */
 async function pollShippingDocumentResult(
   shopId, orderSnList, accessToken,
-  maxAttempts = 30, interval = 2000
+  maxAttempts = 24, interval = 5000
 ) {
   const path = '/api/v2/logistics/get_shipping_document_result';
   // ⚠️ 공식 스펙: POST + JSON body (GET + query param 방식은 404)
@@ -345,7 +364,10 @@ async function pollShippingDocumentResult(
     }
   }
 
-  throw new Error(`Shipping document not ready after ${maxAttempts} attempts`);
+  const waitingErr = new Error(`Shipping document not ready after ${maxAttempts} attempts`);
+  waitingErr.waitingDocument = true;
+  waitingErr.code = 'WAITING_LABEL';
+  throw waitingErr;
 }
 
 // ─── 7. download_shipping_document ───────────────────────────────
@@ -478,7 +500,7 @@ async function createAndDownload(shopId, orderSn, docType, accessToken, tracking
   }
 
   // poll
-  const pollResult = await pollShippingDocumentResult(shopId, [orderSn], accessToken, 30, 2000);
+  const pollResult = await pollShippingDocumentResult(shopId, [orderSn], accessToken, 24, 5000);
   const item = pollResult.find(r => r.order_sn === orderSn);
   if (item?.fail_error && item.fail_error !== '') {
     throw new Error(`document result error: ${item.fail_error}`);
@@ -538,12 +560,10 @@ async function processInvoiceForOrder({ shopId, orderSn, orderStatus, accessToke
         shipSkipped = true;
       } else if (isPackageNotReadyError(paramErr)) {
         console.warn(`[Logistics] get_shipping_parameter skipped (package not ready / KYC pending): ${orderSn} — ${paramErr.message}`);
-        return {
-          pdfBuffer: null,
-          trackingNumber,
-          skipped: true,
-          reason: `Shipping parameters can only be obtained when package is ready to be shipped: ${paramErr.message}`,
-        };
+        return toWaitingDocumentResult(
+          `Shipping parameters can only be obtained when package is ready to be shipped: ${paramErr.message}`,
+          trackingNumber
+        );
       } else {
         throw paramErr;
       }
@@ -576,6 +596,13 @@ async function processInvoiceForOrder({ shopId, orderSn, orderStatus, accessToke
       // shipSkipped=true 이면 호출자(invoiceWorker)가 DB order_status → PROCESSED 업데이트
       return { pdfBuffer, trackingNumber, skipped: false, reason: null, statusUpdated: shipSkipped ? 'PROCESSED' : null };
     } catch (e) {
+      if (isDocumentWaitingError(e)) {
+        return toWaitingDocumentResult(
+          '송장 생성 대기 중입니다. Shopee에서 송장 준비가 끝난 뒤 다시 송장출력을 눌러주세요.',
+          trackingNumber,
+          { statusUpdated: shipSkipped ? 'PROCESSED' : null }
+        );
+      }
       if (e.cannotPrint) {
         return { pdfBuffer: null, trackingNumber, skipped: true, reason: `인쇄 불가 채널: ${e.message}`, statusUpdated: shipSkipped ? 'PROCESSED' : null };
       }
@@ -604,6 +631,12 @@ async function processInvoiceForOrder({ shopId, orderSn, orderStatus, accessToke
       const pdfBuffer = await createAndDownload(shopId, orderSn, docType, accessToken, trackingNumber);
       return { pdfBuffer, trackingNumber, skipped: false, reason: null };
     } catch (e) {
+      if (isDocumentWaitingError(e)) {
+        return toWaitingDocumentResult(
+          '송장 생성 대기 중입니다. Shopee에서 송장 준비가 끝난 뒤 다시 송장출력을 눌러주세요.',
+          trackingNumber
+        );
+      }
       if (e.cannotPrint) {
         return { pdfBuffer: null, trackingNumber, skipped: true, reason: `인쇄 불가 채널: ${e.message}` };
       }
@@ -630,6 +663,12 @@ async function processInvoiceForOrder({ shopId, orderSn, orderStatus, accessToke
     const pdfBuffer = await createAndDownload(shopId, orderSn, docType, accessToken);
     return { pdfBuffer, trackingNumber, skipped: false, reason: null };
   } catch (e) {
+    if (isDocumentWaitingError(e)) {
+      return toWaitingDocumentResult(
+        '송장 생성 대기 중입니다. Shopee에서 송장 준비가 끝난 뒤 다시 송장출력을 눌러주세요.',
+        trackingNumber
+      );
+    }
     if (e.cannotPrint) {
       return { pdfBuffer: null, trackingNumber, skipped: true, reason: `인쇄 불가 채널: ${e.message}` };
     }

@@ -61,7 +61,7 @@ function getInvoiceErrors(job) {
   const resultData = parseJobResultData(job);
   const results = Array.isArray(resultData?.results) ? resultData.results : [];
   return results
-    .filter(item => item.status === 'error' || item.status === 'skipped')
+    .filter(item => item.status === 'error')
     .map(item => ({
       order_sn: item.order_sn,
       shop_id: item.shop_id || item.shopId || null,
@@ -71,20 +71,36 @@ function getInvoiceErrors(job) {
     }));
 }
 
+function getInvoiceWaitingItems(job) {
+  const resultData = parseJobResultData(job);
+  const results = Array.isArray(resultData?.results) ? resultData.results : [];
+  return results
+    .filter(item => item.status === 'waiting_label' || item.status === 'waiting_document')
+    .map(item => ({
+      order_sn: item.order_sn,
+      shop_id: item.shop_id || item.shopId || null,
+      message: '송장 생성 대기 중입니다. 잠시 후 다시 송장출력을 눌러 다운로드하세요.',
+      detail: item.reason || item.message || '',
+      code: item.status,
+    }));
+}
+
 function formatInvoiceJob(job) {
   const resultData = parseJobResultData(job) || {};
   const results = Array.isArray(resultData.results) ? resultData.results : [];
   const errors = getInvoiceErrors(job);
+  const waiting_items = getInvoiceWaitingItems(job);
   const total = Number(job.progress_total || resultData.total || results.length || 0);
   const processed = Number(job.progress_current || results.length || 0);
   const successCount = Number(resultData.success || results.filter(item => item.status === 'success').length || 0);
-  const failedCount = Number(resultData.error || 0) + Number(resultData.skipped || 0);
+  const waitingCount = Number(resultData.waiting || waiting_items.length || 0);
+  const failedCount = Number(resultData.error || 0);
   const hasDownload = Boolean(resultData.merged_pdf_path);
   const dbStatus = String(job.status || '').toLowerCase();
   let status = dbStatus === 'pending' ? 'queued' : dbStatus;
 
   if (dbStatus === 'completed' && errors.length > 0) {
-    status = successCount > 0 ? 'partial_failed' : 'failed';
+    status = successCount > 0 || waitingCount > 0 ? 'partial_failed' : 'failed';
   }
 
   return {
@@ -95,6 +111,7 @@ function formatInvoiceJob(job) {
     total,
     completed: processed,
     failed: failedCount || errors.length,
+    waiting: waitingCount,
     current_order_sn: extractCurrentOrderSn(job.progress_message),
     message: job.progress_message || '',
     percent: total > 0 ? Math.round((processed / total) * 100) : 0,
@@ -102,6 +119,7 @@ function formatInvoiceJob(job) {
     legacy_download_url: hasDownload ? `/api/invoice/download/${job.id}` : null,
     results,
     errors,
+    waiting_items,
     error_message: normalizeInvoiceFailureMessage(job.error_message || ''),
     detail: job.error_message || '',
     created_at: job.created_at,

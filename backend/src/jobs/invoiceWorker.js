@@ -74,6 +74,33 @@ async function saveStatusToDB(orderSn, newStatus) {
   }
 }
 
+async function safeFailJob(jobId, message, context = 'unknown') {
+  try {
+    await failJob(jobId, message);
+  } catch (failErr) {
+    console.error(`[InvoiceWorker] failJob failed job=${jobId} context=${context}: ${failErr.message}`, failErr.stack);
+  }
+}
+
+async function safeUpdateJobResult(jobId, resultData, context = 'unknown') {
+  try {
+    await updateJobResult(jobId, resultData);
+  } catch (updateErr) {
+    console.error(`[InvoiceWorker] updateJobResult failed job=${jobId} context=${context}: ${updateErr.message}`, updateErr.stack);
+    throw updateErr;
+  }
+}
+
+async function safeCompleteJob(jobId, resultData) {
+  try {
+    await completeJob(jobId, resultData);
+  } catch (completeErr) {
+    console.error(`[InvoiceWorker] completeJob failed job=${jobId}: ${completeErr.message}`, completeErr.stack);
+    await safeFailJob(jobId, `completeJob failed: ${completeErr.message}`, 'completeJob');
+    throw completeErr;
+  }
+}
+
 // ════════════════════════════════════════════════════════════════
 // 메인 Worker
 // ════════════════════════════════════════════════════════════════
@@ -144,13 +171,13 @@ async function runInvoice(jobId, orderSnList) {
         orderRows.length,
         `송장 생성 중 ${processed}/${orderRows.length}: ${orderSn}`
       );
-      await updateJobResult(jobId, {
+      await safeUpdateJobResult(jobId, {
         success: successCount,
         skipped: skippedCount,
         error: errorCount,
         total: orderRows.length,
         results,
-      });
+      }, `progress:${orderSn}`);
     };
 
     for (let i = 0; i < orderRows.length; i++) {
@@ -317,21 +344,32 @@ async function runInvoice(jobId, orderSnList) {
     const skippedCount = results.filter(r => r.status === 'skipped').length;
     const errorCount   = results.filter(r => r.status === 'error').length;
 
-    await updateProgress(jobId, orderRows.length, orderRows.length, '완료');
-    await completeJob(jobId, {
+    const finalResult = {
       success: successCount,
       skipped: skippedCount,
       error:   errorCount,
       total:   orderRows.length,
       merged_pdf_path: mergedPath,
       results,
-    });
+    };
+
+    await updateProgress(jobId, orderRows.length, orderRows.length, '완료');
+    await safeUpdateJobResult(jobId, finalResult, 'final');
+
+    if (successCount > 0) {
+      await safeCompleteJob(jobId, finalResult);
+    } else {
+      const failMessage = errorCount > 0
+        ? '송장 생성에 성공한 주문이 없습니다.'
+        : '송장 생성 가능한 주문이 없습니다.';
+      await safeFailJob(jobId, failMessage, 'no-success');
+    }
 
     console.log(`[InvoiceWorker] done job=${jobId}: success=${successCount} skipped=${skippedCount} error=${errorCount}`);
 
   } catch (fatalErr) {
     console.error(`[InvoiceWorker] fatal: ${fatalErr.message}`, fatalErr.stack);
-    await failJob(jobId, fatalErr.message);
+    await safeFailJob(jobId, fatalErr.message, 'fatal');
   } finally {
     console.log(`[InvoiceWorker] release invoice lock for job=${jobId}`);
   }

@@ -131,8 +131,9 @@ app.listen(PORT, '0.0.0.0', () => {
   }
 
   // 비정상 종료된 Job 복구
-  const { recoverStaleJobs } = require('./services/jobManager');
+  const { recoverStaleJobs, recoverStaleInvoiceJobs } = require('./services/jobManager');
   recoverStaleJobs().catch(e => console.error('[App] recoverStaleJobs error:', e.message));
+  recoverStaleInvoiceJobs({ staleMinutes: 10 }).catch(e => console.error('[App] recoverStaleInvoiceJobs error:', e.message));
 });
 
 module.exports = app;

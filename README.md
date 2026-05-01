@@ -16,6 +16,24 @@
 - `TELEGRAM_CHAT_ID=`
   - Telegram chat id for purchase-needed alerts.
 
+## Invoice jobs
+
+- Invoice jobs are stored in the `jobs` table and use `pending`, `running`, `completed`, and `failed` DB statuses.
+- API responses may expose `partial_failed` when a completed invoice job has at least one generated PDF and at least one failed/skipped order.
+- Stale running invoice jobs are auto-recovered after 10 minutes before starting a new invoice job and on server startup.
+- Manual stuck-job reset SQL, for emergency use only:
+
+```sql
+UPDATE jobs
+SET status='failed',
+    error_message='manual reset: invoice job stuck',
+    progress_message='수동 해제됨',
+    updated_at=NOW()
+WHERE job_type='invoice'
+  AND status='running'
+  AND updated_at < DATE_SUB(NOW(), INTERVAL 10 MINUTE);
+```
+
 ## Inventory adjustments
 
 - `products.stock_quantity`

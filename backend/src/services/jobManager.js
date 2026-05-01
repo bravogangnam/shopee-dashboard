@@ -108,6 +108,28 @@ async function failJob(job_id, error_message) {
 }
 
 /**
+ * 오래된 pending/running invoice Job 자동 복구
+ * - Shopee 처리는 끝났지만 finalization 실패 등으로 running에 남은 송장 job을 해제한다.
+ */
+async function recoverStaleInvoiceJobs({ staleMinutes = 10 } = {}) {
+  const [result] = await db.query(
+    `UPDATE jobs
+     SET status='failed',
+         error_message=COALESCE(error_message, 'auto recovery: invoice job stale running'),
+         progress_message='자동 복구됨: 오래된 송장 작업 해제',
+         updated_at=NOW()
+     WHERE job_type='invoice'
+       AND status IN ('pending','running')
+       AND updated_at < DATE_SUB(NOW(), INTERVAL ? MINUTE)`,
+    [staleMinutes]
+  );
+  if (result.affectedRows > 0) {
+    console.log(`[JobManager] Recovered ${result.affectedRows} stale invoice job(s) (>${staleMinutes}min)`);
+  }
+  return result.affectedRows;
+}
+
+/**
  * 오래된 완료/실패 Job 정리 (7일 이상)
  */
 async function cleanOldJobs() {
@@ -161,6 +183,7 @@ module.exports = {
   updateJobResult,
   completeJob,
   failJob,
+  recoverStaleInvoiceJobs,
   cleanOldJobs,
   recoverStaleJobs,
   markStaleJobsFailed,

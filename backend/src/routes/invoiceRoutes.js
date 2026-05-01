@@ -2,7 +2,12 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const { requireAuth } = require('../middleware/auth');
-const { createJob, getJob, getRunningJob } = require('../services/jobManager');
+const {
+  createJob,
+  getJob,
+  getRunningJob,
+  recoverStaleInvoiceJobs,
+} = require('../services/jobManager');
 const { runInvoice } = require('../jobs/invoiceWorker');
 const labelStorage = require('../services/labelStorageService');
 
@@ -119,6 +124,8 @@ async function startInvoiceJob(req, res, { legacy = false } = {}) {
   if (orderSnList.length > 50) {
     return res.status(400).json({ success: false, error: '한 번에 최대 50건까지 가능합니다.' });
   }
+
+  await recoverStaleInvoiceJobs({ staleMinutes: 10 });
 
   const running = await getRunningJob('invoice');
   if (running) {

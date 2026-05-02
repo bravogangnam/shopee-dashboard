@@ -1169,6 +1169,142 @@ label {
   text-align: right;
 }
 
+.inventory-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.inventory-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.inventory-tabs button.active {
+  border-bottom-color: #1677ff;
+  color: #1677ff;
+}
+
+.inventory-tabs span {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #eef4ff;
+  font-size: 11px;
+}
+
+.today-order-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 14px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.today-order-toolbar strong {
+  color: #172033;
+  font-size: 15px;
+}
+
+.today-order-toolbar p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.toggle-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.today-order-inventory-table {
+  min-width: 1080px;
+}
+
+.today-order-inventory-table th:nth-child(2),
+.today-order-inventory-table td:nth-child(2) {
+  min-width: 280px;
+}
+
+.link-button {
+  border: 0;
+  background: transparent;
+  color: #1677ff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.link-button.disabled {
+  color: #334155;
+  cursor: default;
+}
+
+.link-button.disabled:hover {
+  text-decoration: none;
+}
+
+.inventory-product-link {
+  display: block;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.purchase-needed-qty.active {
+  color: #cf1322;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.today-order-lines-modal {
+  width: min(560px, 100%);
+}
+
+.today-order-lines-list {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.today-order-lines-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #edf1f7;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
 .receipt-sync-panel,
 .receipt-sync-result {
   display: flex;

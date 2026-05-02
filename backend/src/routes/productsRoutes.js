@@ -5,6 +5,7 @@ const {
   getLowStockProducts,
   getInventoryProducts,
   getInventorySummary,
+  getTodayOrderInventory,
   updateProductStockSettings,
   manuallyAdjustStock,
   adjustStartBalanceStock,
@@ -30,6 +31,11 @@ router.get('/low-stock', async (req, res) => {
     : await getLowStockProducts();
   const summary = await getInventorySummary();
   return res.json({ success: true, data: products, summary });
+});
+
+router.get('/inventory/today-orders', async (req, res) => {
+  const result = await getTodayOrderInventory();
+  return res.json({ success: true, ...result });
 });
 
 router.post('/inventory-receipts/sync', async (req, res) => {

@@ -64,6 +64,15 @@ const createDefaultFilters = () => ({
   ...getCurrentMonthRange(),
 });
 
+const createInitialFilters = () => {
+  const params = new URLSearchParams(window.location.search);
+  const orderSn = params.get('order_sn') || '';
+  const defaults = createDefaultFilters();
+  return orderSn
+    ? { ...defaults, order_sn: orderSn, date_from: '', date_to: '' }
+    : defaults;
+};
+
 function toOrderQuery(filters) {
   return {
     ...filters,
@@ -93,8 +102,8 @@ function invoiceStatusLabel(status) {
 }
 
 export default function OrderManagementPage() {
-  const [filters, setFilters] = useState(() => createDefaultFilters());
-  const [query, setQuery] = useState(() => createDefaultFilters());
+  const [filters, setFilters] = useState(() => createInitialFilters());
+  const [query, setQuery] = useState(() => createInitialFilters());
   const [orders, setOrders] = useState([]);
   const [stats, setStats] = useState(null);
   const [monthlyStats, setMonthlyStats] = useState(null);

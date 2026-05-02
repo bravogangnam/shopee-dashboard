@@ -17,6 +17,14 @@ export async function fetchInventoryProducts() {
   };
 }
 
+export async function fetchTodayOrderInventory() {
+  const result = await apiRequest('/api/products/inventory/today-orders');
+  return {
+    data: result.data || [],
+    summary: result.summary || null,
+  };
+}
+
 export function updateProductStock(sku, payload) {
   return apiRequest(`/api/products/${skuPath(sku)}/stock`, {
     method: 'PATCH',

@@ -3,9 +3,11 @@ import {
   adjustProductStartBalance,
   fetchInventoryMovements,
   fetchInventoryProducts,
+  fetchTodayOrderInventory,
   syncInventoryReceipts,
   updateProductStock,
 } from '../api/products.js';
+import ImagePreviewModal from '../components/ImagePreviewModal.jsx';
 
 function formatDateTime(value) {
   if (!value) return '-';
@@ -61,6 +63,12 @@ function movementTone(movement) {
 
 function formatKrw(value) {
   return `₩${Math.round(Number(value || 0)).toLocaleString('ko-KR')}`;
+}
+
+function formatWon(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return '-';
+  return `₩${Math.round(number).toLocaleString('ko-KR')}`;
 }
 
 function InventoryStats({ products, summary }) {
@@ -318,6 +326,148 @@ function ReceiptSyncReminderModal({ result, onClose }) {
   );
 }
 
+function OrderLinesModal({ item, onClose }) {
+  if (!item) return null;
+
+  function goToOrder(orderSn) {
+    window.location.href = `/orders?order_sn=${encodeURIComponent(orderSn)}`;
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-card today-order-lines-modal">
+        <div className="modal-header">
+          <div>
+            <h2>관련 주문번호</h2>
+            <p>{item.sku}</p>
+          </div>
+          <button type="button" className="ghost-button" onClick={onClose}>닫기</button>
+        </div>
+        <ul className="today-order-lines-list">
+          {(item.order_lines || []).map(line => (
+            <li key={line.order_sn}>
+              <button type="button" onClick={() => goToOrder(line.order_sn)}>
+                {line.order_sn}
+              </button>
+              <span>수량 {Number(line.qty || 0).toLocaleString('ko-KR')}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function TodayOrderInventoryTable({
+  items,
+  purchaseOnly,
+  onTogglePurchaseOnly,
+  onPreviewImage,
+  onShowOrders,
+}) {
+  function goToOrder(orderSn) {
+    window.location.href = `/orders?order_sn=${encodeURIComponent(orderSn)}`;
+  }
+
+  return (
+    <div className="today-order-inventory">
+      <div className="today-order-toolbar">
+        <div>
+          <strong>오늘 주문 상품 재고 현황</strong>
+          <p>오늘 주문된 상품을 기준재고 SKU 기준으로 합산했습니다.</p>
+        </div>
+        <label className="toggle-inline">
+          <input
+            type="checkbox"
+            checked={purchaseOnly}
+            onChange={event => onTogglePurchaseOnly(event.target.checked)}
+          />
+          구매필요만 보기
+        </label>
+      </div>
+
+      {items.length ? (
+        <div className="table-wrap today-order-table-wrap">
+          <table className="data-table today-order-inventory-table">
+            <thead>
+              <tr>
+                <th>SKU</th>
+                <th>상품명</th>
+                <th>주문번호</th>
+                <th className="num">오늘 주문수량</th>
+                <th className="num">현재 재고</th>
+                <th className="num">구매필요</th>
+                <th className="num">최근 단가</th>
+                <th>상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(item => {
+                const orderLines = item.order_lines || [];
+                const firstOrder = orderLines[0]?.order_sn || item.order_sns?.[0] || '';
+                const productName = getProductName(item);
+                const status = getStockStatus(item);
+                const purchaseNeeded = Number(item.purchase_needed_qty || 0);
+                const hasImage = Boolean(item.image_url);
+
+                return (
+                  <tr key={item.sku}>
+                    <td><strong>{item.sku}</strong></td>
+                    <td>
+                      <button
+                        type="button"
+                        className={`link-button inventory-product-link ${hasImage ? '' : 'disabled'}`}
+                        onClick={() => hasImage && onPreviewImage({
+                          image_url: item.image_url,
+                          item_name: productName,
+                          model_name: item.sku,
+                        })}
+                        disabled={!hasImage}
+                        title={productName}
+                      >
+                        {productName}
+                      </button>
+                      {item.product_name_en && <small>{item.product_name_en}</small>}
+                    </td>
+                    <td>
+                      {orderLines.length <= 1 ? (
+                        <button type="button" className="link-button" onClick={() => firstOrder && goToOrder(firstOrder)}>
+                          {firstOrder || '-'}
+                        </button>
+                      ) : (
+                        <button type="button" className="link-button" onClick={() => onShowOrders(item)}>
+                          {firstOrder} 외 {orderLines.length - 1}건
+                        </button>
+                      )}
+                    </td>
+                    <td className="num">{Number(item.ordered_qty || 0).toLocaleString('ko-KR')}</td>
+                    <td className={`num ${Number(item.stock_quantity || 0) < 0 ? 'negative' : ''}`}>
+                      {Number(item.stock_quantity || 0).toLocaleString('ko-KR')}
+                    </td>
+                    <td className={`num purchase-needed-qty ${purchaseNeeded > 0 ? 'active' : ''}`}>
+                      {purchaseNeeded.toLocaleString('ko-KR')}
+                    </td>
+                    <td className="num">{formatWon(item.latest_unit_cost_vat)}</td>
+                    <td>
+                      <span className={`stock-status-pill stock-status-${status.key}`}>
+                        {status.label}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="table-state">
+          {purchaseOnly ? '오늘 주문 상품 중 구매필요 SKU가 없습니다.' : '오늘 주문 상품이 없습니다.'}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StockSettingsModal({ product, saving, onClose, onSave }) {
   const [form, setForm] = useState(() => ({
     stock_quantity: product.stock_quantity ?? 0,
@@ -530,6 +680,10 @@ function MovementsModal({ product, movements, loading, onClose }) {
 export default function InventoryPage() {
   const [products, setProducts] = useState([]);
   const [inventorySummary, setInventorySummary] = useState(null);
+  const [todayOrderItems, setTodayOrderItems] = useState([]);
+  const [todayOrderSummary, setTodayOrderSummary] = useState(null);
+  const [activeInventoryTab, setActiveInventoryTab] = useState('today');
+  const [todayPurchaseOnly, setTodayPurchaseOnly] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [loading, setLoading] = useState(false);
@@ -543,6 +697,8 @@ export default function InventoryPage() {
   const [settingsProduct, setSettingsProduct] = useState(null);
   const [adjustProduct, setAdjustProduct] = useState(null);
   const [historyProduct, setHistoryProduct] = useState(null);
+  const [todayOrderLinesProduct, setTodayOrderLinesProduct] = useState(null);
+  const [inventoryPreviewItem, setInventoryPreviewItem] = useState(null);
   const [movements, setMovements] = useState([]);
   const [movementsLoading, setMovementsLoading] = useState(false);
 
@@ -563,26 +719,45 @@ export default function InventoryPage() {
     });
   }, [products, search, statusFilter]);
 
+  const filteredTodayOrderItems = useMemo(() => {
+    return todayOrderItems.filter(item => {
+      if (todayPurchaseOnly && Number(item.stock_quantity || 0) >= 0) return false;
+      const keyword = search.trim().toLowerCase();
+      if (!keyword) return true;
+      const haystack = `${item.sku || ''} ${getProductName(item)} ${item.product_name_en || ''} ${(item.order_sns || []).join(' ')}`.toLowerCase();
+      return haystack.includes(keyword);
+    });
+  }, [todayOrderItems, todayPurchaseOnly, search]);
+
   const autoRefreshPaused = loading ||
     syncLoading ||
     saving ||
     Boolean(settingsProduct) ||
     Boolean(adjustProduct) ||
     Boolean(historyProduct) ||
-    Boolean(receiptReminderResult);
+    Boolean(receiptReminderResult) ||
+    Boolean(todayOrderLinesProduct) ||
+    Boolean(inventoryPreviewItem);
 
   const loadProducts = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const result = await fetchInventoryProducts();
-      setProducts(result.data);
-      setInventorySummary(result.summary);
+      const [inventoryResult, todayResult] = await Promise.all([
+        fetchInventoryProducts(),
+        fetchTodayOrderInventory(),
+      ]);
+      setProducts(inventoryResult.data);
+      setInventorySummary(inventoryResult.summary);
+      setTodayOrderItems(todayResult.data);
+      setTodayOrderSummary(todayResult.summary);
       setRefreshedAt(new Date());
     } catch (err) {
       setError(err.message || '재고 목록을 불러오지 못했습니다.');
       setProducts([]);
       setInventorySummary(null);
+      setTodayOrderItems([]);
+      setTodayOrderSummary(null);
     } finally {
       setLoading(false);
     }
@@ -712,8 +887,19 @@ export default function InventoryPage() {
           </button>
           <button
             type="button"
-            className={`action-btn ${statusFilter !== 'ALL' ? 'primary' : ''}`}
-            onClick={() => setStatusFilter(current => (current === 'ALL' ? 'purchase_needed' : 'ALL'))}
+            className={`action-btn ${
+              (activeInventoryTab === 'today' && todayPurchaseOnly) ||
+              (activeInventoryTab === 'all' && statusFilter !== 'ALL')
+                ? 'primary'
+                : ''
+            }`}
+            onClick={() => {
+              if (activeInventoryTab === 'today') {
+                setTodayPurchaseOnly(current => !current);
+                return;
+              }
+              setStatusFilter(current => (current === 'ALL' ? 'purchase_needed' : 'ALL'));
+            }}
           >
             구매필요만 보기
           </button>
@@ -743,6 +929,25 @@ export default function InventoryPage() {
         마지막 갱신: {refreshedAt ? refreshedAt.toLocaleTimeString('ko-KR') : '-'}
       </div>
 
+      <div className="inventory-tabs">
+        <button
+          type="button"
+          className={activeInventoryTab === 'today' ? 'active' : ''}
+          onClick={() => setActiveInventoryTab('today')}
+        >
+          오늘 주문 상품
+          {todayOrderSummary && <span>{Number(todayOrderSummary.sku_count || 0).toLocaleString('ko-KR')}</span>}
+        </button>
+        <button
+          type="button"
+          className={activeInventoryTab === 'all' ? 'active' : ''}
+          onClick={() => setActiveInventoryTab('all')}
+        >
+          전체 SKU
+          <span>{products.length.toLocaleString('ko-KR')}</span>
+        </button>
+      </div>
+
       <div className="inventory-filters">
         <label className="filter-field order-search-field">
           SKU 또는 상품명
@@ -752,20 +957,30 @@ export default function InventoryPage() {
             placeholder="SKU / 상품명 검색"
           />
         </label>
-        <label className="filter-field">
-          상태
-          <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
-            <option value="ALL">전체</option>
-            <option value="purchase_needed">구매필요</option>
-            <option value="out_of_stock">품절</option>
-            <option value="low_stock">재고부족</option>
-            <option value="in_stock">재고보유</option>
-          </select>
-        </label>
+        {activeInventoryTab === 'all' && (
+          <label className="filter-field">
+            상태
+            <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
+              <option value="ALL">전체</option>
+              <option value="purchase_needed">구매필요</option>
+              <option value="out_of_stock">품절</option>
+              <option value="low_stock">재고부족</option>
+              <option value="in_stock">재고보유</option>
+            </select>
+          </label>
+        )}
       </div>
 
       {loading ? (
         <div className="table-state">재고 목록을 불러오는 중...</div>
+      ) : activeInventoryTab === 'today' ? (
+        <TodayOrderInventoryTable
+          items={filteredTodayOrderItems}
+          purchaseOnly={todayPurchaseOnly}
+          onTogglePurchaseOnly={setTodayPurchaseOnly}
+          onPreviewImage={setInventoryPreviewItem}
+          onShowOrders={setTodayOrderLinesProduct}
+        />
       ) : filteredProducts.length ? (
         <div className="table-wrap inventory-table-wrap">
           <table className="data-table inventory-table">
@@ -847,6 +1062,18 @@ export default function InventoryPage() {
           movements={movements}
           loading={movementsLoading}
           onClose={() => setHistoryProduct(null)}
+        />
+      )}
+      {todayOrderLinesProduct && (
+        <OrderLinesModal
+          item={todayOrderLinesProduct}
+          onClose={() => setTodayOrderLinesProduct(null)}
+        />
+      )}
+      {inventoryPreviewItem && (
+        <ImagePreviewModal
+          item={inventoryPreviewItem}
+          onClose={() => setInventoryPreviewItem(null)}
         />
       )}
       {receiptReminderResult && (

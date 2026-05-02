@@ -45,6 +45,38 @@ function toPositiveQuantity(value) {
   return Number.isFinite(qty) && qty > 0 ? Math.trunc(qty) : 0;
 }
 
+function mysqlDateTime(date) {
+  const pad = value => String(value).padStart(2, '0');
+  return [
+    date.getUTCFullYear(),
+    pad(date.getUTCMonth() + 1),
+    pad(date.getUTCDate()),
+  ].join('-') + ' ' + [
+    pad(date.getUTCHours()),
+    pad(date.getUTCMinutes()),
+    pad(date.getUTCSeconds()),
+  ].join(':');
+}
+
+function getTodayKstUtcRange(now = new Date()) {
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const startUtcMs = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate()) - 9 * 60 * 60 * 1000;
+  const endUtcMs = startUtcMs + 24 * 60 * 60 * 1000;
+  return {
+    start: mysqlDateTime(new Date(startUtcMs)),
+    end: mysqlDateTime(new Date(endUtcMs)),
+  };
+}
+
+function stockStatus(stockQuantity, lowStockThreshold) {
+  const stock = Number(stockQuantity || 0);
+  const threshold = Number(lowStockThreshold || 0);
+  if (stock < 0) return 'purchase_needed';
+  if (stock === 0) return 'out_of_stock';
+  if (stock > 0 && stock <= threshold) return 'low_stock';
+  return 'in_stock';
+}
+
 async function getOrderItems(conn, order) {
   const [items] = await conn.query(
     `SELECT order_sn, shop_id, item_id, item_sku, model_id, model_sku,
@@ -598,6 +630,188 @@ async function getLowStockProducts() {
   return getInventoryProducts();
 }
 
+async function getTodayOrderInventory() {
+  const { start, end } = getTodayKstUtcRange();
+  const [orderItems] = await db.query(
+    `SELECT
+       o.order_sn,
+       o.shop_id,
+       o.order_created_at,
+       oi.item_id,
+       oi.model_id,
+       oi.item_name,
+       oi.item_sku,
+       oi.model_name,
+       oi.model_sku,
+       oi.model_quantity_purchased,
+       oi.image_info_image_url,
+       oi.item_image_url
+     FROM orders o
+     INNER JOIN order_items oi
+       ON oi.order_sn = o.order_sn
+      AND oi.shop_id = o.shop_id
+     INNER JOIN shops s
+       ON s.shop_id = o.shop_id
+      AND s.is_active = 1
+     WHERE o.order_status IN ('READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'TO_CONFIRM_RECEIVE', 'COMPLETED')
+       AND o.order_created_at >= ?
+       AND o.order_created_at < ?
+     ORDER BY o.order_created_at DESC, o.order_sn ASC, oi.id ASC`,
+    [start, end]
+  );
+
+  const componentCache = new Map();
+  const aggregates = new Map();
+
+  async function componentsFor(sourceSku) {
+    if (!componentCache.has(sourceSku)) {
+      const [rows] = await db.query(
+        `SELECT source_sku, base_sku, factor, composition_type, note
+         FROM sku_compositions
+         WHERE source_sku = ?
+         ORDER BY id ASC`,
+        [sourceSku]
+      );
+      componentCache.set(sourceSku, rows.length
+        ? rows.map(row => ({
+          sourceSku: row.source_sku,
+          baseSku: row.base_sku,
+          factor: Number(row.factor || 0),
+          type: row.composition_type || null,
+          note: row.note || null,
+        }))
+        : [{ sourceSku, baseSku: sourceSku, factor: 1, type: 'default', note: '' }]);
+    }
+    return componentCache.get(sourceSku);
+  }
+
+  for (const item of orderItems) {
+    const sourceSku = getProductSkuForOrderItem(item);
+    const itemQty = toPositiveQuantity(item.model_quantity_purchased);
+    if (!sourceSku || !itemQty) continue;
+
+    const components = await componentsFor(sourceSku);
+    for (const component of components) {
+      const factor = Number(component.factor || 0);
+      if (!component.baseSku || factor <= 0) continue;
+
+      const baseQty = itemQty * factor;
+      const existing = aggregates.get(component.baseSku) || {
+        sku: component.baseSku,
+        ordered_qty: 0,
+        orderMap: new Map(),
+        sourceNames: [],
+        image_url: null,
+        last_order_created_at: null,
+      };
+
+      existing.ordered_qty += baseQty;
+      existing.sourceNames.push(item.item_name);
+      existing.image_url = existing.image_url || item.image_info_image_url || item.item_image_url || null;
+      if (!existing.last_order_created_at || new Date(item.order_created_at) > new Date(existing.last_order_created_at)) {
+        existing.last_order_created_at = item.order_created_at;
+      }
+
+      const orderLine = existing.orderMap.get(item.order_sn) || {
+        order_sn: item.order_sn,
+        qty: 0,
+      };
+      orderLine.qty += baseQty;
+      existing.orderMap.set(item.order_sn, orderLine);
+      aggregates.set(component.baseSku, existing);
+    }
+  }
+
+  const skus = Array.from(aggregates.keys());
+  if (!skus.length) {
+    return {
+      data: [],
+      summary: {
+        sku_count: 0,
+        purchase_needed_sku_count: 0,
+        purchase_needed_total_qty: 0,
+      },
+    };
+  }
+
+  const placeholders = skus.map(() => '?').join(',');
+  const [products] = await db.query(
+    `SELECT sku, brand, product_name_kr, product_name_en, option_name,
+            stock_quantity, low_stock_threshold, stock_tracking_started_at
+     FROM products
+     WHERE sku IN (${placeholders})`,
+    skus
+  );
+  const productMap = new Map(products.map(product => [product.sku, product]));
+
+  const [batchRows] = await db.query(
+    `SELECT sku, unit_cost
+     FROM inventory_batches
+     WHERE sku IN (${placeholders})
+     ORDER BY sku ASC, received_at IS NULL, received_at DESC, id DESC`,
+    skus
+  );
+  const latestCostMap = new Map();
+  for (const batch of batchRows) {
+    if (!latestCostMap.has(batch.sku) && Number(batch.unit_cost || 0) > 0) {
+      latestCostMap.set(batch.sku, Number(batch.unit_cost || 0) * 1.1);
+    }
+  }
+
+  const data = Array.from(aggregates.values()).map(row => {
+    const product = productMap.get(row.sku) || {};
+    const stockQuantity = Number(product.stock_quantity || 0);
+    const lowStockThreshold = Number(product.low_stock_threshold || 0);
+    const orderLines = Array.from(row.orderMap.values())
+      .sort((a, b) => String(a.order_sn).localeCompare(String(b.order_sn)));
+    const fallbackName = row.sourceNames.find(Boolean) || row.sku;
+
+    return {
+      sku: row.sku,
+      product_name: product.product_name_kr || product.product_name || fallbackName,
+      product_name_kr: product.product_name_kr || null,
+      product_name_en: product.product_name_en || null,
+      ordered_qty: row.ordered_qty,
+      order_count: orderLines.length,
+      order_sns: orderLines.map(line => line.order_sn),
+      order_lines: orderLines,
+      stock_quantity: stockQuantity,
+      low_stock_threshold: lowStockThreshold,
+      status: stockStatus(stockQuantity, lowStockThreshold),
+      purchase_needed_qty: stockQuantity < 0 ? Math.abs(stockQuantity) : 0,
+      latest_unit_cost_vat: latestCostMap.get(row.sku) || null,
+      image_url: row.image_url,
+      last_order_created_at: row.last_order_created_at,
+    };
+  });
+
+  const statusRank = {
+    purchase_needed: 0,
+    out_of_stock: 1,
+    low_stock: 2,
+    in_stock: 3,
+  };
+
+  data.sort((a, b) => {
+    if (b.purchase_needed_qty !== a.purchase_needed_qty) {
+      return b.purchase_needed_qty - a.purchase_needed_qty;
+    }
+    if (statusRank[a.status] !== statusRank[b.status]) {
+      return statusRank[a.status] - statusRank[b.status];
+    }
+    return new Date(b.last_order_created_at || 0) - new Date(a.last_order_created_at || 0);
+  });
+
+  return {
+    data,
+    summary: {
+      sku_count: data.length,
+      purchase_needed_sku_count: data.filter(item => item.stock_quantity < 0).length,
+      purchase_needed_total_qty: data.reduce((sum, item) => sum + Number(item.purchase_needed_qty || 0), 0),
+    },
+  };
+}
+
 async function updateProductStockSettings(sku, data) {
   const normalizedSku = normalizeSku(sku);
   if (!normalizedSku) throw new Error('sku is required');
@@ -662,6 +876,7 @@ module.exports = {
   adjustStartBalanceStock,
   getInventoryProducts,
   getInventorySummary,
+  getTodayOrderInventory,
   getLowStockProducts,
   updateProductStockSettings,
   getInventoryMovements,

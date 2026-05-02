@@ -26,6 +26,8 @@ const { buildUrl } = require('../utils/shopeeSignature');
 const { callWithRetry, shopeeAxios, sleep } = require('../utils/apiWrapper');
 const { refreshShopToken, getOrRefreshShopToken } = require('./shopeeAuth');
 
+const LABEL_READY_DELAY_MS = Number(process.env.INVOICE_LABEL_READY_DELAY_MS || 5000);
+
 // ─── 공통 헬퍼: already-shipped 에러 판별 ──────────────────────────
 /**
  * Shopee가 "Package not eligible for rescheduling" 에러를 반환하는 경우는
@@ -455,6 +457,67 @@ async function downloadShippingDocument(shopId, orderSn, shippingDocumentType, a
   return buffer;
 }
 
+async function downloadShippingDocumentBatch(shopId, orderSnList, shippingDocumentType, accessToken) {
+  const path = '/api/v2/logistics/download_shipping_document';
+  const url  = buildUrl(path, {}, 'shop', accessToken, shopId);
+  const body = {
+    shipping_document_type: shippingDocumentType,
+    order_list: orderSnList.map(orderSn => ({ order_sn: orderSn })),
+  };
+
+  console.log(`[Logistics] download_shipping_document BATCH REQUEST:`, JSON.stringify(body));
+
+  const rawData = await callWithRetry(
+    () => shopeeAxios.post(url, body, { responseType: 'arraybuffer' }),
+    {
+      context: `download_shipping_document_batch[shop=${shopId}][count=${orderSnList.length}]`,
+      onAuthError: makeAuthErrorHandler(shopId),
+      rebuildRequest: async (newToken) => {
+        const newUrl = buildUrl(path, {}, 'shop', newToken, shopId);
+        return () => shopeeAxios.post(newUrl, body, { responseType: 'arraybuffer' });
+      },
+    }
+  );
+
+  let buffer;
+  if (Buffer.isBuffer(rawData)) {
+    buffer = rawData;
+  } else if (rawData instanceof ArrayBuffer) {
+    buffer = Buffer.from(rawData);
+  } else if (rawData) {
+    buffer = Buffer.from(rawData);
+  } else {
+    throw new Error('download_shipping_document_batch: empty response');
+  }
+
+  if (buffer.length === 0) {
+    throw new Error('download_shipping_document_batch: empty buffer');
+  }
+
+  const isPdf  = buffer.slice(0, 4).toString('ascii') === '%PDF';
+  const isJson = buffer[0] === 0x7b;
+  const isHtml = buffer.slice(0, 100).toString('utf8').toLowerCase().includes('<html');
+
+  if (!isPdf) {
+    const bodyText = buffer.slice(0, 600).toString('utf8');
+    console.warn(`[Logistics] download_shipping_document_batch NON-PDF: ${bodyText}`);
+    if (isJson) {
+      try {
+        const errObj = JSON.parse(bodyText);
+        throw new Error(
+          `download_shipping_document API error: ${errObj.error} - ${errObj.message}`
+        );
+      } catch (parseErr) {
+        if (parseErr.message.startsWith('download_shipping_document API error')) throw parseErr;
+        throw new Error(`download_shipping_document_batch: non-PDF non-parseable response (${buffer.length}B)`);
+      }
+    }
+  }
+
+  console.log(`[Logistics] download_shipping_document_batch count=${orderSnList.length} size=${buffer.length}B type=${isPdf ? 'PDF' : isHtml ? 'HTML' : 'BINARY'}`);
+  return buffer;
+}
+
 // ─── 내부 헬퍼: docType 조회 ─────────────────────────────────────
 /**
  * get_shipping_document_parameter 호출 후 해당 주문의 document type 반환
@@ -479,6 +542,30 @@ async function resolveDocType(shopId, orderSn, accessToken) {
   }
   console.log(`[Logistics] resolved doc_type for ${orderSn}: ${docType}`);
   return docType;
+}
+
+async function resolveDocTypes(shopId, orderSnList, accessToken) {
+  const docParams = await getShippingDocumentParameter(shopId, orderSnList, accessToken);
+  const map = new Map();
+
+  for (const orderSn of orderSnList) {
+    const orderDoc = docParams.find(d => d.order_sn === orderSn);
+    const docType =
+      orderDoc?.suggest_shipping_document_type ||
+      orderDoc?.suggested_shipping_document_type ||
+      orderDoc?.shipping_document_type ||
+      orderDoc?.selectable_shipping_document_type?.[0] ||
+      null;
+
+    if (!docType) {
+      throw new Error(
+        `document type 결정 불가: ${orderSn} keys=${orderDoc ? Object.keys(orderDoc).join(',') : 'null'}`
+      );
+    }
+    map.set(orderSn, docType);
+  }
+
+  return map;
 }
 
 // ─── 내부 헬퍼: create → poll → download 풀 플로우 ───────────────
@@ -508,6 +595,88 @@ async function createAndDownload(shopId, orderSn, docType, accessToken, tracking
 
   // download
   return downloadShippingDocument(shopId, orderSn, docType, accessToken);
+}
+
+async function createAndDownloadBatch(shopId, orders, docType, accessToken) {
+  const orderEntries = orders.map(order => {
+    const entry = { order_sn: order.orderSn, shipping_document_type: docType };
+    if (order.trackingNumber) entry.tracking_number = order.trackingNumber;
+    return entry;
+  });
+  const orderSnList = orders.map(order => order.orderSn);
+
+  const createResult = await createShippingDocument(shopId, orderEntries, accessToken);
+  const failed = createResult.filter(item => item?.fail_error && item.fail_error !== '');
+  if (failed.length > 0) {
+    const message = failed
+      .map(item => `${item.order_sn || 'unknown'}: ${item.fail_error} - ${item.fail_message || ''}`)
+      .join('; ');
+    if (failed.some(item => /can.?not print/i.test(item.fail_error || ''))) {
+      throw Object.assign(new Error(message), { cannotPrint: true });
+    }
+    throw new Error(`create_shipping_document batch failed: ${message}`);
+  }
+
+  const pollResult = await pollShippingDocumentResult(shopId, orderSnList, accessToken, 24, 5000);
+  const pollFailed = pollResult.filter(item => item?.fail_error && item.fail_error !== '');
+  if (pollFailed.length > 0) {
+    throw new Error(`document result batch error: ${pollFailed.map(item => `${item.order_sn}: ${item.fail_error}`).join('; ')}`);
+  }
+
+  return downloadShippingDocumentBatch(shopId, orderSnList, docType, accessToken);
+}
+
+async function prepareReadyToShipForInvoice({ shopId, orderSn, accessToken, existingTracking }) {
+  let shipSkipped = false;
+  let shippingParam = null;
+  let trackingNumber = existingTracking || null;
+
+  try {
+    shippingParam = await getShippingParameter(shopId, orderSn, accessToken);
+  } catch (paramErr) {
+    if (isAlreadyShippedError(paramErr)) {
+      console.warn(`[Logistics] get_shipping_parameter skipped (already shipped): ${orderSn} → ${paramErr.message}`);
+      shipSkipped = true;
+    } else if (isPackageNotReadyError(paramErr)) {
+      console.warn(`[Logistics] get_shipping_parameter skipped (package not ready / KYC pending): ${orderSn} → ${paramErr.message}`);
+      return toWaitingDocumentResult(
+        `Shipping parameters can only be obtained when package is ready to be shipped: ${paramErr.message}`,
+        trackingNumber
+      );
+    } else {
+      throw paramErr;
+    }
+  }
+
+  if (!shipSkipped) {
+    try {
+      await shipOrder(shopId, orderSn, shippingParam, accessToken);
+      console.log(`[Logistics] ship_order completed: ${orderSn}`);
+    } catch (shipErr) {
+      if (shipErr.alreadyShipped || isAlreadyShippedError(shipErr)) {
+        console.warn(`[Logistics] ship_order skipped (already shipped): ${orderSn}`);
+        shipSkipped = true;
+      } else {
+        throw shipErr;
+      }
+    }
+  }
+
+  trackingNumber = await getTrackingNumber(shopId, orderSn, accessToken);
+  console.log(`[Logistics] tracking_number: ${trackingNumber}`);
+
+  return {
+    skipped: false,
+    trackingNumber,
+    statusUpdated: shipSkipped ? 'PROCESSED' : null,
+  };
+}
+
+async function waitForInvoiceLabelReadyDelay() {
+  if (LABEL_READY_DELAY_MS > 0) {
+    console.log(`[Logistics] waiting once for label readiness: ${LABEL_READY_DELAY_MS}ms`);
+    await sleep(LABEL_READY_DELAY_MS);
+  }
 }
 
 // ─── 통합 함수: 주문 1건 송장 다운로드 (상태에 따라 분기) ─────────
@@ -688,5 +857,12 @@ module.exports = {
   createShippingDocument,
   pollShippingDocumentResult,
   downloadShippingDocument,
+  downloadShippingDocumentBatch,
+  resolveDocType,
+  resolveDocTypes,
+  createAndDownload,
+  createAndDownloadBatch,
+  prepareReadyToShipForInvoice,
+  waitForInvoiceLabelReadyDelay,
   processInvoiceForOrder,
 };

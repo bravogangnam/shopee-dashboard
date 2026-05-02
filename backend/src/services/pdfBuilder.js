@@ -401,10 +401,25 @@ async function mergePdfs(pdfBuffers) {
   return Buffer.from(await merged.save());
 }
 
+async function splitPdfPages(pdfBuffer) {
+  if (!pdfBuffer || pdfBuffer.length === 0) return [];
+  const src = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
+  const out = [];
+
+  for (const pageIndex of src.getPageIndices()) {
+    const doc = await PDFDocument.create();
+    const [page] = await doc.copyPages(src, [pageIndex]);
+    doc.addPage(page);
+    out.push(Buffer.from(await doc.save()));
+  }
+
+  return out;
+}
+
 function isHtmlContent(buffer) {
   if (!buffer || buffer.length < 5) return false;
   const s = buffer.slice(0, 500).toString('utf8').toLowerCase();
   return s.includes('<!doctype html') || s.includes('<html');
 }
 
-module.exports = { buildInvoicePdf, mergePdfs, isHtmlContent, PAGE_W, PAGE_H };
+module.exports = { buildInvoicePdf, mergePdfs, splitPdfPages, isHtmlContent, PAGE_W, PAGE_H };

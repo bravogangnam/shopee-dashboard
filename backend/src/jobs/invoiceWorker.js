@@ -1,64 +1,44 @@
-/**
- * invoiceWorker.js
- * 송장출력 백그라운드 Job  —  Shopee AWB 상단 크롭 + 커스텀 하단 합성
- *
- * 처리 흐름 (주문 상태별 분기):
- *
- *  READY_TO_SHIP
- *    ① ship_order  (이미 발송된 경우 → skip하고 ②로)
- *    ② get_tracking_number → orders 테이블 UPDATE
- *    ③ AWB PDF 다운로드 (create→poll→download)
- *    ④ AWB 상단 크롭 + 커스텀 하단 합성
- *
- *  PROCESSED / SHIPPED
- *    ① DB에 tracking_number 있으면 바로 사용
- *    ② 없으면 get_tracking_number → DB UPDATE
- *    ③ AWB PDF 다운로드
- *    ④ AWB 상단 크롭 + 커스텀 하단 합성
- *
- *  COMPLETED
- *    → Shopee API AWB 출력 불가 → "완료된 주문은 송장 출력 불가" skipped
- *
- *  UNPAID / PENDING / CANCELLED
- *    → 송장 발행 불가 skipped
- */
-
 'use strict';
 
-const db                          = require('../config/database');
-const { buildInvoicePdf, mergePdfs } = require('../services/pdfBuilder');
-const labelStorage                = require('../services/labelStorageService');
-const { processInvoiceForOrder }  = require('../services/shopeeLogistics');
+const path = require('path');
+const fs = require('fs');
+
+const db = require('../config/database');
+const { buildInvoicePdf, mergePdfs, splitPdfPages } = require('../services/pdfBuilder');
+const labelStorage = require('../services/labelStorageService');
+const {
+  createAndDownload,
+  createAndDownloadBatch,
+  prepareReadyToShipForInvoice,
+  resolveDocTypes,
+  waitForInvoiceLabelReadyDelay,
+} = require('../services/shopeeLogistics');
 const { getOrRefreshShopToken } = require('../services/shopeeAuth');
 const {
-  startJob, updateProgress, updateJobResult, completeJob, failJob,
+  startJob,
+  updateProgress,
+  updateJobResult,
+  completeJob,
+  failJob,
 } = require('../services/jobManager');
-const path = require('path');
-const fs   = require('fs');
 
-// ── 상수 ──────────────────────────────────────────────────────────
 const MERGED_DIR = path.resolve(__dirname, '../../../data/shipping-labels/_merged');
 if (!fs.existsSync(MERGED_DIR)) fs.mkdirSync(MERGED_DIR, { recursive: true });
 
-// 즉시 스킵할 상태 (API 호출조차 불필요)
 const HARD_SKIP_STATUSES = new Set(['UNPAID', 'PENDING', 'CANCELLED']);
+const COMPLETED_SKIP_REASON = 'Completed orders cannot be printed again through Shopee AWB API';
+const SHIP_CONCURRENCY = Number(process.env.INVOICE_SHIP_CONCURRENCY || 2);
+const DOWNLOAD_CHUNK_SIZE = Number(process.env.INVOICE_DOWNLOAD_CHUNK_SIZE || 5);
 
-// COMPLETED: API 호출해도 package_can_not_print — 즉시 명시적 메시지
-const COMPLETED_SKIP_REASON = '완료된 주문은 Shopee API 정책상 AWB 재출력 불가';
-
-// ── shop별 access_token 헬퍼 ───────────────────────────────────────
-// 각 주문의 shop_id에 맞는 토큰을 shops 테이블에서 조회 (없으면 갱신)
-
-// ── DB 헬퍼 ──────────────────────────────────────────────────────
 async function saveTrackingToDB(orderSn, trackingNumber) {
   try {
     await db.query(
       'UPDATE orders SET tracking_number=? WHERE order_sn=?',
       [trackingNumber, orderSn]
     );
-    console.log(`[InvoiceWorker] DB tracking_number saved: ${orderSn} → ${trackingNumber}`);
-  } catch (e) {
-    console.warn(`[InvoiceWorker] DB tracking_number save failed (${orderSn}): ${e.message}`);
+    console.log(`[InvoiceWorker] DB tracking_number saved: ${orderSn} -> ${trackingNumber}`);
+  } catch (err) {
+    console.warn(`[InvoiceWorker] DB tracking_number save failed (${orderSn}): ${err.message}`);
   }
 }
 
@@ -68,9 +48,9 @@ async function saveStatusToDB(orderSn, newStatus) {
       'UPDATE orders SET order_status=? WHERE order_sn=?',
       [newStatus, orderSn]
     );
-    console.log(`[InvoiceWorker] DB status updated: ${orderSn} → ${newStatus}`);
-  } catch (e) {
-    console.warn(`[InvoiceWorker] DB status update failed (${orderSn}): ${e.message}`);
+    console.log(`[InvoiceWorker] DB status updated: ${orderSn} -> ${newStatus}`);
+  } catch (err) {
+    console.warn(`[InvoiceWorker] DB status update failed (${orderSn}): ${err.message}`);
   }
 }
 
@@ -101,13 +81,39 @@ async function safeCompleteJob(jobId, resultData) {
   }
 }
 
-// ════════════════════════════════════════════════════════════════
-// 메인 Worker
-// ════════════════════════════════════════════════════════════════
-/**
- * @param {string} jobId
- * @param {Array}  orderSnList  — string[] 또는 {order_sn}[]
- */
+async function runWithConcurrency(items, limit, handler) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      try {
+        results[index] = await handler(items[index], index);
+      } catch (err) {
+        results[index] = { error: err };
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, worker));
+  return results;
+}
+
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+function isWaitingDocumentError(err) {
+  return Boolean(err?.waitingDocument) ||
+    /document.*not ready|label.*not ready|Shipping document not ready/i.test(err?.message || '');
+}
+
 async function runInvoice(jobId, orderSnList) {
   console.log(`[InvoiceWorker] start job=${jobId} orders=${orderSnList.length}`);
 
@@ -115,10 +121,9 @@ async function runInvoice(jobId, orderSnList) {
     await startJob(jobId, orderSnList.length);
 
     const orderSnStrings = orderSnList.map(o => (typeof o === 'string' ? o : o.order_sn));
-    const placeholders   = orderSnStrings.map(() => '?').join(',');
+    const placeholders = orderSnStrings.map(() => '?').join(',');
 
-    // ── DB 조회: 주문 기본 정보 ──────────────────────────────────
-    const [orderRows] = await db.query(
+    const [orderRowsRaw] = await db.query(
       `SELECT o.order_sn, o.shop_id, o.order_status, o.tracking_number, o.currency,
               o.region, o.merchandise_subtotal, s.alias AS shop_alias
        FROM orders o
@@ -127,10 +132,10 @@ async function runInvoice(jobId, orderSnList) {
       orderSnStrings
     );
 
-    // ── DB 조회: 아이템 ──────────────────────────────────────────
-    // model_discounted_price: 프로모션 묶음할인 시 Shopee가 특정 행에만
-    // 할인가를 기록하고 나머지 행은 0으로 내려보냄.
-    // → model_discounted_price > 0 이면 그 값, 아니면 model_original_price 사용
+    const orderRows = orderSnStrings
+      .map(orderSn => orderRowsRaw.find(row => row.order_sn === orderSn))
+      .filter(Boolean);
+
     const [itemRows] = await db.query(
       `SELECT
               oi.order_sn,
@@ -151,27 +156,37 @@ async function runInvoice(jobId, orderSnList) {
        ORDER BY oi.order_sn, oi.id`,
       orderSnStrings
     );
+
     const itemsByOrder = {};
     for (const item of itemRows) {
       if (!itemsByOrder[item.order_sn]) itemsByOrder[item.order_sn] = [];
       itemsByOrder[item.order_sn].push(item);
     }
 
-    // ── 주문별 처리 ───────────────────────────────────────────
-    const results    = [];
+    const results = [];
     const pdfBuffers = [];
-    const markOrderProcessed = async (index, orderSn) => {
-      const processed = index + 1;
+    const readyToShipOrders = [];
+    const labelCandidates = [];
+    const authTokenByShop = new Map();
+    let processedCount = 0;
+
+    const getAccessToken = async (shopId) => {
+      if (!authTokenByShop.has(shopId)) {
+        authTokenByShop.set(shopId, getOrRefreshShopToken(shopId));
+      }
+      const accessToken = await authTokenByShop.get(shopId);
+      if (!accessToken) throw new Error(`shop_id=${shopId} token missing - OAuth re-auth required`);
+      return accessToken;
+    };
+
+    const markOrderProcessed = async (orderSn) => {
+      processedCount += 1;
       const successCount = results.filter(r => r.status === 'success').length;
       const skippedCount = results.filter(r => r.status === 'skipped').length;
       const waitingCount = results.filter(r => r.status === 'waiting_label' || r.status === 'waiting_document').length;
       const errorCount = results.filter(r => r.status === 'error').length;
-      await updateProgress(
-        jobId,
-        processed,
-        orderRows.length,
-        `송장 생성 중 ${processed}/${orderRows.length}: ${orderSn}`
-      );
+
+      await updateProgress(jobId, processedCount, orderRows.length, `송장 생성 중 ${processedCount}/${orderRows.length}: ${orderSn}`);
       await safeUpdateJobResult(jobId, {
         success: successCount,
         skipped: skippedCount,
@@ -182,157 +197,272 @@ async function runInvoice(jobId, orderSnList) {
       }, `progress:${orderSn}`);
     };
 
+    const pushBuiltPdf = async ({ order, awbBuffer, trackingNumber }) => {
+      const finalPdf = await buildInvoicePdf({
+        awbBuffer,
+        items: itemsByOrder[order.order_sn] || [],
+        orderSn: order.order_sn,
+        trackingNumber,
+        currency: order.currency,
+        merchandiseSubtotal: order.merchandise_subtotal,
+      });
+      console.log(`[InvoiceWorker] PDF built: ${order.order_sn} (${finalPdf.length} bytes)`);
+
+      try {
+        const filePath = await labelStorage.save(order.shop_id, order.order_sn, finalPdf, trackingNumber);
+        pdfBuffers.push(finalPdf);
+        results.push({ order_sn: order.order_sn, status: 'success', reason: null, filePath });
+      } catch (saveErr) {
+        console.error(`[InvoiceWorker] save error ${order.order_sn}: ${saveErr.message}`);
+        pdfBuffers.push(finalPdf);
+        results.push({ order_sn: order.order_sn, status: 'success', reason: 'save_warn', filePath: null });
+      }
+    };
+
+    const processCandidateIndividually = async (candidate, docType = null) => {
+      const { order, accessToken } = candidate;
+      try {
+        const resolvedDocType = docType || (await resolveDocTypes(order.shop_id, [order.order_sn], accessToken)).get(order.order_sn);
+        const awbBuffer = await createAndDownload(
+          order.shop_id,
+          order.order_sn,
+          resolvedDocType,
+          accessToken,
+          candidate.trackingNumber
+        );
+        await pushBuiltPdf({ order, awbBuffer, trackingNumber: candidate.trackingNumber });
+      } catch (err) {
+        if (isWaitingDocumentError(err)) {
+          results.push({
+            order_sn: order.order_sn,
+            status: 'waiting_label',
+            reason: '송장 생성 대기 중입니다. Shopee에서 송장 준비가 끝난 뒤 다시 송장출력을 눌러주세요.',
+          });
+        } else {
+          console.error(`[InvoiceWorker] individual document error ${order.order_sn}: ${err.message}`);
+          results.push({ order_sn: order.order_sn, status: 'error', reason: `AWB 다운로드 실패: ${err.message}` });
+        }
+      }
+      await markOrderProcessed(order.order_sn);
+    };
+
+    const processCandidateChunk = async (chunk, docType) => {
+      if (chunk.length === 0) return;
+
+      try {
+        const batchPdf = await createAndDownloadBatch(
+          chunk[0].order.shop_id,
+          chunk.map(candidate => ({
+            orderSn: candidate.order.order_sn,
+            trackingNumber: candidate.trackingNumber,
+          })),
+          docType,
+          chunk[0].accessToken
+        );
+        const pages = await splitPdfPages(batchPdf);
+
+        if (pages.length !== chunk.length) {
+          console.warn(`[InvoiceWorker] batch PDF page count mismatch expected=${chunk.length} actual=${pages.length}; falling back to individual downloads`);
+          for (const candidate of chunk) await processCandidateIndividually(candidate, docType);
+          return;
+        }
+
+        for (let i = 0; i < chunk.length; i++) {
+          const candidate = chunk[i];
+          try {
+            await pushBuiltPdf({
+              order: candidate.order,
+              awbBuffer: pages[i],
+              trackingNumber: candidate.trackingNumber,
+            });
+          } catch (buildErr) {
+            console.error(`[InvoiceWorker] buildInvoicePdf error ${candidate.order.order_sn}: ${buildErr.message}`);
+            results.push({ order_sn: candidate.order.order_sn, status: 'error', reason: `PDF 생성 실패: ${buildErr.message}` });
+          }
+          await markOrderProcessed(candidate.order.order_sn);
+        }
+      } catch (batchErr) {
+        if (isWaitingDocumentError(batchErr)) {
+          console.warn(`[InvoiceWorker] batch document waiting: ${batchErr.message}`);
+          for (const candidate of chunk) {
+            results.push({
+              order_sn: candidate.order.order_sn,
+              status: 'waiting_label',
+              reason: '송장 생성 대기 중입니다. Shopee에서 송장 준비가 끝난 뒤 다시 송장출력을 눌러주세요.',
+            });
+            await markOrderProcessed(candidate.order.order_sn);
+          }
+          return;
+        }
+
+        console.warn(`[InvoiceWorker] batch document failed, falling back to individual downloads: ${batchErr.message}`);
+        for (const candidate of chunk) await processCandidateIndividually(candidate, docType);
+      }
+    };
+
     for (let i = 0; i < orderRows.length; i++) {
       const order = orderRows[i];
-      const { order_sn, shop_id, order_status, currency, merchandise_subtotal } = order;
-      let   { tracking_number } = order;   // mutable — ship 후 갱신될 수 있음
-      const items = itemsByOrder[order_sn] || [];
+      const { order_sn, shop_id, order_status } = order;
+      const trackingNumber = order.tracking_number;
 
-      await updateProgress(jobId, i, orderRows.length,
-        `처리 중 (${i + 1}/${orderRows.length}): ${order_sn} [${order_status}]`);
+      await updateProgress(jobId, processedCount, orderRows.length, `처리 중 (${i + 1}/${orderRows.length}): ${order_sn} [${order_status}]`);
+      console.log(`[InvoiceWorker] prepare [${i + 1}/${orderRows.length}] ${order_sn} status=${order_status} tracking=${trackingNumber || 'none'}`);
 
-      console.log(`[InvoiceWorker] ── [${i + 1}/${orderRows.length}] ${order_sn} status=${order_status} tracking=${tracking_number || 'none'}`);
-
-      // ① 즉시 스킵 (UNPAID / PENDING / CANCELLED)
       if (HARD_SKIP_STATUSES.has(order_status)) {
-        console.log(`[InvoiceWorker] hard-skip ${order_sn}: ${order_status}`);
         results.push({ order_sn, status: 'skipped', reason: `${order_status}: 송장 발행 불가` });
-        await markOrderProcessed(i, order_sn);
+        await markOrderProcessed(order_sn);
         continue;
       }
 
-      // ② COMPLETED: AWB 재출력 불가 — API 낭비 없이 즉시 skipped
       if (order_status === 'COMPLETED') {
-        console.log(`[InvoiceWorker] completed-skip ${order_sn}`);
         results.push({ order_sn, status: 'skipped', reason: COMPLETED_SKIP_REASON });
-        await markOrderProcessed(i, order_sn);
+        await markOrderProcessed(order_sn);
         continue;
       }
 
-      // ③ PROCESSED / SHIPPED: tracking_number 없으면 먼저 조회
-      //    (READY_TO_SHIP은 processInvoiceForOrder 내부에서 ship_order 후 취득)
-      if (order_status !== 'READY_TO_SHIP' && !tracking_number) {
-        console.log(`[InvoiceWorker] ${order_sn}: tracking_number 없음 — 스킵 (동기화 후 재시도)`);
-        results.push({ order_sn, status: 'skipped', reason: '트래킹 번호 없음 — 동기화 후 다시 시도' });
-        await markOrderProcessed(i, order_sn);
+      if (order_status !== 'READY_TO_SHIP' && !trackingNumber) {
+        results.push({ order_sn, status: 'skipped', reason: 'tracking_number 없음 - 동기화 후 다시 시도' });
+        await markOrderProcessed(order_sn);
         continue;
       }
 
-      // ④ 캐시 확인 (READY_TO_SHIP은 ship 후 새 AWB 필요하므로 캐시 무시)
-      const useCache = (order_status !== 'READY_TO_SHIP');
+      const useCache = order_status !== 'READY_TO_SHIP';
       if (useCache && labelStorage.exists(shop_id, order_sn)) {
         const cached = labelStorage.load(shop_id, order_sn);
         if (cached) {
           console.log(`[InvoiceWorker] cache hit: ${order_sn}`);
           pdfBuffers.push(cached);
-          results.push({ order_sn, status: 'success', reason: 'cache',
-            filePath: labelStorage.filePath(shop_id, order_sn) });
-          await markOrderProcessed(i, order_sn);
-          continue;
-        }
-      }
-
-      // ⑤ Shopee 물류 처리 + AWB 다운로드
-      //    processInvoiceForOrder 내부:
-      //      READY_TO_SHIP → ship_order(이미 발송이면 skip) → get_tracking_number → create→poll→download
-      //      PROCESSED     → get_tracking_number(최신) → create→poll→download
-      //      SHIPPED       → create→poll→download (실패 허용)
-      let awbBuffer       = null;
-      let resolvedTracking = tracking_number;
-
-      // shop별 토큰 획득
-      let accessToken;
-      try {
-        accessToken = await getOrRefreshShopToken(shop_id);
-        if (!accessToken) throw new Error(`shop_id=${shop_id} 토큰 없음 — OAuth 재인증 필요`);
-      } catch (authErr) {
-        console.error(`[InvoiceWorker] auth error (shop_id=${shop_id}): ${authErr.message}`);
-        results.push({ order_sn, status: 'error', reason: `인증 실패: ${authErr.message}` });
-        await markOrderProcessed(i, order_sn);
-        continue;
-      }
-
-      try {
-        console.log(`[InvoiceWorker] processInvoiceForOrder START: ${order_sn} (${order_status})`);
-        const lr = await processInvoiceForOrder({
-          shopId:           shop_id,
-          orderSn:          order_sn,
-          orderStatus:      order_status,
-          accessToken,
-          existingTracking: tracking_number,
-        });
-
-        if (lr.skipped) {
-          console.log(`[InvoiceWorker] logistics skipped ${order_sn}: ${lr.reason}`);
           results.push({
             order_sn,
-            status: lr.status || 'skipped',
-            reason: lr.reason || 'AWB 다운로드 불가',
+            status: 'success',
+            reason: 'cache',
+            filePath: labelStorage.filePath(shop_id, order_sn),
           });
-          await markOrderProcessed(i, order_sn);
+          await markOrderProcessed(order_sn);
           continue;
         }
-
-        awbBuffer = lr.pdfBuffer;
-
-        // tracking_number 갱신 (READY_TO_SHIP ship 후 새로 받은 경우 포함)
-        if (lr.trackingNumber && lr.trackingNumber !== tracking_number) {
-          resolvedTracking = lr.trackingNumber;
-          await saveTrackingToDB(order_sn, resolvedTracking);
-        }
-
-        // 상태 갱신 (READY_TO_SHIP → PROCESSED)
-        if (lr.statusUpdated) {
-          await saveStatusToDB(order_sn, lr.statusUpdated);
-        }
-
-      } catch (awbErr) {
-        console.error(`[InvoiceWorker] AWB error ${order_sn}: ${awbErr.message}`);
-        results.push({ order_sn, status: 'error', reason: `AWB 다운로드 실패: ${awbErr.message}` });
-        await markOrderProcessed(i, order_sn);
-        continue;
       }
 
-      if (!awbBuffer || awbBuffer.length === 0) {
-        console.warn(`[InvoiceWorker] AWB buffer empty: ${order_sn}`);
-        results.push({ order_sn, status: 'skipped', reason: 'AWB PDF 없음' });
-        await markOrderProcessed(i, order_sn);
-        continue;
-      }
-
-      // ⑥ AWB 상단 크롭 + 커스텀 하단 합성
-      let finalPdf;
+      let accessToken;
       try {
-        finalPdf = await buildInvoicePdf({
-          awbBuffer,
-          items,
-          orderSn:             order_sn,
-          trackingNumber:      resolvedTracking,
-          currency,
-          merchandiseSubtotal: merchandise_subtotal,
+        accessToken = await getAccessToken(shop_id);
+      } catch (authErr) {
+        console.error(`[InvoiceWorker] auth error shop=${shop_id}: ${authErr.message}`);
+        results.push({ order_sn, status: 'error', reason: `인증 실패: ${authErr.message}` });
+        await markOrderProcessed(order_sn);
+        continue;
+      }
+
+      if (order_status === 'READY_TO_SHIP') {
+        readyToShipOrders.push({ order, accessToken, trackingNumber });
+      } else {
+        labelCandidates.push({ order, accessToken, trackingNumber });
+      }
+    }
+
+    const readyResults = await runWithConcurrency(
+      readyToShipOrders,
+      SHIP_CONCURRENCY,
+      async (entry) => {
+        const orderSn = entry.order.order_sn;
+        await updateProgress(jobId, processedCount, orderRows.length, `배송처리 중: ${orderSn} [READY_TO_SHIP]`);
+        try {
+          const prepared = await prepareReadyToShipForInvoice({
+            shopId: entry.order.shop_id,
+            orderSn,
+            accessToken: entry.accessToken,
+            existingTracking: entry.trackingNumber,
+          });
+
+          if (prepared.skipped) return { ...entry, skipped: true, prepared };
+
+          if (prepared.trackingNumber && prepared.trackingNumber !== entry.trackingNumber) {
+            await saveTrackingToDB(orderSn, prepared.trackingNumber);
+          }
+          if (prepared.statusUpdated) {
+            await saveStatusToDB(orderSn, prepared.statusUpdated);
+          }
+
+          return { ...entry, trackingNumber: prepared.trackingNumber || entry.trackingNumber };
+        } catch (err) {
+          return { ...entry, error: err };
+        }
+      }
+    );
+
+    let shippedReadyCount = 0;
+    for (const readyResult of readyResults) {
+      if (readyResult.error) {
+        console.error(`[InvoiceWorker] ship_order stage failed ${readyResult.order.order_sn}: ${readyResult.error.message}`);
+        results.push({ order_sn: readyResult.order.order_sn, status: 'error', reason: `배송처리 실패: ${readyResult.error.message}` });
+        await markOrderProcessed(readyResult.order.order_sn);
+        continue;
+      }
+
+      if (readyResult.skipped) {
+        results.push({
+          order_sn: readyResult.order.order_sn,
+          status: readyResult.prepared.status || 'skipped',
+          reason: readyResult.prepared.reason || 'AWB 다운로드 불가',
         });
-        console.log(`[InvoiceWorker] PDF built: ${order_sn} (${finalPdf.length} bytes)`);
-      } catch (buildErr) {
-        console.error(`[InvoiceWorker] buildInvoicePdf error ${order_sn}: ${buildErr.message}`);
-        results.push({ order_sn, status: 'error', reason: `PDF 생성 실패: ${buildErr.message}` });
-        await markOrderProcessed(i, order_sn);
+        await markOrderProcessed(readyResult.order.order_sn);
         continue;
       }
 
-      // ⑦ 저장
-      try {
-        const fp = await labelStorage.save(shop_id, order_sn, finalPdf, resolvedTracking);
-        pdfBuffers.push(finalPdf);
-        results.push({ order_sn, status: 'success', reason: null, filePath: fp });
-      } catch (saveErr) {
-        console.error(`[InvoiceWorker] save error ${order_sn}: ${saveErr.message}`);
-        pdfBuffers.push(finalPdf);   // 저장 실패해도 병합에 포함
-        results.push({ order_sn, status: 'success', reason: 'save_warn', filePath: null });
-      }
-      await markOrderProcessed(i, order_sn);
-    } // end for
+      shippedReadyCount += 1;
+      labelCandidates.push(readyResult);
+    }
 
-    // ── PDF 병합 ───────────────────────────────────────────────
+    if (shippedReadyCount > 0) {
+      await waitForInvoiceLabelReadyDelay();
+    }
+
+    const candidatesByShop = new Map();
+    for (const candidate of labelCandidates) {
+      const key = String(candidate.order.shop_id);
+      if (!candidatesByShop.has(key)) candidatesByShop.set(key, []);
+      candidatesByShop.get(key).push(candidate);
+    }
+
+    for (const candidates of candidatesByShop.values()) {
+      const shopId = candidates[0].order.shop_id;
+      const accessToken = candidates[0].accessToken;
+      let docTypes;
+
+      try {
+        docTypes = await resolveDocTypes(shopId, candidates.map(candidate => candidate.order.order_sn), accessToken);
+      } catch (docErr) {
+        console.warn(`[InvoiceWorker] batch doc type resolve failed shop=${shopId}; falling back to individual: ${docErr.message}`);
+        for (const candidate of candidates) await processCandidateIndividually(candidate);
+        continue;
+      }
+
+      const candidatesByDocType = new Map();
+      for (const candidate of candidates) {
+        const docType = docTypes.get(candidate.order.order_sn);
+        if (!candidatesByDocType.has(docType)) candidatesByDocType.set(docType, []);
+        candidatesByDocType.get(docType).push(candidate);
+      }
+
+      for (const [docType, docCandidates] of candidatesByDocType.entries()) {
+        for (const chunk of chunkArray(docCandidates, DOWNLOAD_CHUNK_SIZE)) {
+          await processCandidateChunk(chunk, docType);
+        }
+      }
+    }
+
+    if (processedCount < orderRows.length) {
+      console.warn(`[InvoiceWorker] progress mismatch processed=${processedCount} total=${orderRows.length}; marking unprocessed orders as error`);
+      const finished = new Set(results.map(result => result.order_sn));
+      for (const order of orderRows) {
+        if (!finished.has(order.order_sn)) {
+          results.push({ order_sn: order.order_sn, status: 'error', reason: '송장 작업이 완료되지 않았습니다.' });
+          await markOrderProcessed(order.order_sn);
+        }
+      }
+    }
+
+    // Merge once at the end.
     let mergedPath = null;
     if (pdfBuffers.length > 0) {
       try {
@@ -345,18 +475,17 @@ async function runInvoice(jobId, orderSnList) {
       }
     }
 
-    // ── 집계 & 완료 ───────────────────────────────────────────
     const successCount = results.filter(r => r.status === 'success').length;
     const skippedCount = results.filter(r => r.status === 'skipped').length;
     const waitingCount = results.filter(r => r.status === 'waiting_label' || r.status === 'waiting_document').length;
-    const errorCount   = results.filter(r => r.status === 'error').length;
+    const errorCount = results.filter(r => r.status === 'error').length;
 
     const finalResult = {
       success: successCount,
       skipped: skippedCount,
       waiting: waitingCount,
-      error:   errorCount,
-      total:   orderRows.length,
+      error: errorCount,
+      total: orderRows.length,
       merged_pdf_path: mergedPath,
       results,
     };
@@ -374,7 +503,6 @@ async function runInvoice(jobId, orderSnList) {
     }
 
     console.log(`[InvoiceWorker] done job=${jobId}: success=${successCount} skipped=${skippedCount} waiting=${waitingCount} error=${errorCount}`);
-
   } catch (fatalErr) {
     console.error(`[InvoiceWorker] fatal: ${fatalErr.message}`, fatalErr.stack);
     await safeFailJob(jobId, fatalErr.message, 'fatal');

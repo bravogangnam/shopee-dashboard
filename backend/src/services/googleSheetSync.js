@@ -123,8 +123,9 @@ async function insertProduct(conn, product) {
   await conn.query(
     `INSERT INTO products (
       sku, brand, product_name_en, option_name, product_name_kr, weight,
-      cost_price_with_vat, supply_rate, discounted_price_with_vat, cost_price, vat
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      cost_price_with_vat, supply_rate, discounted_price_with_vat, cost_price, vat,
+      stock_tracking_started_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())`,
     [
       product.sku,
       product.brand,
@@ -153,7 +154,8 @@ async function updateProduct(conn, product) {
       supply_rate = ?,
       discounted_price_with_vat = ?,
       cost_price = ?,
-      vat = ?
+      vat = ?,
+      stock_tracking_started_at = COALESCE(stock_tracking_started_at, UTC_TIMESTAMP())
      WHERE sku = ?`,
     [
       product.brand,
@@ -171,8 +173,19 @@ async function updateProduct(conn, product) {
   );
 }
 
+async function ensureStockTrackingStarted(conn, sku) {
+  const [result] = await conn.query(
+    `UPDATE products
+     SET stock_tracking_started_at = UTC_TIMESTAMP()
+     WHERE sku = ?
+       AND stock_tracking_started_at IS NULL`,
+    [sku]
+  );
+  return result.affectedRows || 0;
+}
+
 async function syncGoogleSheet() {
-  const result = { inserted: 0, cost_changed: 0, updated: 0, skipped: 0 };
+  const result = { inserted: 0, cost_changed: 0, updated: 0, tracking_started: 0, skipped: 0 };
 
   try {
     const { data } = await axios.get(getSheetsUrl(), { timeout: 30000 });
@@ -212,6 +225,9 @@ async function syncGoogleSheet() {
 
           const existing = existingRows[0];
           if (!productChanged(existing, product)) {
+            if (!existing.stock_tracking_started_at) {
+              result.tracking_started += await ensureStockTrackingStarted(conn, product.sku);
+            }
             result.skipped++;
             continue;
           }

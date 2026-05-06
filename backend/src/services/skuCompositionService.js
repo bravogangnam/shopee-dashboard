@@ -1,6 +1,7 @@
 const axios = require('axios');
 const db = require('../config/database');
 const { normalizeSku } = require('./inventoryService');
+const { CURRENT_TENANT_ID } = require('../config/tenant');
 
 const COMPOSITION_SHEET_NAME = process.env.GOOGLE_SKU_COMPOSITION_SHEET_NAME || '\uC0C1\uD488\uAD6C\uC131\uD45C';
 const COMPOSITION_RANGE = `${COMPOSITION_SHEET_NAME}!A:E`;
@@ -91,17 +92,18 @@ function compositionRowsToMap(components) {
   return compositionMap;
 }
 
-async function upsertSkuComposition(connOrPool, component) {
+async function upsertSkuComposition(connOrPool, component, { tenantId = CURRENT_TENANT_ID } = {}) {
   await connOrPool.query(
     `INSERT INTO sku_compositions
-       (source_sku, base_sku, factor, composition_type, note, sheet_row)
-     VALUES (?, ?, ?, ?, ?, ?)
+       (tenant_id, source_sku, base_sku, factor, composition_type, note, sheet_row)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        factor = VALUES(factor),
        composition_type = VALUES(composition_type),
        note = VALUES(note),
        sheet_row = VALUES(sheet_row)`,
     [
+      tenantId,
       component.sourceSku,
       component.baseSku,
       component.factor,
@@ -112,7 +114,7 @@ async function upsertSkuComposition(connOrPool, component) {
   );
 }
 
-async function refreshSkuCompositionsFromSheet(connOrPool = db) {
+async function refreshSkuCompositionsFromSheet(connOrPool = db, { tenantId = CURRENT_TENANT_ID } = {}) {
   const { components, skippedRows } = await loadSkuCompositionRowsFromSheet();
   const result = {
     upserted: 0,
@@ -129,7 +131,7 @@ async function refreshSkuCompositionsFromSheet(connOrPool = db) {
 
   for (const component of components) {
     try {
-      await upsertSkuComposition(connOrPool, component);
+      await upsertSkuComposition(connOrPool, component, { tenantId });
       result.upserted++;
     } catch (err) {
       result.errors++;
@@ -141,16 +143,17 @@ async function refreshSkuCompositionsFromSheet(connOrPool = db) {
   return result;
 }
 
-async function getSkuComponents(connOrPool, sourceSku) {
+async function getSkuComponents(connOrPool, sourceSku, { tenantId = CURRENT_TENANT_ID } = {}) {
   const normalizedSourceSku = normalizeSku(sourceSku);
   if (!normalizedSourceSku) return [];
 
   const [rows] = await connOrPool.query(
-    `SELECT source_sku, base_sku, factor, composition_type, note
+    `SELECT tenant_id, source_sku, base_sku, factor, composition_type, note
      FROM sku_compositions
-     WHERE source_sku = ?
+     WHERE tenant_id = ?
+       AND source_sku = ?
      ORDER BY id ASC`,
-    [normalizedSourceSku]
+    [tenantId, normalizedSourceSku]
   );
 
   if (!rows.length) {

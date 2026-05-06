@@ -1,6 +1,7 @@
 const axios = require('axios');
 const cron = require('node-cron');
 const db = require('../config/database');
+const { CURRENT_TENANT_ID } = require('../config/tenant');
 
 const SHEET_NAME = process.env.GOOGLE_SHEET_NAME || '차트';
 const SHEET_RANGE = `${SHEET_NAME}!A:L`;
@@ -110,12 +111,13 @@ function getSheetsUrl() {
   return `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(SHEET_RANGE)}?key=${encodeURIComponent(apiKey)}`;
 }
 
-async function insertCostHistory(conn, product) {
+async function insertCostHistory(conn, product, { tenantId = CURRENT_TENANT_ID } = {}) {
   await conn.query(
     `INSERT INTO product_cost_history
-      (sku, cost_price, vat, supply_rate, discounted_price_with_vat, effective_from)
-     VALUES (?, ?, ?, ?, ?, NOW())`,
+      (tenant_id, sku, cost_price, vat, supply_rate, discounted_price_with_vat, effective_from)
+     VALUES (?, ?, ?, ?, ?, ?, NOW())`,
     [
+      tenantId,
       product.sku,
       product.cost_price,
       product.vat,
@@ -125,14 +127,15 @@ async function insertCostHistory(conn, product) {
   );
 }
 
-async function insertProduct(conn, product) {
+async function insertProduct(conn, product, { tenantId = CURRENT_TENANT_ID } = {}) {
   await conn.query(
     `INSERT INTO products (
-      sku, brand, product_name_en, option_name, product_name_kr, weight,
+      tenant_id, sku, brand, product_name_en, option_name, product_name_kr, weight,
       cost_price_with_vat, supply_rate, discounted_price_with_vat, cost_price, vat,
       stock_tracking_started_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())`,
     [
+      tenantId,
       product.sku,
       product.brand,
       product.product_name_en,
@@ -148,7 +151,7 @@ async function insertProduct(conn, product) {
   );
 }
 
-async function updateProduct(conn, product) {
+async function updateProduct(conn, product, { tenantId = CURRENT_TENANT_ID } = {}) {
   await conn.query(
     `UPDATE products SET
       brand = ?,
@@ -162,7 +165,7 @@ async function updateProduct(conn, product) {
       cost_price = ?,
       vat = ?,
       stock_tracking_started_at = COALESCE(stock_tracking_started_at, UTC_TIMESTAMP())
-     WHERE sku = ?`,
+     WHERE tenant_id = ? AND sku = ?`,
     [
       product.brand,
       product.product_name_en,
@@ -174,23 +177,25 @@ async function updateProduct(conn, product) {
       product.discounted_price_with_vat,
       product.cost_price,
       product.vat,
+      tenantId,
       product.sku,
     ]
   );
 }
 
-async function ensureStockTrackingStarted(conn, sku) {
+async function ensureStockTrackingStarted(conn, sku, { tenantId = CURRENT_TENANT_ID } = {}) {
   const [result] = await conn.query(
     `UPDATE products
      SET stock_tracking_started_at = UTC_TIMESTAMP()
-     WHERE sku = ?
+     WHERE tenant_id = ?
+       AND sku = ?
        AND stock_tracking_started_at IS NULL`,
-    [sku]
+    [tenantId, sku]
   );
   return result.affectedRows || 0;
 }
 
-async function syncGoogleSheet() {
+async function syncGoogleSheet({ tenantId = CURRENT_TENANT_ID } = {}) {
   const result = { inserted: 0, cost_changed: 0, updated: 0, tracking_started: 0, skipped: 0 };
 
   try {
@@ -211,15 +216,15 @@ async function syncGoogleSheet() {
           }
 
           const [existingRows] = await conn.query(
-            'SELECT * FROM products WHERE sku = ? LIMIT 1',
-            [product.sku]
-          );
+              'SELECT * FROM products WHERE tenant_id = ? AND sku = ? LIMIT 1',
+              [tenantId, product.sku]
+            );
 
           if (!existingRows.length) {
             await conn.beginTransaction();
             try {
-              await insertProduct(conn, product);
-              await insertCostHistory(conn, product);
+              await insertProduct(conn, product, { tenantId });
+              await insertCostHistory(conn, product, { tenantId });
               await conn.commit();
               result.inserted++;
             } catch (err) {
@@ -232,7 +237,7 @@ async function syncGoogleSheet() {
           const existing = existingRows[0];
           if (!productChanged(existing, product)) {
             if (!existing.stock_tracking_started_at) {
-              result.tracking_started += await ensureStockTrackingStarted(conn, product.sku);
+              result.tracking_started += await ensureStockTrackingStarted(conn, product.sku, { tenantId });
             }
             result.skipped++;
             continue;
@@ -241,12 +246,12 @@ async function syncGoogleSheet() {
           if (costChanged(existing, product)) {
             await conn.beginTransaction();
             try {
-              await updateProduct(conn, product);
+              await updateProduct(conn, product, { tenantId });
               await conn.query(
-                'UPDATE product_cost_history SET effective_to = NOW() WHERE sku = ? AND effective_to IS NULL',
-                [product.sku]
-              );
-              await insertCostHistory(conn, product);
+                  'UPDATE product_cost_history SET effective_to = NOW() WHERE tenant_id = ? AND sku = ? AND effective_to IS NULL',
+                  [tenantId, product.sku]
+                );
+              await insertCostHistory(conn, product, { tenantId });
               await conn.commit();
               result.cost_changed++;
             } catch (err) {
@@ -254,7 +259,7 @@ async function syncGoogleSheet() {
               throw err;
             }
           } else {
-            await updateProduct(conn, product);
+            await updateProduct(conn, product, { tenantId });
             result.updated++;
           }
         } catch (err) {
@@ -276,7 +281,7 @@ async function syncGoogleSheet() {
   }
 }
 
-async function runGoogleSheetSync() {
+async function runGoogleSheetSync(options = {}) {
   if (isRunning) {
     console.log('[GoogleSheetSync] 이전 동기화 진행 중 - 스킵');
     return lastResult;
@@ -285,7 +290,7 @@ async function runGoogleSheetSync() {
   isRunning = true;
   lastRunAt = new Date();
   try {
-    return await syncGoogleSheet();
+    return await syncGoogleSheet(options);
   } finally {
     isRunning = false;
   }

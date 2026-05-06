@@ -88,48 +88,52 @@ function stockStatus(stockQuantity, lowStockThreshold) {
 }
 
 async function getOrderItems(conn, order) {
+  const tenantId = order?.tenant_id ?? CURRENT_TENANT_ID;
   const [items] = await conn.query(
-    `SELECT order_sn, shop_id, item_id, item_sku, model_id, model_sku,
+    `SELECT tenant_id, order_sn, shop_id, item_id, item_sku, model_id, model_sku,
             model_quantity_purchased
      FROM order_items
-     WHERE order_sn = ? AND shop_id = ?`,
-    [order.order_sn, order.shop_id]
+     WHERE tenant_id = ? AND order_sn = ? AND shop_id = ?`,
+    [tenantId, order.order_sn, order.shop_id]
   );
   return items;
 }
 
-async function getProductForSku(conn, sku) {
+async function getProductForSku(conn, sku, { tenantId = CURRENT_TENANT_ID } = {}) {
   const [rows] = await conn.query(
-    `SELECT sku, stock_quantity, stock_tracking_started_at
+    `SELECT tenant_id, sku, stock_quantity, stock_tracking_started_at
      FROM products
-     WHERE sku = ?
+     WHERE tenant_id = ? AND sku = ?
      LIMIT 1`,
-    [sku]
+    [tenantId, sku]
   );
   return rows[0] || null;
 }
 
-async function saleMovementExists(conn, { orderSn, shopId, sku, itemId, modelId }) {
+async function saleMovementExists(conn, { tenantId = CURRENT_TENANT_ID, orderSn, shopId, sku, itemId, modelId }) {
   const [rows] = await conn.query(
     `SELECT id
      FROM inventory_movements
-     WHERE movement_type = 'SALE'
+     WHERE tenant_id = ?
+       AND movement_type = 'SALE'
        AND order_sn = ?
        AND shop_id = ?
        AND sku = ?
        AND item_id <=> ?
        AND model_id <=> ?
      LIMIT 1`,
-    [orderSn, shopId, sku, itemId ?? null, modelId ?? null]
+    [tenantId, orderSn, shopId, sku, itemId ?? null, modelId ?? null]
   );
   return rows.length > 0;
 }
 
 async function cancelRestoreMovementExists(conn, saleMovement) {
+  const tenantId = saleMovement?.tenant_id ?? CURRENT_TENANT_ID;
   const [rows] = await conn.query(
     `SELECT id
      FROM inventory_movements
-     WHERE movement_type = 'CANCEL_RESTORE'
+     WHERE tenant_id = ?
+       AND movement_type = 'CANCEL_RESTORE'
        AND order_sn = ?
        AND shop_id = ?
        AND sku = ?
@@ -137,6 +141,7 @@ async function cancelRestoreMovementExists(conn, saleMovement) {
        AND model_id <=> ?
      LIMIT 1`,
     [
+      tenantId,
       saleMovement.order_sn,
       saleMovement.shop_id,
       saleMovement.sku,
@@ -148,11 +153,13 @@ async function cancelRestoreMovementExists(conn, saleMovement) {
 }
 
 async function insertMovement(conn, movement) {
+  const tenantId = movement?.tenant_id ?? CURRENT_TENANT_ID;
   const [result] = await conn.query(
     `INSERT INTO inventory_movements
-       (sku, order_sn, shop_id, item_id, model_id, movement_type, qty_delta, note)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       (tenant_id, sku, order_sn, shop_id, item_id, model_id, movement_type, qty_delta, note)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
+      tenantId,
       movement.sku,
       movement.order_sn ?? null,
       movement.shop_id ?? null,
@@ -171,6 +178,7 @@ async function applySaleMovementForOrder(order) {
   if (order.order_status === 'CANCELLED') return;
   if (!SALE_STOCK_STATUSES.has(order.display_status || order.order_status)) return;
 
+  const tenantId = order?.tenant_id ?? CURRENT_TENANT_ID;
   const conn = await db.getConnection();
   try {
     const items = await getOrderItems(conn, order);
@@ -183,7 +191,7 @@ async function applySaleMovementForOrder(order) {
         continue;
       }
 
-      const product = await getProductForSku(conn, sku);
+      const product = await getProductForSku(conn, sku, { tenantId });
       if (!product) {
         console.warn(`[Inventory] product 없음 스킵: sku=${sku}, 주문=${orderKey(order)}`);
         continue;
@@ -207,6 +215,7 @@ async function applySaleMovementForOrder(order) {
       }
 
       const movementKey = {
+        tenantId,
         orderSn: order.order_sn,
         shopId: order.shop_id,
         sku,
@@ -230,6 +239,7 @@ async function applySaleMovementForOrder(order) {
         }
 
         await insertMovement(conn, {
+          tenant_id: tenantId,
           sku,
           order_sn: order.order_sn,
           shop_id: order.shop_id,
@@ -242,8 +252,8 @@ async function applySaleMovementForOrder(order) {
         await conn.query(
           `UPDATE products
            SET stock_quantity = stock_quantity - ?
-           WHERE sku = ?`,
-          [quantity, sku]
+           WHERE tenant_id = ? AND sku = ?`,
+          [quantity, tenantId, sku]
         );
         await conn.commit();
         console.log(`[Inventory] SALE movement 생성: sku=${sku}, qty=-${quantity}, 주문=${orderKey(order)}`);
@@ -287,6 +297,8 @@ function shouldSkipCancelRestoreByCutoff(order) {
 async function restoreCancelledOrder(order) {
   if (!order?.order_sn || !order?.shop_id || order.order_status !== 'CANCELLED') return;
 
+  const tenantId = order?.tenant_id ?? CURRENT_TENANT_ID;
+
   if (shouldSkipCancelRestoreByCutoff(order)) {
     console.log(`[Inventory] CANCEL_RESTORE cutoff skip: 주문=${orderKey(order)}, update_time=${order.update_time || '-'}`);
     return;
@@ -297,10 +309,11 @@ async function restoreCancelledOrder(order) {
     const [saleMovements] = await conn.query(
       `SELECT *
        FROM inventory_movements
-       WHERE movement_type = 'SALE'
+       WHERE tenant_id = ?
+         AND movement_type = 'SALE'
          AND order_sn = ?
          AND shop_id = ?`,
-      [order.order_sn, order.shop_id]
+      [tenantId, order.order_sn, order.shop_id]
     );
 
     if (!saleMovements.length) {
@@ -327,41 +340,43 @@ async function restoreCancelledOrder(order) {
           continue;
         }
 
-          const [allocations] = await conn.query(
-            `SELECT id, batch_id, qty
-             FROM inventory_allocations
-             WHERE movement_id = ?
-             FOR UPDATE`,
-            [saleMovement.id]
-          );
+        const [allocations] = await conn.query(
+          `SELECT id, batch_id, qty
+           FROM inventory_allocations
+           WHERE tenant_id = ?
+             AND movement_id = ?
+           FOR UPDATE`,
+          [tenantId, saleMovement.id]
+        );
 
-          for (const allocation of allocations) {
-            await conn.query(
-              `UPDATE inventory_batches
-               SET remaining_qty = remaining_qty + ?
-               WHERE id = ?`,
-              [Math.abs(Number(allocation.qty || 0)), allocation.batch_id]
-            );
-          }
-
-          await insertMovement(conn, {
-            sku: saleMovement.sku,
-            order_sn: saleMovement.order_sn,
-            shop_id: saleMovement.shop_id,
-            item_id: saleMovement.item_id,
-            model_id: saleMovement.model_id,
-            movement_type: 'CANCEL_RESTORE',
-            qty_delta: restoreQty,
-            note: allocations.length
-              ? `Cancel restore ${order.order_sn}; restored ${allocations.length} allocation(s)`
-              : `Cancel restore ${order.order_sn}; no allocation`,
-          });
+        for (const allocation of allocations) {
           await conn.query(
-            `UPDATE products
-             SET stock_quantity = stock_quantity + ?
-             WHERE sku = ?`,
-            [restoreQty, saleMovement.sku]
+            `UPDATE inventory_batches
+             SET remaining_qty = remaining_qty + ?
+             WHERE tenant_id = ? AND id = ?`,
+            [Math.abs(Number(allocation.qty || 0)), tenantId, allocation.batch_id]
           );
+        }
+
+        await insertMovement(conn, {
+          tenant_id: tenantId,
+          sku: saleMovement.sku,
+          order_sn: saleMovement.order_sn,
+          shop_id: saleMovement.shop_id,
+          item_id: saleMovement.item_id,
+          model_id: saleMovement.model_id,
+          movement_type: 'CANCEL_RESTORE',
+          qty_delta: restoreQty,
+          note: allocations.length
+            ? `Cancel restore ${order.order_sn}; restored ${allocations.length} allocation(s)`
+            : `Cancel restore ${order.order_sn}; no allocation`,
+        });
+        await conn.query(
+          `UPDATE products
+           SET stock_quantity = stock_quantity + ?
+           WHERE tenant_id = ? AND sku = ?`,
+          [restoreQty, tenantId, saleMovement.sku]
+        );
         await conn.commit();
         console.log(`[Inventory] CANCEL_RESTORE movement 생성: sku=${saleMovement.sku}, qty=+${restoreQty}, 주문=${orderKey(order)}`);
       } catch (err) {

@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 
 const db = require('../config/database');
+const { CURRENT_TENANT_ID } = require('../config/tenant');
 const { buildInvoicePdf, mergePdfs, splitPdfPages } = require('../services/pdfBuilder');
 const labelStorage = require('../services/labelStorageService');
 const {
@@ -35,11 +36,11 @@ const TRACKING_POLL_TIMEOUT_MS = Number(process.env.INVOICE_TRACKING_POLL_TIMEOU
 const TRACKING_POLL_INTERVAL_MS = Number(process.env.INVOICE_TRACKING_POLL_INTERVAL_MS || 3000);
 const TRACKING_POLL_CONCURRENCY = Number(process.env.INVOICE_TRACKING_POLL_CONCURRENCY || 5);
 
-async function saveTrackingToDB(orderSn, trackingNumber) {
+async function saveTrackingToDB(orderSn, trackingNumber, { tenantId = CURRENT_TENANT_ID, shopId } = {}) {
   try {
     await db.query(
-      'UPDATE orders SET tracking_number=? WHERE order_sn=?',
-      [trackingNumber, orderSn]
+      'UPDATE orders SET tracking_number=? WHERE tenant_id=? AND order_sn=? AND shop_id=?',
+      [trackingNumber, tenantId, orderSn, shopId]
     );
     console.log(`[InvoiceWorker] DB tracking_number saved: ${orderSn} -> ${trackingNumber}`);
   } catch (err) {
@@ -47,11 +48,11 @@ async function saveTrackingToDB(orderSn, trackingNumber) {
   }
 }
 
-async function saveStatusToDB(orderSn, newStatus) {
+async function saveStatusToDB(orderSn, newStatus, { tenantId = CURRENT_TENANT_ID, shopId } = {}) {
   try {
     await db.query(
-      'UPDATE orders SET order_status=? WHERE order_sn=?',
-      [newStatus, orderSn]
+      'UPDATE orders SET order_status=? WHERE tenant_id=? AND order_sn=? AND shop_id=?',
+      [newStatus, tenantId, orderSn, shopId]
     );
     console.log(`[InvoiceWorker] DB status updated: ${orderSn} -> ${newStatus}`);
   } catch (err) {
@@ -119,7 +120,7 @@ function isWaitingDocumentError(err) {
     /document.*not ready|label.*not ready|Shipping document not ready/i.test(err?.message || '');
 }
 
-async function runInvoice(jobId, orderSnList) {
+async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } = {}) {
   console.log(`[InvoiceWorker] start job=${jobId} orders=${orderSnList.length}`);
 
   try {
@@ -128,39 +129,42 @@ async function runInvoice(jobId, orderSnList) {
     const orderSnStrings = orderSnList.map(o => (typeof o === 'string' ? o : o.order_sn));
     const placeholders = orderSnStrings.map(() => '?').join(',');
 
-    const [orderRowsRaw] = await db.query(
-      `SELECT o.order_sn, o.shop_id, o.order_status, o.tracking_number, o.currency,
-              o.region, o.merchandise_subtotal, s.alias AS shop_alias
-       FROM orders o
-       LEFT JOIN shops s ON s.shop_id = o.shop_id
-       WHERE o.order_sn IN (${placeholders})`,
-      orderSnStrings
-    );
+      const [orderRowsRaw] = await db.query(
+        `SELECT o.tenant_id, o.order_sn, o.shop_id, o.order_status, o.tracking_number, o.currency,
+                o.region, o.merchandise_subtotal, s.alias AS shop_alias
+         FROM orders o
+         LEFT JOIN shops s ON s.tenant_id = o.tenant_id AND s.shop_id = o.shop_id
+         WHERE o.tenant_id = ?
+           AND o.order_sn IN (${placeholders})`,
+        [tenantId, ...orderSnStrings]
+      );
 
     const orderRows = orderSnStrings
       .map(orderSn => orderRowsRaw.find(row => row.order_sn === orderSn))
       .filter(Boolean);
 
-    const [itemRows] = await db.query(
-      `SELECT
-              oi.order_sn,
-              COALESCE(NULLIF(p.product_name_kr, ''), oi.item_name) AS item_name,
-              CASE
-                WHEN p.product_name_kr IS NOT NULL AND p.product_name_kr != '' THEN ''
-                ELSE oi.model_name
-              END AS model_name,
-              oi.model_quantity_purchased,
-              CASE WHEN oi.model_discounted_price > 0
-                   THEN oi.model_discounted_price
-                   ELSE oi.model_original_price
-              END AS unit_price
-       FROM order_items oi
-       LEFT JOIN products p
-         ON p.sku COLLATE utf8mb4_general_ci = COALESCE(NULLIF(oi.model_sku, ''), NULLIF(oi.item_sku, '')) COLLATE utf8mb4_general_ci
-       WHERE oi.order_sn IN (${placeholders})
-       ORDER BY oi.order_sn, oi.id`,
-      orderSnStrings
-    );
+      const [itemRows] = await db.query(
+        `SELECT
+                oi.order_sn,
+                COALESCE(NULLIF(p.product_name_kr, ''), oi.item_name) AS item_name,
+                CASE
+                  WHEN p.product_name_kr IS NOT NULL AND p.product_name_kr != '' THEN ''
+                  ELSE oi.model_name
+                END AS model_name,
+                oi.model_quantity_purchased,
+                CASE WHEN oi.model_discounted_price > 0
+                     THEN oi.model_discounted_price
+                     ELSE oi.model_original_price
+                END AS unit_price
+         FROM order_items oi
+         LEFT JOIN products p
+           ON p.tenant_id = oi.tenant_id
+          AND p.sku COLLATE utf8mb4_general_ci = COALESCE(NULLIF(oi.model_sku, ''), NULLIF(oi.item_sku, '')) COLLATE utf8mb4_general_ci
+         WHERE oi.tenant_id = ?
+           AND oi.order_sn IN (${placeholders})
+         ORDER BY oi.order_sn, oi.id`,
+        [tenantId, ...orderSnStrings]
+      );
 
     const itemsByOrder = {};
     for (const item of itemRows) {
@@ -214,7 +218,7 @@ async function runInvoice(jobId, orderSnList) {
       console.log(`[InvoiceWorker] PDF built: ${order.order_sn} (${finalPdf.length} bytes)`);
 
       try {
-        const filePath = await labelStorage.save(order.shop_id, order.order_sn, finalPdf, trackingNumber);
+        const filePath = await labelStorage.save(order.shop_id, order.order_sn, finalPdf, trackingNumber, { tenantId });
         pdfBuffers.push(finalPdf);
         results.push({ order_sn: order.order_sn, status: 'success', reason: null, filePath });
       } catch (saveErr) {
@@ -382,10 +386,10 @@ async function runInvoice(jobId, orderSnList) {
           if (prepared.skipped) return { ...entry, skipped: true, prepared };
 
           if (prepared.trackingNumber && prepared.trackingNumber !== entry.trackingNumber) {
-            await saveTrackingToDB(orderSn, prepared.trackingNumber);
+            await saveTrackingToDB(orderSn, prepared.trackingNumber, { tenantId, shopId: entry.order.shop_id });
           }
           if (prepared.statusUpdated) {
-            await saveStatusToDB(orderSn, prepared.statusUpdated);
+            await saveStatusToDB(orderSn, prepared.statusUpdated, { tenantId, shopId: entry.order.shop_id });
           }
 
           return { ...entry, trackingNumber: prepared.trackingNumber || entry.trackingNumber };
@@ -467,7 +471,7 @@ async function runInvoice(jobId, orderSnList) {
               if (pollResult.trackingNumber) {
                 pollResult.candidate.trackingNumber = pollResult.trackingNumber;
                 pendingByOrderSn.delete(orderSn);
-                await saveTrackingToDB(orderSn, pollResult.trackingNumber);
+                await saveTrackingToDB(orderSn, pollResult.trackingNumber, { tenantId, shopId: pollResult.candidate.order.shop_id });
                 console.log(`[InvoiceWorker] tracking ready: ${orderSn} -> ${pollResult.trackingNumber}`);
               }
             }

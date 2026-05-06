@@ -8,6 +8,7 @@
 const fs   = require('fs');
 const path = require('path');
 const db   = require('../config/database');
+const { CURRENT_TENANT_ID } = require('../config/tenant');
 
 const BASE_DIR = path.resolve(__dirname, '../../../data/shipping-labels');
 
@@ -31,7 +32,7 @@ function filePath(shopId, orderSn) {
  * @param {string|null} trackingNumber
  * @returns {string} 저장된 파일 경로
  */
-async function save(shopId, orderSn, binaryData, trackingNumber = null) {
+async function save(shopId, orderSn, binaryData, trackingNumber = null, { tenantId = CURRENT_TENANT_ID } = {}) {
   ensureDir(shopId);
   const fp = filePath(shopId, orderSn);
   fs.writeFileSync(fp, binaryData);
@@ -39,14 +40,14 @@ async function save(shopId, orderSn, binaryData, trackingNumber = null) {
   const fileSize = binaryData.length;
 
   await db.query(
-    `INSERT INTO shipping_labels (order_sn, shop_id, file_path, label_format, file_size_bytes, tracking_number)
-     VALUES (?, ?, ?, 'PDF', ?, ?)
+    `INSERT INTO shipping_labels (tenant_id, order_sn, shop_id, file_path, label_format, file_size_bytes, tracking_number)
+     VALUES (?, ?, ?, ?, 'PDF', ?, ?)
      ON DUPLICATE KEY UPDATE
        file_path=VALUES(file_path),
        file_size_bytes=VALUES(file_size_bytes),
        tracking_number=COALESCE(VALUES(tracking_number), tracking_number),
        cached_at=NOW()`,
-    [orderSn, shopId, fp, fileSize, trackingNumber]
+    [tenantId, orderSn, shopId, fp, fileSize, trackingNumber]
   );
 
   console.log(`[LabelStorage] saved: ${fp} (${fileSize} bytes)`);
@@ -79,10 +80,10 @@ function exists(shopId, orderSn) {
 /**
  * DB에서 레이블 메타데이터 조회
  */
-async function getMeta(shopId, orderSn) {
+async function getMeta(shopId, orderSn, { tenantId = CURRENT_TENANT_ID } = {}) {
   const [rows] = await db.query(
-    'SELECT * FROM shipping_labels WHERE order_sn=? AND shop_id=? LIMIT 1',
-    [orderSn, shopId]
+    'SELECT * FROM shipping_labels WHERE tenant_id=? AND order_sn=? AND shop_id=? LIMIT 1',
+    [tenantId, orderSn, shopId]
   );
   return rows[0] || null;
 }
@@ -90,15 +91,15 @@ async function getMeta(shopId, orderSn) {
 /**
  * DB에서 tracking_number 업데이트
  */
-async function updateTracking(shopId, orderSn, trackingNumber) {
+async function updateTracking(shopId, orderSn, trackingNumber, { tenantId = CURRENT_TENANT_ID } = {}) {
   await db.query(
-    `UPDATE shipping_labels SET tracking_number=? WHERE order_sn=? AND shop_id=?`,
-    [trackingNumber, orderSn, shopId]
+    `UPDATE shipping_labels SET tracking_number=? WHERE tenant_id=? AND order_sn=? AND shop_id=?`,
+    [trackingNumber, tenantId, orderSn, shopId]
   );
   // orders 테이블도 업데이트
   await db.query(
-    `UPDATE orders SET tracking_number=? WHERE order_sn=? AND shop_id=?`,
-    [trackingNumber, orderSn, shopId]
+    `UPDATE orders SET tracking_number=? WHERE tenant_id=? AND order_sn=? AND shop_id=?`,
+    [trackingNumber, tenantId, orderSn, shopId]
   );
 }
 

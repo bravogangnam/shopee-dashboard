@@ -49,11 +49,12 @@ async function runAutoSync() {
     // syncWorker 실행 → { new_orders, new_orders_by_region } 반환
     const result = await runSync(jobId);
 
-    const newOrders   = result?.new_orders          || 0;
-    const byRegion    = result?.new_orders_by_region || {};
+      const newOrders   = result?.new_orders          || 0;
+      const readyToShipNewOrders = result?.ready_to_ship_new_orders || 0;
+      const byRegion    = result?.ready_to_ship_new_orders_by_region || {};
 
-    lastResult = { success: true, new_orders: newOrders };
-    console.log(`[AutoSync] ✅ 완료  jobId=${jobId}  new=${newOrders}`);
+      lastResult = { success: true, new_orders: newOrders, ready_to_ship_new_orders: readyToShipNewOrders };
+      console.log(`[AutoSync] ✅ 완료  jobId=${jobId}  new=${newOrders}  ready_to_ship_alert=${readyToShipNewOrders}`);
 
     // 동기화 성공 → 실패 플래그 리셋 (다음 에러 때 다시 알림 가능)
     if (notifiedSyncFail) {
@@ -61,9 +62,9 @@ async function runAutoSync() {
       console.log('[AutoSync] 동기화 성공 — 실패 알림 플래그 리셋');
     }
 
-    // 새 주문이 있으면 텔레그램 알림
-    if (newOrders > 0) {
-      await notifyNewOrders(newOrders, byRegion);
+      // 새 주문 알림은 READY_TO_SHIP 대상만 발송한다. UNPAID 신규 주문은 제외.
+      if (readyToShipNewOrders > 0) {
+        await notifyNewOrders(readyToShipNewOrders, byRegion);
     }
 
   } catch (err) {

@@ -22,7 +22,15 @@ const REGION_OPTIONS = [
   { value: 'PH', label: 'PH' },
 ];
 
-export default function OrderFilters({ filters, onChange, onSubmit, onReset }) {
+export default function OrderFilters({
+  filters,
+  onChange,
+  onSubmit,
+  onReset,
+  settlementFilter = 'all',
+  onSettlementFilterChange,
+  settlementCounts = { all: 0, pending: 0, confirmed: 0 },
+}) {
   const dateRangeValue = filters.date_from && filters.date_to
     ? [dayjs(filters.date_from), dayjs(filters.date_to)]
     : null;
@@ -76,6 +84,17 @@ export default function OrderFilters({ filters, onChange, onSubmit, onReset }) {
           style={{ width: 260 }}
         />
       </label>
+        <label className="filter-field settlement-filter-field">
+          확정상태
+          <select
+            value={settlementFilter}
+            onChange={event => onSettlementFilterChange?.(event.target.value)}
+          >
+            <option value="all">전체 {settlementCounts.all.toLocaleString('ko-KR')}건</option>
+            <option value="unsettled">미확정 {settlementCounts.pending.toLocaleString('ko-KR')}건</option>
+            <option value="settled">확정 {settlementCounts.confirmed.toLocaleString('ko-KR')}건</option>
+          </select>
+        </label>
       <div className="filter-actions">
         <button type="submit">검색</button>
         <button type="button" className="ghost-button" onClick={onReset}>초기화</button>

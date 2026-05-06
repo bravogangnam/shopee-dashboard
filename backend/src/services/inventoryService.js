@@ -59,12 +59,21 @@ function mysqlDateTime(date) {
 }
 
 function getTodayKstUtcRange(now = new Date()) {
+  const pad = value => String(value).padStart(2, '0');
   const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const startUtcMs = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate()) - 9 * 60 * 60 * 1000;
-  const endUtcMs = startUtcMs + 24 * 60 * 60 * 1000;
+
+  const y = kst.getUTCFullYear();
+  const m = pad(kst.getUTCMonth() + 1);
+  const d = pad(kst.getUTCDate());
+
+  const tomorrowKst = new Date(Date.UTC(y, kst.getUTCMonth(), kst.getUTCDate()) + 24 * 60 * 60 * 1000);
+  const ty = tomorrowKst.getUTCFullYear();
+  const tm = pad(tomorrowKst.getUTCMonth() + 1);
+  const td = pad(tomorrowKst.getUTCDate());
+
   return {
-    start: mysqlDateTime(new Date(startUtcMs)),
-    end: mysqlDateTime(new Date(endUtcMs)),
+    start: `${y}-${m}-${d} 00:00:00`,
+    end: `${ty}-${tm}-${td} 00:00:00`,
   };
 }
 
@@ -159,7 +168,7 @@ async function insertMovement(conn, movement) {
 async function applySaleMovementForOrder(order) {
   if (!order?.order_sn || !order?.shop_id) return;
   if (order.order_status === 'CANCELLED') return;
-  if (!SALE_STOCK_STATUSES.has(order.order_status)) return;
+  if (!SALE_STOCK_STATUSES.has(order.display_status || order.order_status)) return;
 
   const conn = await db.getConnection();
   try {
@@ -252,8 +261,35 @@ async function applySaleMovementForOrder(order) {
   }
 }
 
+function getCancelRestoreEnabledFrom() {
+  const value = process.env.INVENTORY_CANCEL_RESTORE_ENABLED_FROM;
+  if (!value) return null;
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  return parsed;
+}
+
+function shouldSkipCancelRestoreByCutoff(order) {
+  const enabledFrom = getCancelRestoreEnabledFrom();
+  if (!enabledFrom) return false;
+
+  const updateTime = Number(order?.update_time || 0);
+  if (!Number.isFinite(updateTime) || updateTime <= 0) {
+    return true;
+  }
+
+  return new Date(updateTime * 1000) < enabledFrom;
+}
+
 async function restoreCancelledOrder(order) {
   if (!order?.order_sn || !order?.shop_id || order.order_status !== 'CANCELLED') return;
+
+  if (shouldSkipCancelRestoreByCutoff(order)) {
+    console.log(`[Inventory] CANCEL_RESTORE cutoff skip: 주문=${orderKey(order)}, update_time=${order.update_time || '-'}`);
+    return;
+  }
 
   const conn = await db.getConnection();
   try {
@@ -290,22 +326,41 @@ async function restoreCancelledOrder(order) {
           continue;
         }
 
-        await insertMovement(conn, {
-          sku: saleMovement.sku,
-          order_sn: saleMovement.order_sn,
-          shop_id: saleMovement.shop_id,
-          item_id: saleMovement.item_id,
-          model_id: saleMovement.model_id,
-          movement_type: 'CANCEL_RESTORE',
-          qty_delta: restoreQty,
-          note: `Cancel restore ${order.order_sn}`,
-        });
-        await conn.query(
-          `UPDATE products
-           SET stock_quantity = stock_quantity + ?
-           WHERE sku = ?`,
-          [restoreQty, saleMovement.sku]
-        );
+          const [allocations] = await conn.query(
+            `SELECT id, batch_id, qty
+             FROM inventory_allocations
+             WHERE movement_id = ?
+             FOR UPDATE`,
+            [saleMovement.id]
+          );
+
+          for (const allocation of allocations) {
+            await conn.query(
+              `UPDATE inventory_batches
+               SET remaining_qty = remaining_qty + ?
+               WHERE id = ?`,
+              [Math.abs(Number(allocation.qty || 0)), allocation.batch_id]
+            );
+          }
+
+          await insertMovement(conn, {
+            sku: saleMovement.sku,
+            order_sn: saleMovement.order_sn,
+            shop_id: saleMovement.shop_id,
+            item_id: saleMovement.item_id,
+            model_id: saleMovement.model_id,
+            movement_type: 'CANCEL_RESTORE',
+            qty_delta: restoreQty,
+            note: allocations.length
+              ? `Cancel restore ${order.order_sn}; restored ${allocations.length} allocation(s)`
+              : `Cancel restore ${order.order_sn}; no allocation`,
+          });
+          await conn.query(
+            `UPDATE products
+             SET stock_quantity = stock_quantity + ?
+             WHERE sku = ?`,
+            [restoreQty, saleMovement.sku]
+          );
         await conn.commit();
         console.log(`[Inventory] CANCEL_RESTORE movement 생성: sku=${saleMovement.sku}, qty=+${restoreQty}, 주문=${orderKey(order)}`);
       } catch (err) {
@@ -327,8 +382,11 @@ async function processInventoryForOrder(order) {
   try {
     const { isInventoryFifoEnabled, allocateSaleInventoryForOrder } = require('./inventoryFifoService');
     if (!isInventoryFifoEnabled()) return;
-    if (order.order_status === 'CANCELLED') return;
-    if (SALE_STOCK_STATUSES.has(order.order_status)) {
+    if (order.order_status === 'CANCELLED') {
+      await restoreCancelledOrder(order);
+      return;
+    }
+    if (SALE_STOCK_STATUSES.has(order.display_status || order.order_status)) {
       await allocateSaleInventoryForOrder(order);
     }
     return;
@@ -355,7 +413,7 @@ async function processInventoryForOrders(orderKeys) {
   }
 
   const [orders] = await db.query(
-    `SELECT order_sn, shop_id, order_status, order_created_at, create_time
+    `SELECT order_sn, shop_id, order_status, display_status, order_created_at, create_time, update_time
      FROM orders
      WHERE ${whereClauses}`,
     params
@@ -589,14 +647,29 @@ async function adjustStartBalanceStock({ sku, target_stock_quantity, note }) {
 async function getInventoryProducts({ scope = 'low-stock' } = {}) {
   const whereClause = scope === 'all'
     ? ''
-    : 'WHERE stock_quantity <= COALESCE(low_stock_threshold, 0)';
+    : 'WHERE p.stock_quantity <= COALESCE(p.low_stock_threshold, 0)';
 
   const [rows] = await db.query(
-    `SELECT sku, brand, product_name_kr, product_name_en, option_name,
-            stock_quantity, low_stock_threshold, stock_tracking_started_at
-     FROM products
+    `SELECT
+        p.sku,
+        p.brand,
+        p.product_name_kr,
+        p.product_name_en,
+        p.option_name,
+        p.stock_quantity,
+        p.low_stock_threshold,
+        p.stock_tracking_started_at,
+        (
+          SELECT ROUND(ib.unit_cost * 1.1)
+          FROM inventory_batches ib
+          WHERE ib.sku COLLATE utf8mb4_unicode_ci = p.sku COLLATE utf8mb4_unicode_ci
+            AND ib.unit_cost > 0
+          ORDER BY (ib.received_at IS NULL), ib.received_at DESC, ib.id DESC
+          LIMIT 1
+        ) AS latest_unit_cost_vat
+     FROM products p
      ${whereClause}
-     ORDER BY stock_quantity ASC, sku ASC`
+     ORDER BY p.stock_quantity ASC, p.sku ASC`
   );
   return rows;
 }
@@ -653,7 +726,7 @@ async function getTodayOrderInventory() {
      INNER JOIN shops s
        ON s.shop_id = o.shop_id
       AND s.is_active = 1
-     WHERE o.order_status IN ('READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'TO_CONFIRM_RECEIVE', 'COMPLETED')
+     WHERE COALESCE(o.display_status, o.order_status) IN ('READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'TO_CONFIRM_RECEIVE', 'COMPLETED')
        AND o.order_created_at >= ?
        AND o.order_created_at < ?
      ORDER BY o.order_created_at DESC, o.order_sn ASC, oi.id ASC`,
@@ -722,6 +795,111 @@ async function getTodayOrderInventory() {
     }
   }
 
+    const [negativeProducts] = await db.query(
+      `SELECT sku, product_name_kr, product_name_en, option_name, stock_quantity
+       FROM products
+       WHERE stock_quantity < 0`
+    );
+
+    const negativeSkus = negativeProducts
+      .map(product => String(product.sku || '').trim())
+      .filter(Boolean);
+
+    if (negativeSkus.length) {
+      const negativePlaceholders = negativeSkus.map(() => '?').join(',');
+      const [negativeOrderRows] = await db.query(
+        `SELECT
+           sm.sku,
+           sm.order_sn,
+           sm.shop_id,
+           sm.qty,
+           o.order_created_at,
+           MAX(oi.item_name) AS item_name,
+           MAX(COALESCE(oi.image_info_image_url, oi.item_image_url)) AS image_url
+         FROM (
+           SELECT
+             im.sku,
+             im.order_sn,
+             im.shop_id,
+             SUM(ABS(im.qty_delta)) AS qty,
+             MAX(im.item_id) AS item_id,
+             MAX(im.model_id) AS model_id
+           FROM inventory_movements im
+           WHERE im.movement_type = 'SALE'
+             AND im.sku IN (${negativePlaceholders})
+             AND NOT EXISTS (
+               SELECT 1
+               FROM inventory_movements cr
+               WHERE cr.movement_type = 'CANCEL_RESTORE'
+                 AND cr.sku = im.sku
+                 AND cr.order_sn = im.order_sn
+                 AND cr.shop_id = im.shop_id
+             )
+           GROUP BY im.sku, im.order_sn, im.shop_id
+         ) sm
+         INNER JOIN orders o
+           ON o.order_sn = sm.order_sn
+          AND o.shop_id = sm.shop_id
+         INNER JOIN shops s
+           ON s.shop_id = o.shop_id
+          AND s.is_active = 1
+         LEFT JOIN order_items oi
+           ON oi.order_sn = sm.order_sn
+          AND oi.shop_id = sm.shop_id
+          AND (
+            (sm.item_id IS NOT NULL AND oi.item_id = sm.item_id AND (sm.model_id IS NULL OR oi.model_id = sm.model_id))
+            OR
+            (sm.item_id IS NULL AND (oi.model_sku = sm.sku OR oi.item_sku = sm.sku))
+          )
+         WHERE COALESCE(o.display_status, o.order_status) IN ('READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'TO_CONFIRM_RECEIVE', 'COMPLETED')
+         GROUP BY sm.sku, sm.order_sn, sm.shop_id, sm.qty, o.order_created_at
+         ORDER BY o.order_created_at DESC, sm.order_sn ASC`,
+        negativeSkus
+      );
+
+      const negativeOrderMap = new Map();
+      for (const row of negativeOrderRows) {
+        const sku = String(row.sku || '').trim();
+        if (!negativeOrderMap.has(sku)) negativeOrderMap.set(sku, []);
+        negativeOrderMap.get(sku).push(row);
+      }
+
+      for (const product of negativeProducts) {
+        const sku = String(product.sku || '').trim();
+        if (!sku) continue;
+
+        const existing = aggregates.get(sku) || {
+          sku,
+          ordered_qty: 0,
+          orderMap: new Map(),
+          sourceNames: [],
+          image_url: null,
+          last_order_created_at: null,
+        };
+
+        existing.sourceNames.push(product.product_name_kr || product.product_name_en || sku);
+
+        for (const row of negativeOrderMap.get(sku) || []) {
+          const qty = Number(row.qty || 0);
+          if (!existing.orderMap.has(row.order_sn)) {
+            existing.ordered_qty += qty;
+            existing.orderMap.set(row.order_sn, {
+              order_sn: row.order_sn,
+              qty,
+            });
+          }
+
+          existing.image_url = existing.image_url || row.image_url || null;
+          existing.sourceNames.push(row.item_name);
+          if (!existing.last_order_created_at || new Date(row.order_created_at) > new Date(existing.last_order_created_at)) {
+            existing.last_order_created_at = row.order_created_at;
+          }
+        }
+
+        aggregates.set(sku, existing);
+      }
+    }
+
   const skus = Array.from(aggregates.keys());
   if (!skus.length) {
     return {
@@ -737,7 +915,8 @@ async function getTodayOrderInventory() {
   const placeholders = skus.map(() => '?').join(',');
   const [products] = await db.query(
     `SELECT sku, brand, product_name_kr, product_name_en, option_name,
-            stock_quantity, low_stock_threshold, stock_tracking_started_at
+            stock_quantity, low_stock_threshold, stock_tracking_started_at,
+              cost_price_with_vat, discounted_price_with_vat, cost_price
      FROM products
      WHERE sku IN (${placeholders})`,
     skus
@@ -757,6 +936,21 @@ async function getTodayOrderInventory() {
       latestCostMap.set(batch.sku, Number(batch.unit_cost || 0) * 1.1);
     }
   }
+
+    const [allocationRows] = await db.query(
+      `SELECT sku, unit_cost
+       FROM inventory_allocations
+       WHERE sku IN (${placeholders})
+         AND unit_cost > 0
+       ORDER BY sku ASC, created_at DESC, id DESC`,
+      skus
+    );
+    const allocationCostMap = new Map();
+    for (const allocation of allocationRows) {
+      if (!allocationCostMap.has(allocation.sku) && Number(allocation.unit_cost || 0) > 0) {
+        allocationCostMap.set(allocation.sku, Number(allocation.unit_cost || 0) * 1.1);
+      }
+    }
 
   const data = Array.from(aggregates.values()).map(row => {
     const product = productMap.get(row.sku) || {};
@@ -779,7 +973,12 @@ async function getTodayOrderInventory() {
       low_stock_threshold: lowStockThreshold,
       status: stockStatus(stockQuantity, lowStockThreshold),
       purchase_needed_qty: stockQuantity < 0 ? Math.abs(stockQuantity) : 0,
-      latest_unit_cost_vat: latestCostMap.get(row.sku) || null,
+        latest_unit_cost_vat:
+          latestCostMap.get(row.sku) ||
+          allocationCostMap.get(row.sku) ||
+          Number(product.cost_price_with_vat || 0) ||
+          Number(product.discounted_price_with_vat || 0) ||
+          (Number(product.cost_price || 0) > 0 ? Number(product.cost_price || 0) * 1.1 : null),
       image_url: row.image_url,
       last_order_created_at: row.last_order_created_at,
     };

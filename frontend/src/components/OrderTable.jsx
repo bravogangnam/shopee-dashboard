@@ -22,6 +22,32 @@ function statusClass(status) {
   return `status-pill status-${String(status || '').toLowerCase()}`;
 }
 
+
+function calculateProductNetProfit(order) {
+  const netProfit = Number(order?.net_profit || 0);
+  const vatRefund = Number(order?.total_vat || 0);
+  return netProfit - vatRefund;
+}
+
+function calculateProductProfitRate(order) {
+  const salesAmount = Number(order?.merchandise_subtotal || order?.total_amount || 0);
+  const krwRate = Number(order?.krw_rate || 0);
+  const salesKrw = salesAmount * krwRate;
+
+  if (!salesKrw) return '-';
+
+  const rate = (calculateProductNetProfit(order) / salesKrw) * 100;
+  return `${rate.toFixed(2)}%`;
+}
+
+function getDisplayStatus(order) {
+  return order?.display_status || order?.order_status;
+}
+
+function isCancelledOrder(order) {
+  return (order?.display_status || order?.order_status) === 'CANCELLED';
+}
+
 export default function OrderTable({ orders, loading }) {
   if (loading) {
     return <div className="table-state">주문을 불러오는 중...</div>;
@@ -46,10 +72,12 @@ export default function OrderTable({ orders, loading }) {
             <th className="num">판매가</th>
             <th className="num">정산금액</th>
             <th className="num">실제원가</th>
-            <th className="num">순이익</th>
-            <th className="num">부가세</th>
-            <th className="num">마진율</th>
-            <th>마진상태</th>
+            <th className="num"><span className="tooltip-header">순이익<span className="tooltip-icon" data-tooltip="부가세 환급까지 포함해서 최종적으로 남는 돈">?</span></span></th>
+            <th className="num"><span className="tooltip-header">부가세 환급액<span className="tooltip-icon" data-tooltip="상품을 구매할 때 먼저 냈지만 나중에 돌려받는 부가세">?</span></span></th>
+            <th className="num"><span className="tooltip-header">제품순이익<span className="tooltip-icon" data-tooltip="부가세 환급액을 빼고 봤을 때 상품 자체로 남는 돈">?</span></span></th>
+            <th className="num"><span className="tooltip-header">순이익률<span className="tooltip-icon" data-tooltip="판매가 대비 최종 순이익 비율">?</span></span></th>
+            <th className="num"><span className="tooltip-header">제품순이익률<span className="tooltip-icon" data-tooltip="판매가 대비 제품순이익 비율">?</span></span></th>
+            <th>확정상태</th>
           </tr>
         </thead>
         <tbody>
@@ -87,7 +115,7 @@ export default function OrderTable({ orders, loading }) {
             };
 
             return (
-              <tr key={`${order.shop_id}-${order.order_sn}`}>
+              <tr key={`${order.shop_id}-${order.order_sn}`} className={isCancelledOrder(order) ? 'cancelled-row' : ''}>
                 <td>
                   <a
                     href={`/orders?order_sn=${encodeURIComponent(order.order_sn)}`}
@@ -102,7 +130,7 @@ export default function OrderTable({ orders, loading }) {
                 <td>
                   <span className={regionClass(order.region)}>{region}</span>
                 </td>
-                <td><span className={statusClass(order.order_status)}>{order.order_status}</span></td>
+                <td><span className={statusClass(getDisplayStatus(order))}>{getDisplayStatus(order)}</span></td>
                 <td>{renderItemLines('item_name', 'truncate')}</td>
                 <td>{renderItemLines('model_name', 'truncate-short')}</td>
                 <td className="num">{renderQuantityLines()}</td>
@@ -112,8 +140,25 @@ export default function OrderTable({ orders, loading }) {
                 <td className="num">{formatKrw(order.total_cost_price)}</td>
                 <td className={`num ${profitTone(order.net_profit)}`}>{formatKrw(order.net_profit)}</td>
                 <td className="num">{formatKrw(order.total_vat)}</td>
+                <td className={`num ${profitTone(calculateProductNetProfit(order))}`}>{formatKrw(calculateProductNetProfit(order))}</td>
                 <td className={`num ${profitTone(order.net_profit)}`}>{calculateMarginRate(order)}</td>
-                <td><MarginBadge status={order.margin_status} /></td>
+                <td className={`num ${profitTone(calculateProductNetProfit(order))}`}>{calculateProductProfitRate(order)}</td>
+                <td>
+                  <span
+                    className={`margin-status-badge ${
+                      Number(order.order_chargeable_weight_gram || 0) > 0 &&
+                      ["확정", "confirmed", "CONFIRMED"].includes(String(order.margin_status || "").trim())
+                        ? "confirmed"
+                        : "pending"
+                    }`}
+                  >
+                    <span className="margin-status-dot" />
+                    {Number(order.order_chargeable_weight_gram || 0) > 0 &&
+                    ["확정", "confirmed", "CONFIRMED"].includes(String(order.margin_status || "").trim())
+                      ? "확정"
+                      : "미확정"}
+                  </span>
+                </td>
               </tr>
             );
           })}

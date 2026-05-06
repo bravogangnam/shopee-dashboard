@@ -308,6 +308,9 @@ function mapOrderToDb(order, shopId, region, escrow) {
     region: region,
     order_sn: order.order_sn,
     order_status: order.order_status,
+      display_status: order.display_status ?? order.order_status,
+      display_status_reason: order.display_status_reason ?? null,
+      display_status_checked_at: order.display_status_checked_at ?? null,
     is_final_status: ['COMPLETED', 'CANCELLED'].includes(order.order_status) ? 1 : 0,
     merchandise_subtotal: merchandise_subtotal,
     total_amount: order.total_amount ?? null,
@@ -358,6 +361,15 @@ function mapOrderToDb(order, shopId, region, escrow) {
 // 수동 동기화 Step2: 기존 주문 업데이트 대상 필드
 const UPDATE_FIELDS = [
   'order_status',
+  'display_status',
+  'display_status_reason',
+  'merchandise_subtotal',
+  'original_price',
+  'seller_discount',
+  'voucher_from_seller',
+  'voucher_from_shopee',
+  'coins_offset',
+  'buyer_total_amount',
   'actual_shipping_fee',
   'order_chargeable_weight_gram',
   'commission_fee',
@@ -374,16 +386,30 @@ const UPDATE_FIELDS = [
  */
 function diffOrderRow(dbRow, newRow) {
   const diff = {};
+  const nullSafeFields = new Set([
+    'escrow_amount',
+    'merchandise_subtotal',
+    'original_price',
+    'seller_discount',
+    'voucher_from_seller',
+    'voucher_from_shopee',
+    'coins_offset',
+    'buyer_total_amount',
+  ]);
+
   for (const field of UPDATE_FIELDS) {
     const dbVal = dbRow[field] === null ? null : String(dbRow[field]);
     const newVal = newRow[field] === null ? null : String(newRow[field]);
+
     if (dbVal !== newVal) {
-      if (field === 'escrow_amount' && newVal === null && dbVal !== null) continue;
+      if (nullSafeFields.has(field) && newVal === null && dbVal !== null) continue;
       diff[field] = newRow[field];
     }
   }
+
   return diff;
 }
+
 
 module.exports = {
   getOrderList,

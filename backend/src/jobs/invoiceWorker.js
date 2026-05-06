@@ -12,6 +12,7 @@ const {
   prepareReadyToShipForInvoice,
   resolveDocTypes,
   waitForInvoiceLabelReadyDelay,
+  getTrackingNumber,
 } = require('../services/shopeeLogistics');
 const { getOrRefreshShopToken } = require('../services/shopeeAuth');
 const {
@@ -29,6 +30,10 @@ const HARD_SKIP_STATUSES = new Set(['UNPAID', 'PENDING', 'CANCELLED']);
 const COMPLETED_SKIP_REASON = 'Completed orders cannot be printed again through Shopee AWB API';
 const SHIP_CONCURRENCY = Number(process.env.INVOICE_SHIP_CONCURRENCY || 2);
 const DOWNLOAD_CHUNK_SIZE = Number(process.env.INVOICE_DOWNLOAD_CHUNK_SIZE || 5);
+const INDIVIDUAL_DOWNLOAD_CONCURRENCY = Number(process.env.INVOICE_INDIVIDUAL_DOWNLOAD_CONCURRENCY || 1);
+const TRACKING_POLL_TIMEOUT_MS = Number(process.env.INVOICE_TRACKING_POLL_TIMEOUT_MS || 30000);
+const TRACKING_POLL_INTERVAL_MS = Number(process.env.INVOICE_TRACKING_POLL_INTERVAL_MS || 3000);
+const TRACKING_POLL_CONCURRENCY = Number(process.env.INVOICE_TRACKING_POLL_CONCURRENCY || 5);
 
 async function saveTrackingToDB(orderSn, trackingNumber) {
   try {
@@ -263,7 +268,7 @@ async function runInvoice(jobId, orderSnList) {
 
         if (pages.length !== chunk.length) {
           console.warn(`[InvoiceWorker] batch PDF page count mismatch expected=${chunk.length} actual=${pages.length}; falling back to individual downloads`);
-          for (const candidate of chunk) await processCandidateIndividually(candidate, docType);
+          await runWithConcurrency(chunk, INDIVIDUAL_DOWNLOAD_CONCURRENCY, candidate => processCandidateIndividually(candidate, docType));
           return;
         }
 
@@ -296,7 +301,7 @@ async function runInvoice(jobId, orderSnList) {
         }
 
         console.warn(`[InvoiceWorker] batch document failed, falling back to individual downloads: ${batchErr.message}`);
-        for (const candidate of chunk) await processCandidateIndividually(candidate, docType);
+        await runWithConcurrency(chunk, INDIVIDUAL_DOWNLOAD_CONCURRENCY, candidate => processCandidateIndividually(candidate, docType));
       }
     };
 
@@ -413,9 +418,96 @@ async function runInvoice(jobId, orderSnList) {
       labelCandidates.push(readyResult);
     }
 
-    if (shippedReadyCount > 0) {
-      await waitForInvoiceLabelReadyDelay();
-    }
+      if (shippedReadyCount > 0) {
+        await waitForInvoiceLabelReadyDelay();
+
+        const readyTrackingCandidates = labelCandidates.filter(candidate =>
+          candidate.order.order_status === 'READY_TO_SHIP' && !candidate.trackingNumber
+        );
+
+        if (readyTrackingCandidates.length > 0) {
+          const pendingByOrderSn = new Map(
+            readyTrackingCandidates.map(candidate => [candidate.order.order_sn, candidate])
+          );
+          const deadline = Date.now() + Math.max(0, TRACKING_POLL_TIMEOUT_MS);
+          const pollInterval = Math.max(1000, TRACKING_POLL_INTERVAL_MS);
+          const pollConcurrency = Math.max(1, TRACKING_POLL_CONCURRENCY);
+
+          console.log(`[InvoiceWorker] tracking poll start: pending=${pendingByOrderSn.size}, timeout=${TRACKING_POLL_TIMEOUT_MS}ms, interval=${pollInterval}ms, concurrency=${pollConcurrency}`);
+
+          while (pendingByOrderSn.size > 0) {
+            const pendingCandidates = Array.from(pendingByOrderSn.values());
+
+            const pollResults = await runWithConcurrency(
+              pendingCandidates,
+              pollConcurrency,
+              async candidate => {
+                try {
+                  const trackingNumber = await getTrackingNumber(
+                    candidate.order.shop_id,
+                    candidate.order.order_sn,
+                    candidate.accessToken
+                  );
+
+                  return { candidate, trackingNumber: trackingNumber || null };
+                } catch (err) {
+                  return { candidate, error: err };
+                }
+              }
+            );
+
+            for (const pollResult of pollResults) {
+              const orderSn = pollResult.candidate.order.order_sn;
+
+              if (pollResult.error) {
+                console.warn(`[InvoiceWorker] tracking poll error ${orderSn}: ${pollResult.error.message}`);
+                continue;
+              }
+
+              if (pollResult.trackingNumber) {
+                pollResult.candidate.trackingNumber = pollResult.trackingNumber;
+                pendingByOrderSn.delete(orderSn);
+                await saveTrackingToDB(orderSn, pollResult.trackingNumber);
+                console.log(`[InvoiceWorker] tracking ready: ${orderSn} -> ${pollResult.trackingNumber}`);
+              }
+            }
+
+            if (pendingByOrderSn.size === 0 || Date.now() >= deadline) {
+              break;
+            }
+
+            await updateProgress(
+              jobId,
+              processedCount,
+              orderRows.length,
+              `운송장 번호 대기 중: ${pendingByOrderSn.size}건`
+            );
+
+            const waitMs = Math.min(pollInterval, Math.max(0, deadline - Date.now()));
+            if (waitMs > 0) {
+              await new Promise(resolve => setTimeout(resolve, waitMs));
+            }
+          }
+
+          if (pendingByOrderSn.size > 0) {
+            for (const candidate of pendingByOrderSn.values()) {
+              console.warn(`[InvoiceWorker] tracking not ready: ${candidate.order.order_sn}`);
+              results.push({
+                order_sn: candidate.order.order_sn,
+                status: 'waiting_label',
+                reason: '운송장 번호 생성 대기 중입니다. 잠시 후 다시 송장출력을 눌러주세요.',
+              });
+              await markOrderProcessed(candidate.order.order_sn);
+            }
+
+            for (let i = labelCandidates.length - 1; i >= 0; i--) {
+              if (pendingByOrderSn.has(labelCandidates[i].order.order_sn)) {
+                labelCandidates.splice(i, 1);
+              }
+            }
+          }
+        }
+      }
 
     const candidatesByShop = new Map();
     for (const candidate of labelCandidates) {

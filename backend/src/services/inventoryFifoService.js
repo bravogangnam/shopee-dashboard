@@ -613,7 +613,7 @@ async function allocateSaleInventoryForOrderItem(conn, order, item) {
 async function allocateSaleInventoryForOrder(order, conn) {
   if (!isInventoryFifoEnabled()) return;
   if (!order?.order_sn || !order?.shop_id) return;
-  if (!SALE_STOCK_STATUSES.has(order.order_status)) return;
+  if (!SALE_STOCK_STATUSES.has(order.display_status || order.order_status)) return;
   if (order.order_status === 'CANCELLED') return;
 
   const ownsConnection = !conn;

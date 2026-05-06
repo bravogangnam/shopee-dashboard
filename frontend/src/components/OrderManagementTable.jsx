@@ -16,6 +16,10 @@ function isTwKycPending(order) {
   );
 }
 
+function getDisplayStatus(order) {
+  return order?.display_status || order?.order_status;
+}
+
 function getOrderSn(order) {
   return order.order_sn || order.order_id || order.orderId || '';
 }
@@ -210,10 +214,7 @@ export default function OrderManagementTable({
                   <span className={regionClass(order.region)}>{order.region || order.shop_alias || order.shop_id}</span>
                 </td>
                 <td>
-                  <span className={statusClass(order.order_status)}>{order.order_status}</span>
-                  {isTwKycPending(order) && (
-                    <span className="status-sub-badge status-tw-kyc">TW KYC/송장대기</span>
-                  )}
+                  <span className={statusClass(getDisplayStatus(order))}>{getDisplayStatus(order)}</span>
                 </td>
                 <td>{renderProductLines(items, order)}</td>
                 <td>{renderOptionLines(items, onImagePreview)}</td>

@@ -71,6 +71,46 @@ function formatWon(value) {
   return `₩${Math.round(number).toLocaleString('ko-KR')}`;
 }
 
+function fallbackCopyText(text) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
+}
+
+function copySkuToClipboard(sku) {
+  const text = String(sku || '').trim();
+  if (!text) return;
+
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => fallbackCopyText(text));
+    return;
+  }
+
+  fallbackCopyText(text);
+}
+
+function SkuCopyCell({ sku }) {
+  return (
+    <div className="sku-copy-cell">
+      <strong>{sku}</strong>
+      <button
+        type="button"
+        className="copy-sku-btn"
+        onClick={() => copySkuToClipboard(sku)}
+        title="SKU 복사"
+      >
+        복사
+      </button>
+    </div>
+  );
+}
+
 function InventoryStats({ products, summary }) {
   const fallbackSummary = {
     purchase_needed_sku_count: products.filter(product => Number(product.stock_quantity || 0) < 0).length,
@@ -374,7 +414,7 @@ function TodayOrderInventoryTable({
       <div className="today-order-toolbar">
         <div>
           <strong>오늘 주문 상품 재고 현황</strong>
-          <p>오늘 주문된 상품을 기준재고 SKU 기준으로 합산했습니다.</p>
+          <p>오늘 주문 상품과 현재 구매가 필요한 SKU를 함께 표시합니다.</p>
         </div>
         <label className="toggle-inline">
           <input
@@ -390,17 +430,17 @@ function TodayOrderInventoryTable({
         <div className="table-wrap today-order-table-wrap">
           <table className="data-table today-order-inventory-table">
             <thead>
-              <tr>
-                <th>SKU</th>
-                <th>상품명</th>
-                <th>주문번호</th>
-                <th className="num">오늘 주문수량</th>
-                <th className="num">현재 재고</th>
-                <th className="num">구매필요</th>
-                <th className="num">최근 단가</th>
-                <th>상태</th>
-              </tr>
-            </thead>
+                <tr>
+                  <th className="today-col-sku">SKU</th>
+                  <th className="num today-col-cost">부가세포함 원가</th>
+                  <th className="num today-col-qty">주문수량</th>
+                  <th className="num today-col-stock">현재 재고</th>
+                  <th className="num today-col-needed">구매필요</th>
+                  <th className="today-col-name">상품명</th>
+                  <th className="today-col-order">주문번호</th>
+                  <th className="today-col-status">상태</th>
+                </tr>
+              </thead>
             <tbody>
               {items.map(item => {
                 const orderLines = item.order_lines || [];
@@ -412,48 +452,48 @@ function TodayOrderInventoryTable({
 
                 return (
                   <tr key={item.sku}>
-                    <td><strong>{item.sku}</strong></td>
-                    <td>
-                      <button
-                        type="button"
-                        className={`link-button inventory-product-link ${hasImage ? '' : 'disabled'}`}
-                        onClick={() => hasImage && onPreviewImage({
-                          image_url: item.image_url,
-                          item_name: productName,
-                          model_name: item.sku,
-                        })}
-                        disabled={!hasImage}
-                        title={productName}
-                      >
-                        {productName}
-                      </button>
-                      {item.product_name_en && <small>{item.product_name_en}</small>}
-                    </td>
-                    <td>
-                      {orderLines.length <= 1 ? (
-                        <button type="button" className="link-button" onClick={() => firstOrder && goToOrder(firstOrder)}>
-                          {firstOrder || '-'}
+                      <td className="today-col-sku-cell"><SkuCopyCell sku={item.sku} /></td>
+                      <td className="num today-col-cost">{formatWon(item.latest_unit_cost_vat)}</td>
+                      <td className="num today-col-qty">{Number(item.ordered_qty || 0).toLocaleString('ko-KR')}</td>
+                      <td className={`num today-col-stock ${Number(item.stock_quantity || 0) < 0 ? 'negative' : ''}`}>
+                        {Number(item.stock_quantity || 0).toLocaleString('ko-KR')}
+                      </td>
+                      <td className={`num today-col-needed purchase-needed-qty ${purchaseNeeded > 0 ? 'active' : ''}`}>
+                        {purchaseNeeded.toLocaleString('ko-KR')}
+                      </td>
+                      <td className="today-col-name">
+                        <button
+                          type="button"
+                          className={`link-button inventory-product-link ${hasImage ? '' : 'disabled'}`}
+                          onClick={() => hasImage && onPreviewImage({
+                            image_url: item.image_url,
+                            item_name: productName,
+                            model_name: item.sku,
+                          })}
+                          disabled={!hasImage}
+                          title={productName}
+                        >
+                          {productName}
                         </button>
-                      ) : (
-                        <button type="button" className="link-button" onClick={() => onShowOrders(item)}>
-                          {firstOrder} 외 {orderLines.length - 1}건
-                        </button>
-                      )}
-                    </td>
-                    <td className="num">{Number(item.ordered_qty || 0).toLocaleString('ko-KR')}</td>
-                    <td className={`num ${Number(item.stock_quantity || 0) < 0 ? 'negative' : ''}`}>
-                      {Number(item.stock_quantity || 0).toLocaleString('ko-KR')}
-                    </td>
-                    <td className={`num purchase-needed-qty ${purchaseNeeded > 0 ? 'active' : ''}`}>
-                      {purchaseNeeded.toLocaleString('ko-KR')}
-                    </td>
-                    <td className="num">{formatWon(item.latest_unit_cost_vat)}</td>
-                    <td>
-                      <span className={`stock-status-pill stock-status-${status.key}`}>
-                        {status.label}
-                      </span>
-                    </td>
-                  </tr>
+                        {item.product_name_en && <small>{item.product_name_en}</small>}
+                      </td>
+                        <td className="today-col-order">
+                          {orderLines.length <= 1 ? (
+                            <button type="button" className="link-button" onClick={() => firstOrder && goToOrder(firstOrder)}>
+                              {firstOrder || '-'}
+                            </button>
+                          ) : (
+                            <button type="button" className="link-button" onClick={() => onShowOrders(item)}>
+                              {firstOrder} 외 {orderLines.length - 1}건
+                            </button>
+                          )}
+                        </td>
+                      <td className="today-col-status">
+                        <span className={`stock-status-pill stock-status-${status.key}`}>
+                          {status.label}
+                        </span>
+                      </td>
+                    </tr>
                 );
               })}
             </tbody>
@@ -461,7 +501,7 @@ function TodayOrderInventoryTable({
         </div>
       ) : (
         <div className="table-state">
-          {purchaseOnly ? '오늘 주문 상품 중 구매필요 SKU가 없습니다.' : '오늘 주문 상품이 없습니다.'}
+          {purchaseOnly ? '구매필요 SKU가 없습니다.' : '표시할 SKU가 없습니다.'}
         </div>
       )}
     </div>
@@ -677,15 +717,29 @@ function MovementsModal({ product, movements, loading, onClose }) {
   );
 }
 
+
+const inventoryPageCache = {
+  products: [],
+  inventorySummary: null,
+  todayOrderItems: [],
+  todayOrderSummary: null,
+  activeInventoryTab: 'today',
+  todayPurchaseOnly: true,
+  search: '',
+  statusFilter: 'ALL',
+  refreshedAt: null,
+  loaded: false,
+};
+
 export default function InventoryPage() {
-  const [products, setProducts] = useState([]);
-  const [inventorySummary, setInventorySummary] = useState(null);
-  const [todayOrderItems, setTodayOrderItems] = useState([]);
-  const [todayOrderSummary, setTodayOrderSummary] = useState(null);
-  const [activeInventoryTab, setActiveInventoryTab] = useState('today');
-  const [todayPurchaseOnly, setTodayPurchaseOnly] = useState(true);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [products, setProducts] = useState(() => inventoryPageCache.products || []);
+  const [inventorySummary, setInventorySummary] = useState(() => inventoryPageCache.inventorySummary || null);
+  const [todayOrderItems, setTodayOrderItems] = useState(() => inventoryPageCache.todayOrderItems || []);
+  const [todayOrderSummary, setTodayOrderSummary] = useState(() => inventoryPageCache.todayOrderSummary || null);
+  const [activeInventoryTab, setActiveInventoryTab] = useState(() => inventoryPageCache.activeInventoryTab || 'today');
+  const [todayPurchaseOnly, setTodayPurchaseOnly] = useState(() => inventoryPageCache.todayPurchaseOnly ?? true);
+  const [search, setSearch] = useState(() => inventoryPageCache.search || '');
+  const [statusFilter, setStatusFilter] = useState(() => inventoryPageCache.statusFilter || 'ALL');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -693,7 +747,7 @@ export default function InventoryPage() {
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
   const [receiptReminderResult, setReceiptReminderResult] = useState(null);
-  const [refreshedAt, setRefreshedAt] = useState(null);
+  const [refreshedAt, setRefreshedAt] = useState(() => inventoryPageCache.refreshedAt || null);
   const [settingsProduct, setSettingsProduct] = useState(null);
   const [adjustProduct, setAdjustProduct] = useState(null);
   const [historyProduct, setHistoryProduct] = useState(null);
@@ -720,12 +774,11 @@ export default function InventoryPage() {
   }, [products, search, statusFilter]);
 
   const filteredTodayOrderItems = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
     return todayOrderItems.filter(item => {
       if (todayPurchaseOnly && Number(item.stock_quantity || 0) >= 0) return false;
-      const keyword = search.trim().toLowerCase();
-      if (!keyword) return true;
       const haystack = `${item.sku || ''} ${getProductName(item)} ${item.product_name_en || ''} ${(item.order_sns || []).join(' ')}`.toLowerCase();
-      return haystack.includes(keyword);
+      return !keyword || haystack.includes(keyword);
     });
   }, [todayOrderItems, todayPurchaseOnly, search]);
 
@@ -747,11 +800,24 @@ export default function InventoryPage() {
         fetchInventoryProducts(),
         fetchTodayOrderInventory(),
       ]);
-      setProducts(inventoryResult.data);
-      setInventorySummary(inventoryResult.summary);
-      setTodayOrderItems(todayResult.data);
-      setTodayOrderSummary(todayResult.summary);
-      setRefreshedAt(new Date());
+      const nextProducts = inventoryResult.data || [];
+      const nextInventorySummary = inventoryResult.summary || null;
+      const nextTodayOrderItems = todayResult.data || [];
+      const nextTodayOrderSummary = todayResult.summary || null;
+      const nextRefreshedAt = new Date();
+
+      setProducts(nextProducts);
+      setInventorySummary(nextInventorySummary);
+      setTodayOrderItems(nextTodayOrderItems);
+      setTodayOrderSummary(nextTodayOrderSummary);
+      setRefreshedAt(nextRefreshedAt);
+
+      inventoryPageCache.products = nextProducts;
+      inventoryPageCache.inventorySummary = nextInventorySummary;
+      inventoryPageCache.todayOrderItems = nextTodayOrderItems;
+      inventoryPageCache.todayOrderSummary = nextTodayOrderSummary;
+      inventoryPageCache.refreshedAt = nextRefreshedAt;
+      inventoryPageCache.loaded = true;
     } catch (err) {
       setError(err.message || '재고 목록을 불러오지 못했습니다.');
       setProducts([]);
@@ -764,29 +830,27 @@ export default function InventoryPage() {
   }, []);
 
   useEffect(() => {
+    if (inventoryPageCache.loaded) return;
     loadProducts();
   }, [loadProducts]);
 
   useEffect(() => {
-    if (autoRefreshPaused) return undefined;
-
-    const intervalId = window.setInterval(() => {
-      loadProducts();
-    }, 60000);
-
-    return () => window.clearInterval(intervalId);
-  }, [autoRefreshPaused, loadProducts]);
+    inventoryPageCache.activeInventoryTab = activeInventoryTab;
+  }, [activeInventoryTab]);
 
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && !autoRefreshPaused) {
-        loadProducts();
-      }
-    };
+    inventoryPageCache.todayPurchaseOnly = todayPurchaseOnly;
+  }, [todayPurchaseOnly]);
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [autoRefreshPaused, loadProducts]);
+  useEffect(() => {
+    inventoryPageCache.search = search;
+  }, [search]);
+
+  useEffect(() => {
+    inventoryPageCache.statusFilter = statusFilter;
+  }, [statusFilter]);
+
+
 
   async function handleSaveSettings(payload) {
     setSaving(true);
@@ -990,6 +1054,7 @@ export default function InventoryPage() {
                 <th>상품명</th>
                 <th className="num">현재 재고</th>
                 <th className="num">부족 기준</th>
+                <th className="num">부가세포함 원가</th>
                 <th>상태</th>
                 <th>추적 시작일</th>
                 <th>작업</th>
@@ -1000,7 +1065,7 @@ export default function InventoryPage() {
                 const status = getStockStatus(product);
                 return (
                   <tr key={product.sku}>
-                    <td><strong>{product.sku}</strong></td>
+                    <td><SkuCopyCell sku={product.sku} /></td>
                     <td>
                       <div className="truncate inventory-product-name" title={getProductName(product)}>
                         {getProductName(product)}
@@ -1009,6 +1074,7 @@ export default function InventoryPage() {
                     </td>
                     <td className="num">{Number(product.stock_quantity || 0).toLocaleString('ko-KR')}</td>
                     <td className="num">{Number(product.low_stock_threshold || 0).toLocaleString('ko-KR')}</td>
+                    <td className="num">{formatWon(product.latest_unit_cost_vat)}</td>
                     <td>
                       <span className={`stock-status-pill stock-status-${status.key}`}>
                         {status.label}

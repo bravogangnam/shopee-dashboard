@@ -166,7 +166,7 @@ async function batchInsertOrders(orderRows) {
     for (const row of orderRows) {
       const [result] = await conn.query(
         `INSERT IGNORE INTO orders (
-          shop_id, region, order_sn, order_status, is_final_status,
+          shop_id, region, order_sn, order_status, display_status, display_status_reason, display_status_checked_at, is_final_status,
           merchandise_subtotal, total_amount, currency,
           original_price, seller_discount, voucher_from_seller, voucher_from_shopee,
           coins_offset, buyer_total_amount,
@@ -175,7 +175,7 @@ async function batchInsertOrders(orderRows) {
           commission_fee, service_fee, transaction_fee, escrow_amount,
           create_time, order_created_at, update_time, synced_at
         ) VALUES (
-          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?,
           ?, ?, ?, ?,
           ?, ?,
@@ -185,7 +185,15 @@ async function batchInsertOrders(orderRows) {
           ?, ?, ?, NOW()
         )`,
         [
-          row.shop_id, row.region, row.order_sn, row.order_status, row.is_final_status,
+          row.shop_id, row.region, row.order_sn, row.order_status,
+
+          row.display_status || row.order_status,
+
+          row.display_status_reason || null,
+
+          row.display_status_checked_at || null,
+
+          row.is_final_status,
           row.merchandise_subtotal, row.total_amount, row.currency,
           row.original_price, row.seller_discount, row.voucher_from_seller, row.voucher_from_shopee,
           row.coins_offset, row.buyer_total_amount,
@@ -413,7 +421,10 @@ async function getLatestCreateTime(shopId) {
  */
 async function getNonFinalOrders(shopId) {
   const [rows] = await db.query(
-    `SELECT order_sn, order_status, actual_shipping_fee, order_chargeable_weight_gram,
+    `SELECT order_sn, order_status, display_status, display_status_reason, display_status_checked_at,
+              merchandise_subtotal, total_amount, original_price, seller_discount,
+              voucher_from_seller, voucher_from_shopee, coins_offset, buyer_total_amount,
+              actual_shipping_fee, order_chargeable_weight_gram,
             commission_fee, service_fee, transaction_fee, escrow_amount, tracking_number,
             is_final_status, update_time
      FROM orders WHERE shop_id = ? AND is_final_status = 0`,

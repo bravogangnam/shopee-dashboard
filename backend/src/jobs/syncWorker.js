@@ -35,6 +35,7 @@ const {
   failJob,
 } = require('../services/jobManager');
 const { sleep } = require('../utils/apiWrapper');
+const { getShippingParameter } = require('../services/shopeeLogistics');
 
 // ── 타이밍 헬퍼 ─────────────────────────────────────────────────
 const t = () => Date.now();
@@ -80,6 +81,72 @@ async function fetchEscrowParallel(orders, shopId, accessToken, label) {
   return escrowMap;
 }
 
+function mysqlDateTimeNow() {
+  return new Date().toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function isPendingShippingParameterError(err) {
+  const msg = err?.message || '';
+  return (
+    /Shipping parameters can only be obtained when package is ready to be shipped/i.test(msg) ||
+    /buyer TW KYC/i.test(msg) ||
+    /KYC/i.test(msg) ||
+    /package.*ready to be shipped/i.test(msg)
+  );
+}
+
+async function resolveDisplayStatuses(orders, shopId, accessToken, label) {
+  const result = new Map();
+
+  for (const order of orders) {
+    const checkedAt = mysqlDateTimeNow();
+
+    if (order.order_status !== 'READY_TO_SHIP') {
+      result.set(order.order_sn, {
+        display_status: order.order_status,
+        display_status_reason: null,
+        display_status_checked_at: checkedAt,
+      });
+      continue;
+    }
+
+    try {
+      await getShippingParameter(shopId, order.order_sn, accessToken);
+      result.set(order.order_sn, {
+        display_status: 'READY_TO_SHIP',
+        display_status_reason: null,
+        display_status_checked_at: checkedAt,
+      });
+      console.log(`${label} │    display_status[${order.order_sn}]: READY_TO_SHIP`);
+    } catch (err) {
+      if (isPendingShippingParameterError(err)) {
+        result.set(order.order_sn, {
+          display_status: 'PENDING',
+          display_status_reason: 'Shipping parameters can only be obtained when package is ready to be shipped',
+          display_status_checked_at: checkedAt,
+        });
+        console.log(`${label} │    display_status[${order.order_sn}]: PENDING (${err.message.slice(0, 120)})`);
+      } else {
+        result.set(order.order_sn, {
+          display_status: 'READY_TO_SHIP',
+          display_status_reason: `display_status check failed: ${err.message.slice(0, 200)}`,
+          display_status_checked_at: checkedAt,
+        });
+        console.warn(`${label} │    display_status[${order.order_sn}]: CHECK_FAILED -> READY_TO_SHIP (${err.message.slice(0, 120)})`);
+      }
+    }
+  }
+
+  return result;
+}
+
+function applyDisplayStatus(orderRow, displayStatus) {
+  orderRow.display_status = displayStatus?.display_status || orderRow.order_status;
+  orderRow.display_status_reason = displayStatus?.display_status_reason || null;
+  orderRow.display_status_checked_at = displayStatus?.display_status_checked_at || mysqlDateTimeNow();
+}
+
+
 /**
  * 수동 동기화 메인 실행 함수
  * @param {string} jobId
@@ -109,6 +176,8 @@ async function runSync(jobId) {
     let totalNewOrders = 0;
     let totalUpdated = 0;
     const newOrdersByRegion = {}; // { MY: n, SG: n, TW: n }
+    let totalReadyToShipAlertOrders = 0;
+    const readyToShipAlertOrdersByRegion = {}; // 새주문 알림 대상: READY_TO_SHIP only
 
     // ───────────────────────────────────────────────────────────
     // STEP 1: 신규 주문 수집
@@ -149,6 +218,7 @@ async function runSync(jobId) {
         console.log(`[Sync][Step1] │  시간 범위: ${new Date(timeFrom*1000).toISOString().slice(0,10)} ~ ${new Date(timeTo*1000).toISOString().slice(0,10)}  윈도우 ${windows.length}개`);
 
         let shopNewCount = 0;
+          let shopReadyToShipAlertCount = 0;
 
         for (const [wi, win] of windows.entries()) {
           const winLabel = `win[${wi+1}/${windows.length}]`;
@@ -183,12 +253,15 @@ async function runSync(jobId) {
               escrowNeededOrders, shop.shop_id, shopToken1d, '[Sync][Step1]'
             );
 
+              const displayStatusMap1 = await resolveDisplayStatuses(details, shop.shop_id, shopToken1d, '[Sync][Step1]');
+
             const orderRows = [];
             const itemRowsAll = [];
 
             for (const order of details) {
               const escrow = escrowMap1[order.order_sn] || null;
               const { orderRow, itemRows } = mapOrderToDb(order, shop.shop_id, shop.region, escrow);
+              applyDisplayStatus(orderRow, displayStatusMap1.get(order.order_sn));
               orderRows.push(orderRow);
               itemRowsAll.push(...itemRows);
             }
@@ -198,6 +271,14 @@ async function runSync(jobId) {
             const { inserted } = await batchInsertOrders(orderRows);
             await batchInsertOrderItems(itemRowsAll);
             console.log(`[Sync][Step1] │  batchInsert: ${ms(insertStart)}  → inserted=${inserted}`);
+              const readyToShipInserted = inserted > 0
+                  ? orderRows.filter(o => o.display_status === 'READY_TO_SHIP').length
+                  : 0;
+              shopReadyToShipAlertCount += readyToShipInserted;
+              if (readyToShipInserted > 0) {
+                console.log(`[Sync][Step1] │  새주문 알림 대상 READY_TO_SHIP=${readyToShipInserted}건`);
+              }
+
             shopNewCount += inserted;
           }
 
@@ -208,6 +289,10 @@ async function runSync(jobId) {
         if (shopNewCount > 0) {
           newOrdersByRegion[shop.region] = (newOrdersByRegion[shop.region] || 0) + shopNewCount;
         }
+          totalReadyToShipAlertOrders += shopReadyToShipAlertCount;
+          if (shopReadyToShipAlertCount > 0) {
+            readyToShipAlertOrdersByRegion[shop.region] = (readyToShipAlertOrdersByRegion[shop.region] || 0) + shopReadyToShipAlertCount;
+          }
         await logSync(shop.shop_id, 'manual', new Date(timeFrom * 1000), new Date(timeTo * 1000),
           shopNewCount, shopNewCount, 'success', null);
 
@@ -271,9 +356,12 @@ async function runSync(jobId) {
           escrowNeeded, shop.shop_id, shopToken2, '[Sync][Step2]'
         );
 
+          const displayStatusMap2 = await resolveDisplayStatuses(details, shop.shop_id, shopToken2, '[Sync][Step2]');
+
         // ── diff + DB UPDATE ──
         const updateStart = t();
         let shopUpdated = 0;
+          let shopReadyToShipAlertCount = 0;
         for (const order of details) {
           const dbRow = nonFinalOrders.find(o => o.order_sn === order.order_sn);
           if (!dbRow) continue;
@@ -281,8 +369,23 @@ async function runSync(jobId) {
           const escrow = escrowMap[order.order_sn] || null;
           const { orderRow } = mapOrderToDb(order, shop.shop_id, shop.region, escrow);
 
+          applyDisplayStatus(orderRow, displayStatusMap2.get(order.order_sn));
+
+
           const diff = diffOrderRow(dbRow, orderRow);
+
+          if ((Object.prototype.hasOwnProperty.call(diff, 'display_status') || Object.prototype.hasOwnProperty.call(diff, 'display_status_reason')) && orderRow.display_status_checked_at) {
+
+            diff.display_status_checked_at = orderRow.display_status_checked_at;
+
+          }
           if (Object.keys(diff).length > 0) {
+              const previousDisplayStatus = dbRow.display_status || dbRow.order_status;
+                if (previousDisplayStatus !== 'READY_TO_SHIP' && orderRow.display_status === 'READY_TO_SHIP') {
+                  shopReadyToShipAlertCount++;
+                  console.log(`[Sync][Step2] │  새주문 알림 대상 전환: ${order.order_sn} ${previousDisplayStatus} → READY_TO_SHIP`);
+                }
+
             await updateOrder(order.order_sn, shop.shop_id, diff);
             shopUpdated++;
           }
@@ -290,7 +393,12 @@ async function runSync(jobId) {
         console.log(`[Sync][Step2] │  diff+update: ${ms(updateStart)}  → 업데이트=${shopUpdated}건`);
 
         totalUpdated += shopUpdated;
-        console.log(`[Sync][Step2] └─ shop=${shopAlias} 완료  업데이트=${shopUpdated}건  ${ms(shopStart)}`);
+          totalReadyToShipAlertOrders += shopReadyToShipAlertCount;
+          if (shopReadyToShipAlertCount > 0) {
+            readyToShipAlertOrdersByRegion[shop.region] = (readyToShipAlertOrdersByRegion[shop.region] || 0) + shopReadyToShipAlertCount;
+          }
+
+          console.log(`[Sync][Step2] └─ shop=${shopAlias} 완료  업데이트=${shopUpdated}건  새주문알림대상=${shopReadyToShipAlertCount}건  ${ms(shopStart)}`);
         await updateProgress(jobId, step, totalSteps,
           `[Step2] ${shopAlias} 완료 - 업데이트 ${shopUpdated}건`);
 
@@ -398,6 +506,8 @@ async function runSync(jobId) {
       updated_orders: totalUpdated,
       tracking_updated: totalTrackingUpdated,
       new_orders_by_region: newOrdersByRegion,
+      ready_to_ship_new_orders: totalReadyToShipAlertOrders,
+      ready_to_ship_new_orders_by_region: readyToShipAlertOrdersByRegion,
     });
 
     console.log(`\n${'═'.repeat(60)}`);
@@ -405,7 +515,12 @@ async function runSync(jobId) {
     console.log(`${'═'.repeat(60)}\n`);
 
     // 호출자(autoSyncJob)에서 텔레그램 알림에 활용할 수 있도록 결과 반환
-    return { new_orders: totalNewOrders, new_orders_by_region: newOrdersByRegion };
+    return {
+      new_orders: totalNewOrders,
+      new_orders_by_region: newOrdersByRegion,
+      ready_to_ship_new_orders: totalReadyToShipAlertOrders,
+      ready_to_ship_new_orders_by_region: readyToShipAlertOrdersByRegion,
+    };
 
   } catch (err) {
     console.error(`[Sync] FATAL: ${err.message}  총소요=${ms(syncStart)}`);

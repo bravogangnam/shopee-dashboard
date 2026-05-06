@@ -77,6 +77,7 @@ function toOrderQuery(filters) {
   return {
     ...filters,
     region: filters.region === 'ALL' ? '' : filters.region,
+    include_open_backlog: '1',
   };
 }
 

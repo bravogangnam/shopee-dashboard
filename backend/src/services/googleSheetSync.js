@@ -5,6 +5,11 @@ const db = require('../config/database');
 const SHEET_NAME = process.env.GOOGLE_SHEET_NAME || '차트';
 const SHEET_RANGE = `${SHEET_NAME}!A:L`;
 const COST_FIELDS = ['cost_price', 'discounted_price_with_vat', 'supply_rate'];
+const VALID_PRODUCT_SKU_PATTERN = /^GS_?\d{5}$/i;
+
+function isValidProductSku(sku) {
+  return VALID_PRODUCT_SKU_PATTERN.test(String(sku || '').trim());
+}
 
 let isRunning = false;
 let lastRunAt = null;
@@ -76,6 +81,7 @@ function costChanged(existing, product) {
 function parseSheetRow(row, rowIndex) {
   const sku = cleanText(row[0]);
   if (!sku) return { skip: true, reason: 'empty sku' };
+  if (!isValidProductSku(sku)) return { skip: true, reason: `invalid sku: ${sku}` };
 
   return {
     sku,

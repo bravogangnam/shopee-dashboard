@@ -12,7 +12,7 @@ import { formatKrw, formatNumber } from '../utils/format.js';
 
 const getCurrentMonthRange = () => ({
   date_from: dayjs().startOf('month').format('YYYY-MM-DD'),
-  date_to: dayjs().endOf('month').format('YYYY-MM-DD'),
+  date_to: dayjs().format('YYYY-MM-DD'),
 });
 
 const createDefaultFilters = () => ({
@@ -24,11 +24,30 @@ const createDefaultFilters = () => ({
   ...getCurrentMonthRange(),
 });
 
-function getChartMonth(filters) {
-  return filters.date_from
-    ? dayjs(filters.date_from).format('YYYY-MM')
-    : dayjs().format('YYYY-MM');
+function getChartMonthRange(month) {
+  const base = dayjs(`${month}-01`);
+  return {
+    date_from: base.startOf('month').format('YYYY-MM-DD'),
+    date_to: base.endOf('month').format('YYYY-MM-DD'),
+  };
 }
+
+
+const ledgerPageCache = {
+  filters: null,
+  query: null,
+  orders: [],
+  summary: null,
+  dailySales: [],
+  chartSummary: null,
+  chartMonth: null,
+  pagination: null,
+  settlementFilter: 'all',
+  ordersKey: null,
+  chartKey: null,
+  ordersLoaded: false,
+  chartLoaded: false,
+};
 
 function ChangeRate({ value }) {
   if (value === null || value === undefined) return null;
@@ -70,44 +89,75 @@ function SummaryCards({ summary }) {
 }
 
 export default function LedgerPage() {
-  const [filters, setFilters] = useState(() => createDefaultFilters());
-  const [query, setQuery] = useState(() => createDefaultFilters());
-  const [orders, setOrders] = useState([]);
-  const [summary, setSummary] = useState(null);
-  const [dailySales, setDailySales] = useState([]);
-  const [pagination, setPagination] = useState(null);
+  const defaultFilters = useMemo(() => createDefaultFilters(), []);
+  const [filters, setFilters] = useState(() => ledgerPageCache.filters || defaultFilters);
+  const [query, setQuery] = useState(() => ledgerPageCache.query || defaultFilters);
+  const [orders, setOrders] = useState(() => ledgerPageCache.orders || []);
+  const [settlementFilter, setSettlementFilter] = useState(() => ledgerPageCache.settlementFilter || 'all');
+  const [summary, setSummary] = useState(() => ledgerPageCache.summary || null);
+  const [dailySales, setDailySales] = useState(() => ledgerPageCache.dailySales || []);
+  const [chartSummary, setChartSummary] = useState(() => ledgerPageCache.chartSummary || null);
+  const [chartMonth, setChartMonth] = useState(() => ledgerPageCache.chartMonth || dayjs().subtract(1, 'month').format('YYYY-MM'));
+  const [pagination, setPagination] = useState(() => ledgerPageCache.pagination || null);
   const [loading, setLoading] = useState(false);
+  const [chartLoading, setChartLoading] = useState(false);
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
 
   const queryKey = useMemo(() => JSON.stringify(query), [query]);
-  const chartMonth = useMemo(() => getChartMonth(query), [query]);
 
   useEffect(() => {
+    ledgerPageCache.filters = filters;
+  }, [filters]);
+
+  useEffect(() => {
+    ledgerPageCache.query = query;
+  }, [query]);
+
+  useEffect(() => {
+    ledgerPageCache.settlementFilter = settlementFilter;
+  }, [settlementFilter]);
+
+  useEffect(() => {
+    ledgerPageCache.chartMonth = chartMonth;
+  }, [chartMonth]);
+
+  useEffect(() => {
+    if (reloadKey === 0 && ledgerPageCache.ordersLoaded && ledgerPageCache.ordersKey === queryKey) {
+      return;
+    }
+
     let cancelled = false;
 
     async function loadOrders() {
       setLoading(true);
       setError('');
       try {
-        const [ordersResult, summaryResult, dailySalesResult] = await Promise.all([
+        const [ordersResult, summaryResult] = await Promise.all([
           fetchOrders(query),
           fetchSummary(query),
-          fetchDailySales(chartMonth),
         ]);
 
         if (!cancelled) {
-          setOrders(ordersResult.data || []);
-          setPagination(ordersResult.pagination || null);
+          const nextOrders = ordersResult.data || [];
+          const nextPagination = ordersResult.pagination || null;
+
+          setOrders(nextOrders);
+          setPagination(nextPagination);
           setSummary(summaryResult);
-          setDailySales(dailySalesResult.data || []);
+
+          ledgerPageCache.ordersLoaded = true;
+          ledgerPageCache.ordersKey = queryKey;
+          ledgerPageCache.orders = nextOrders;
+          ledgerPageCache.pagination = nextPagination;
+          ledgerPageCache.summary = summaryResult;
+          ledgerPageCache.query = query;
         }
       } catch (err) {
         if (!cancelled) {
           setError(err.message || '주문을 불러오지 못했습니다.');
           setOrders([]);
           setSummary(null);
-          setDailySales([]);
           setPagination(null);
         }
       } finally {
@@ -116,10 +166,57 @@ export default function LedgerPage() {
     }
 
     loadOrders();
+
     return () => {
       cancelled = true;
     };
-  }, [queryKey, chartMonth, reloadKey]);
+  }, [queryKey, reloadKey]);
+
+  useEffect(() => {
+    if (reloadKey === 0 && ledgerPageCache.chartLoaded && ledgerPageCache.chartKey === chartMonth) {
+      return;
+    }
+
+    let chartCancelled = false;
+
+    async function loadDailySales() {
+      setChartLoading(true);
+      try {
+        const chartRange = getChartMonthRange(chartMonth);
+        const [dailySalesResult, chartSummaryResult] = await Promise.all([
+          fetchDailySales(chartMonth),
+          fetchSummary(chartRange),
+        ]);
+
+        if (!chartCancelled) {
+          const nextDailySales = dailySalesResult.data || [];
+          const nextChartSummary = chartSummaryResult || null;
+
+          setDailySales(nextDailySales);
+          setChartSummary(nextChartSummary);
+
+          ledgerPageCache.chartLoaded = true;
+          ledgerPageCache.chartKey = chartMonth;
+          ledgerPageCache.dailySales = nextDailySales;
+          ledgerPageCache.chartSummary = nextChartSummary;
+          ledgerPageCache.chartMonth = chartMonth;
+        }
+      } catch (err) {
+        if (!chartCancelled) {
+          setDailySales([]);
+          setChartSummary(null);
+          setError(err.message || '일별 매출 차트를 불러오지 못했습니다.');
+        }
+      } finally {
+        if (!chartCancelled) setChartLoading(false);
+      }
+    }
+
+    loadDailySales();
+    return () => {
+      chartCancelled = true;
+    };
+  }, [chartMonth, reloadKey]);
 
   function handleSubmit(event) {
     event.preventDefault();
@@ -137,6 +234,24 @@ export default function LedgerPage() {
     setQuery(current => ({ ...current, page }));
   }
 
+  const settlementCounts = orders.reduce(
+    (acc, order) => {
+      const weight = Number(order?.order_chargeable_weight_gram || 0);
+      acc.all += 1;
+      if (weight > 0) acc.confirmed += 1;
+      else acc.pending += 1;
+      return acc;
+    },
+    { all: 0, pending: 0, confirmed: 0 }
+  );
+
+  const filteredOrders = orders.filter((order) => {
+    const weight = Number(order?.order_chargeable_weight_gram || 0);
+    if (settlementFilter === 'settled') return weight > 0;
+    if (settlementFilter === 'unsettled') return weight <= 0;
+    return true;
+  });
+
   return (
     <ConfigProvider locale={koKR}>
       <section className="page ledger-page">
@@ -151,18 +266,31 @@ export default function LedgerPage() {
         </div>
 
         <SummaryCards summary={summary} />
-        <DailySalesChart data={dailySales} loading={loading} />
+          <DailySalesChart
+            data={dailySales}
+            summary={chartSummary}
+            loading={chartLoading}
+            month={chartMonth}
+            onMonthChange={setChartMonth}
+          />
 
-        <OrderFilters
-          filters={filters}
-          onChange={setFilters}
-          onSubmit={handleSubmit}
-          onReset={handleReset}
-        />
+          <OrderFilters
+            filters={filters}
+            onChange={setFilters}
+            onSubmit={handleSubmit}
+            onReset={handleReset}
+            settlementFilter={settlementFilter}
+            onSettlementFilterChange={setSettlementFilter}
+            settlementCounts={settlementCounts}
+          />
 
         {error && <div className="alert">{error}</div>}
 
-        <OrderTable orders={orders} loading={loading} />
+
+          <OrderTable
+            orders={filteredOrders}
+            loading={loading}
+          />
         <Pagination pagination={pagination} onPageChange={handlePageChange} />
       </section>
     </ConfigProvider>

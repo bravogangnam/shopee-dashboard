@@ -13,6 +13,48 @@ const db = require('../config/database');
 
 router.use(requireAuth);
 
+const FIFO_COST_JOIN = `
+  LEFT JOIN (
+    SELECT
+      m.order_sn,
+      m.shop_id,
+      SUM(a.total_cost) AS fifo_cost_price
+    FROM inventory_movements m
+    INNER JOIN inventory_allocations a
+      ON a.movement_id = m.id
+    WHERE m.movement_type = 'SALE'
+    GROUP BY m.order_sn, m.shop_id
+  ) fifo
+    ON fifo.order_sn = o.order_sn
+   AND fifo.shop_id = o.shop_id
+`;
+
+const FIFO_COST_SELECT = `
+          fifo.fifo_cost_price,
+          o.total_cost_price AS original_total_cost_price,
+          o.total_vat AS original_total_vat,
+          o.net_profit AS original_net_profit,
+          o.product_profit AS original_product_profit,
+          CASE
+            WHEN fifo.fifo_cost_price IS NOT NULL THEN fifo.fifo_cost_price
+            ELSE o.total_cost_price
+          END AS total_cost_price,
+          CASE
+            WHEN fifo.fifo_cost_price IS NOT NULL THEN ROUND(fifo.fifo_cost_price * 0.1)
+            ELSE o.total_vat
+          END AS total_vat,
+          CASE
+            WHEN fifo.fifo_cost_price IS NOT NULL AND o.net_profit IS NOT NULL
+              THEN o.net_profit - (fifo.fifo_cost_price - COALESCE(o.total_cost_price, 0))
+            ELSE o.net_profit
+          END AS net_profit,
+          CASE
+            WHEN fifo.fifo_cost_price IS NOT NULL AND o.product_profit IS NOT NULL
+              THEN o.product_profit - (fifo.fifo_cost_price - COALESCE(o.total_cost_price, 0))
+            ELSE o.product_profit
+          END AS product_profit
+  `;
+
 /**
  * GET /api/orders
  * Query params:
@@ -31,6 +73,7 @@ router.get('/', async (req, res) => {
     date_from,
     date_to,
     order_sn: orderSnSearch,
+    include_open_backlog,
   } = req.query;
 
   const pageNum = Math.max(1, parseInt(page));
@@ -46,6 +89,9 @@ router.get('/', async (req, res) => {
   // 활성 샵 기반 필터
   let whereClause = `o.shop_id IN (SELECT shop_id FROM shops WHERE is_active = 1)`;
   const params = [];
+  const openBacklogStatuses = ['UNPAID', 'READY_TO_SHIP'];
+  const includeOpenBacklog = ['1', 'true', 'yes'].includes(String(include_open_backlog || '').toLowerCase());
+  let statusFilters = [];
 
   if (shop_id) {
     whereClause += ` AND o.shop_id = ?`;
@@ -59,27 +105,49 @@ router.get('/', async (req, res) => {
 
   if (order_status) {
     // 쉼표 구분 여러 상태 허용
-    const statuses = order_status.split(',').map(s => s.trim()).filter(Boolean);
-    if (statuses.length === 1) {
+    statusFilters = order_status.split(',').map(s => s.trim()).filter(Boolean);
+    if (statusFilters.length === 1) {
       whereClause += ` AND o.order_status = ?`;
-      params.push(statuses[0]);
-    } else if (statuses.length > 1) {
-      const placeholders = statuses.map(() => '?').join(',');
+      params.push(statusFilters[0]);
+    } else if (statusFilters.length > 1) {
+      const placeholders = statusFilters.map(() => '?').join(',');
       whereClause += ` AND o.order_status IN (${placeholders})`;
-      params.push(...statuses);
+      params.push(...statusFilters);
     }
   }
 
+  const dateConditions = [];
+  const dateParams = [];
+
   if (date_from) {
     // order_created_at은 KST 문자열로 저장 → KST 기준 필터
-    whereClause += ` AND o.order_created_at >= ?`;
-    params.push(`${date_from} 00:00:00`);
+    dateConditions.push(`o.order_created_at >= ?`);
+    dateParams.push(`${date_from} 00:00:00`);
   }
 
   if (date_to) {
     // order_created_at은 KST 문자열로 저장 → KST 기준 필터
-    whereClause += ` AND o.order_created_at <= ?`;
-    params.push(`${date_to} 23:59:59`);
+    dateConditions.push(`o.order_created_at <= ?`);
+    dateParams.push(`${date_to} 23:59:59`);
+  }
+
+  const shouldIncludeOpenBacklog = includeOpenBacklog &&
+    dateConditions.length > 0 &&
+    !orderSnSearch &&
+    (
+      statusFilters.length === 0 ||
+      statusFilters.some(status => openBacklogStatuses.includes(status))
+    );
+
+  if (dateConditions.length) {
+    if (shouldIncludeOpenBacklog) {
+      const backlogPlaceholders = openBacklogStatuses.map(() => '?').join(',');
+      whereClause += ` AND ((${dateConditions.join(' AND ')}) OR COALESCE(o.display_status, o.order_status) IN (${backlogPlaceholders}))`;
+      params.push(...dateParams, ...openBacklogStatuses);
+    } else {
+      whereClause += ` AND ${dateConditions.join(' AND ')}`;
+      params.push(...dateParams);
+    }
   }
 
   if (orderSnSearch) {
@@ -128,19 +196,23 @@ router.get('/', async (req, res) => {
 
     const [orders] = await db.query(
       `SELECT
-        o.id, o.shop_id, o.region, o.order_sn, o.order_status, o.is_final_status,
+        o.id, o.shop_id, o.region, o.order_sn, o.order_status,
+          o.display_status, o.display_status_reason, o.display_status_checked_at,
+          o.is_final_status,
         COALESCE(o.merchandise_subtotal, o.total_amount) AS merchandise_subtotal, o.total_amount, o.currency,
         o.original_price, o.seller_discount, o.voucher_from_seller, o.voucher_from_shopee,
         o.coins_offset, o.buyer_total_amount,
         o.shipping_carrier, o.tracking_number, o.shipping_fee, o.shipping_fee_discount,
         o.actual_shipping_fee, o.estimated_shipping_fee, o.order_chargeable_weight_gram,
         o.commission_fee, o.service_fee, o.transaction_fee, o.escrow_amount,
-        o.net_profit, o.product_profit, o.margin_status,
-        o.total_cost_price, o.total_discounted_price, o.total_vat,
+        ${FIFO_COST_SELECT},
+        o.margin_status,
+          o.total_discounted_price,
         o.create_time, o.order_created_at, o.update_time, o.synced_at,
         s.alias as shop_alias,
         r.rate_to_krw as krw_rate
        FROM orders o
+       ${FIFO_COST_JOIN}
        LEFT JOIN shops s ON o.shop_id = s.shop_id
        LEFT JOIN exchange_rates r
          ON o.currency COLLATE utf8mb4_general_ci = r.currency
@@ -436,10 +508,22 @@ router.get('/summary', async (req, res) => {
     const summarySql = `SELECT
         COALESCE(SUM(COALESCE(o.merchandise_subtotal, o.total_amount) * er.rate_to_krw), 0) AS total_sales_krw,
         COALESCE(SUM(o.escrow_amount * er.rate_to_krw), 0) AS total_escrow_krw,
-        COALESCE(SUM(o.net_profit), 0) AS total_net_profit,
-        COALESCE(SUM(o.total_vat), 0) AS total_vat,
+        COALESCE(SUM(
+          CASE
+            WHEN fifo.fifo_cost_price IS NOT NULL AND o.net_profit IS NOT NULL
+              THEN o.net_profit - (fifo.fifo_cost_price - COALESCE(o.total_cost_price, 0))
+            ELSE o.net_profit
+          END
+        ), 0) AS total_net_profit,
+        COALESCE(SUM(
+            CASE
+              WHEN fifo.fifo_cost_price IS NOT NULL THEN ROUND(fifo.fifo_cost_price * 0.1)
+              ELSE o.total_vat
+            END
+          ), 0) AS total_vat,
         COUNT(*) AS order_count
        FROM orders o
+       ${FIFO_COST_JOIN}
        LEFT JOIN exchange_rates er
          ON o.currency COLLATE utf8mb4_general_ci = er.currency
        WHERE o.order_status NOT IN ('UNPAID', 'PENDING', 'CANCELLED')
@@ -488,24 +572,41 @@ router.get('/summary', async (req, res) => {
       order_count: null,
     };
 
-    if (dateFrom && dateTo) {
-      const startDate = new Date(`${dateFrom}T00:00:00Z`);
-      const endDate = new Date(`${dateTo}T00:00:00Z`);
-      if (!Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime()) && endDate >= startDate) {
-        const dayMs = 24 * 60 * 60 * 1000;
-        const currentDays = Math.floor((endDate - startDate) / dayMs) + 1;
-        const prevEnd = new Date(startDate.getTime() - dayMs);
-        const prevStart = new Date(startDate.getTime() - currentDays * dayMs);
-        const prevDateFrom = prevStart.toISOString().slice(0, 10);
-        const prevDateTo = prevEnd.toISOString().slice(0, 10);
+      if (dateFrom && dateTo) {
+        const parseYmd = value => {
+          const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          if (!match) return null;
+          return {
+            year: Number(match[1]),
+            month: Number(match[2]),
+            day: Number(match[3]),
+          };
+        };
 
-        const [prevRows] = await db.query(
-          summarySql,
-          buildSummaryParams(prevDateFrom, prevDateTo)
-        );
-        prevSummary = parseSummary(prevRows[0] || {});
+        const daysInMonth = (year, month) => new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+        const shiftToPreviousMonthSameDay = value => {
+          const parsed = parseYmd(value);
+          if (!parsed) return null;
+
+          const prevMonth = parsed.month === 1 ? 12 : parsed.month - 1;
+          const prevYear = parsed.month === 1 ? parsed.year - 1 : parsed.year;
+          const prevDay = Math.min(parsed.day, daysInMonth(prevYear, prevMonth));
+
+          return `${prevYear}-${String(prevMonth).padStart(2, '0')}-${String(prevDay).padStart(2, '0')}`;
+        };
+
+        const prevDateFrom = shiftToPreviousMonthSameDay(dateFrom);
+        const prevDateTo = shiftToPreviousMonthSameDay(dateTo);
+
+        if (prevDateFrom && prevDateTo) {
+          const [prevRows] = await db.query(
+            summarySql,
+            buildSummaryParams(prevDateFrom, prevDateTo)
+          );
+          prevSummary = parseSummary(prevRows[0] || {});
+        }
       }
-    }
 
     return res.json({
       success: true,
@@ -602,10 +703,13 @@ router.get('/:orderSn', async (req, res) => {
   try {
     // 주문 기본 정보
     const [orders] = await db.query(
-      `SELECT o.*,
+      `SELECT
+        o.*,
+        ${FIFO_COST_SELECT},
         s.alias as shop_alias,
         r.rate_to_krw as krw_rate
        FROM orders o
+       ${FIFO_COST_JOIN}
        LEFT JOIN shops s ON o.shop_id = s.shop_id
        LEFT JOIN exchange_rates r ON o.currency = r.currency
        WHERE o.order_sn = ?

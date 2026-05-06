@@ -6,6 +6,7 @@ const {
 } = require('./inventoryService');
 const { allocateOpenShortagesForBatch } = require('./inventoryFifoService');
 const { refreshSkuCompositionsFromSheet } = require('./skuCompositionService');
+const { CURRENT_TENANT_ID } = require('../config/tenant');
 
 const RECEIPT_SHEET_NAME = process.env.GOOGLE_RECEIPT_SHEET_NAME || '\uC785\uACE0\uAD00\uB9AC';
 const RECEIPT_RANGE = `${RECEIPT_SHEET_NAME}!A:N`;
@@ -180,24 +181,25 @@ function ensureIntegerQuantity(value, context) {
   return value;
 }
 
-async function getExistingProducts(conn, skus) {
+async function getExistingProducts(conn, skus, { tenantId = CURRENT_TENANT_ID } = {}) {
   if (!skus.length) return new Set();
   const placeholders = skus.map(() => '?').join(',');
   const [rows] = await conn.query(
-    `SELECT sku FROM products WHERE sku IN (${placeholders})`,
-    skus
+    `SELECT sku FROM products WHERE tenant_id = ? AND sku IN (${placeholders})`,
+    [tenantId, ...skus]
   );
   return new Set(rows.map(row => row.sku));
 }
 
-async function insertInventoryBatch(conn, receipt, composition, baseQty, baseUnitCost, totalFactor) {
+async function insertInventoryBatch(conn, receipt, composition, baseQty, baseUnitCost, totalFactor, { tenantId = CURRENT_TENANT_ID } = {}) {
   const [result] = await conn.query(
     `INSERT INTO inventory_batches
-       (receipt_id, receipt_no, source_sku, sku, received_at, receipt_type,
+       (tenant_id, receipt_id, receipt_no, source_sku, sku, received_at, receipt_type,
         initial_qty, remaining_qty, unit_cost, source_unit_cost,
         conversion_factor, note, sheet_row)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
+      tenantId,
       receipt.receipt_id,
       receipt.receipt_no,
       receipt.source_sku,
@@ -228,7 +230,7 @@ function buildStockInNote(receipt, composition, baseQty, baseUnitCost) {
   ].join('; ');
 }
 
-async function processReceipt(receipt, compositionMap) {
+async function processReceipt(receipt, compositionMap, { tenantId = CURRENT_TENANT_ID } = {}) {
   const rawCompositions = getCompositionRows(compositionMap, receipt.source_sku);
   const totalFactor = rawCompositions.reduce((sum, item) => sum + Number(item.factor || 0), 0);
   const compositions = aggregateCompositions(rawCompositions);
@@ -242,7 +244,7 @@ async function processReceipt(receipt, compositionMap) {
   try {
     await conn.beginTransaction();
 
-    const existingProducts = await getExistingProducts(conn, baseSkus);
+    const existingProducts = await getExistingProducts(conn, baseSkus, { tenantId });
     const missingSkus = baseSkus.filter(sku => !existingProducts.has(sku));
     if (missingSkus.length) {
       throw new Error(`missing products for base SKU: ${missingSkus.join(', ')}`);
@@ -262,7 +264,7 @@ async function processReceipt(receipt, compositionMap) {
 
       let batchId = null;
       try {
-        batchId = await insertInventoryBatch(conn, receipt, composition, baseQty, baseUnitCost, totalFactor);
+        batchId = await insertInventoryBatch(conn, receipt, composition, baseQty, baseUnitCost, totalFactor, { tenantId });
       } catch (err) {
         if (isDuplicateKeyError(err)) {
           duplicateBatches++;
@@ -283,11 +285,12 @@ async function processReceipt(receipt, compositionMap) {
       await conn.query(
         `UPDATE products
          SET stock_quantity = stock_quantity + ?
-         WHERE sku = ?`,
-        [baseQty, composition.baseSku]
+         WHERE tenant_id = ? AND sku = ?`,
+        [baseQty, tenantId, composition.baseSku]
       );
 
       await insertInventoryMovement(conn, {
+        tenant_id: tenantId,
         sku: composition.baseSku,
         movement_type: 'STOCK_IN',
         qty_delta: baseQty,
@@ -295,6 +298,7 @@ async function processReceipt(receipt, compositionMap) {
       });
 
       const shortageAllocation = await allocateOpenShortagesForBatch(conn, {
+        tenantId,
         batchId,
         sku: composition.baseSku,
         availableQty: baseQty,
@@ -371,7 +375,7 @@ async function syncPendingInventoryReceipts() {
 
   for (const receipt of pendingData.receipts) {
     try {
-      const receiptResult = await processReceipt(receipt, compositionMap);
+      const receiptResult = await processReceipt(receipt, compositionMap, { tenantId: CURRENT_TENANT_ID });
       result.processed++;
       result.inserted_batches += receiptResult.insertedBatches;
       result.stock_added += receiptResult.stockAdded;

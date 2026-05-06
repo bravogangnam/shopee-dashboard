@@ -313,20 +313,21 @@ async function batchInsertOrderItems(itemRows, { tenantId = CURRENT_TENANT_ID } 
         `UPDATE orders o
          JOIN (
            SELECT
+             tenant_id,
              shop_id,
              order_sn,
              SUM(COALESCE(cost_price_at_order, 0) * COALESCE(model_quantity_purchased, 1)) AS total_cost_price,
              SUM(COALESCE(discounted_price_at_order, 0) * COALESCE(model_quantity_purchased, 1)) AS total_discounted_price,
              SUM(COALESCE(vat_at_order, 0) * COALESCE(model_quantity_purchased, 1)) AS total_vat
            FROM order_items
-           WHERE order_sn = ? AND shop_id = ?
-           GROUP BY shop_id, order_sn
-         ) x ON x.shop_id = o.shop_id AND x.order_sn = o.order_sn
+           WHERE tenant_id = ? AND order_sn = ? AND shop_id = ?
+           GROUP BY tenant_id, shop_id, order_sn
+         ) x ON x.tenant_id = o.tenant_id AND x.shop_id = o.shop_id AND x.order_sn = o.order_sn
          SET
            o.total_cost_price = x.total_cost_price,
            o.total_discounted_price = x.total_discounted_price,
            o.total_vat = x.total_vat`,
-        [orderSn, shopId]
+        [tenantId, orderSn, shopId]
       );
     }
 

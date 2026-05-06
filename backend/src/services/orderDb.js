@@ -355,14 +355,14 @@ async function batchInsertOrderItems(itemRows, { tenantId = CURRENT_TENANT_ID } 
  * @param {number} shopId
  * @param {object} diff - { field: newValue, ... }
  */
-async function updateOrder(orderSn, shopId, diff) {
+async function updateOrder(orderSn, shopId, diff, { tenantId = CURRENT_TENANT_ID } = {}) {
   if (!Object.keys(diff).length) return false;
 
   const sets = Object.keys(diff).map(k => `${k} = ?`).join(', ');
-  const vals = [...Object.values(diff), orderSn, shopId];
+  const vals = [...Object.values(diff), tenantId, orderSn, shopId];
 
   await db.query(
-    `UPDATE orders SET ${sets}, synced_at = NOW() WHERE order_sn = ? AND shop_id = ?`,
+    `UPDATE orders SET ${sets}, synced_at = NOW() WHERE tenant_id = ? AND order_sn = ? AND shop_id = ?`,
     vals
   );
 
@@ -378,7 +378,7 @@ async function updateOrder(orderSn, shopId, diff) {
     await recalculateMarginsForOrders(
       db,
       [{ shopId, orderSn }],
-      { forceRecalculateProfit: Object.prototype.hasOwnProperty.call(diff, 'escrow_amount') }
+      { tenantId, forceRecalculateProfit: Object.prototype.hasOwnProperty.call(diff, 'escrow_amount') }
     );
   }
 

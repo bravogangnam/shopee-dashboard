@@ -337,7 +337,7 @@ async function batchInsertOrderItems(itemRows, { tenantId = CURRENT_TENANT_ID } 
     await conn.commit();
     committed = true;
     try {
-      await processInventoryForOrders(orderKeys);
+      await processInventoryForOrders(orderKeys, { tenantId });
     } catch (inventoryErr) {
       console.error(`[Inventory] 주문 아이템 저장 후 재고 처리 오류: ${inventoryErr.message}`);
     }
@@ -383,7 +383,7 @@ async function updateOrder(orderSn, shopId, diff, { tenantId = CURRENT_TENANT_ID
   }
 
   try {
-    await processInventoryForOrders([{ shopId, orderSn }]);
+    await processInventoryForOrders([{ shopId, orderSn }], { tenantId });
   } catch (inventoryErr) {
     console.error(`[Inventory] 주문 업데이트 후 재고 처리 오류: shop=${shopId}, order=${orderSn}: ${inventoryErr.message}`);
   }

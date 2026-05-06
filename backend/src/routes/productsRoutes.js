@@ -11,6 +11,7 @@ const {
   adjustStartBalanceStock,
   getInventoryMovements,
 } = require('../services/inventoryService');
+const { getCurrentTenantId } = require('../config/tenant');
 const { syncPendingInventoryReceipts } = require('../services/inventoryReceiptSync');
 const { refreshSkuCompositionsFromSheet } = require('../services/skuCompositionService');
 
@@ -25,16 +26,18 @@ function decodeSkuParam(value) {
 }
 
 router.get('/low-stock', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
   const scope = req.query.scope === 'all' ? 'all' : 'low-stock';
   const products = scope === 'all'
-    ? await getInventoryProducts({ scope })
-    : await getLowStockProducts();
-  const summary = await getInventorySummary();
+    ? await getInventoryProducts({ scope, tenantId })
+    : await getLowStockProducts({ tenantId });
+  const summary = await getInventorySummary({ tenantId });
   return res.json({ success: true, data: products, summary });
 });
 
 router.get('/inventory/today-orders', async (req, res) => {
-  const result = await getTodayOrderInventory();
+  const tenantId = getCurrentTenantId(req);
+  const result = await getTodayOrderInventory({ tenantId });
   return res.json({ success: true, ...result });
 });
 
@@ -85,8 +88,9 @@ router.post('/:sku/stock/start-balance-adjust', async (req, res) => {
 });
 
 router.get('/:sku/inventory-movements', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
   const sku = decodeSkuParam(req.params.sku);
-  const movements = await getInventoryMovements(sku, req.query.limit);
+  const movements = await getInventoryMovements(sku, req.query.limit, { tenantId });
   return res.json({ success: true, data: movements });
 });
 

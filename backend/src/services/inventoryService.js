@@ -1,4 +1,5 @@
 const db = require('../config/database');
+const { CURRENT_TENANT_ID } = require('../config/tenant');
 
 const SALE_STOCK_STATUSES = new Set([
   'READY_TO_SHIP',
@@ -644,10 +645,13 @@ async function adjustStartBalanceStock({ sku, target_stock_quantity, note }) {
   }
 }
 
-async function getInventoryProducts({ scope = 'low-stock' } = {}) {
-  const whereClause = scope === 'all'
-    ? ''
-    : 'WHERE p.stock_quantity <= COALESCE(p.low_stock_threshold, 0)';
+async function getInventoryProducts({ scope = 'low-stock', tenantId = CURRENT_TENANT_ID } = {}) {
+  const whereConditions = ['p.tenant_id = ?'];
+  const params = [tenantId];
+
+  if (scope !== 'all') {
+    whereConditions.push('p.stock_quantity <= COALESCE(p.low_stock_threshold, 0)');
+  }
 
   const [rows] = await db.query(
     `SELECT
@@ -662,19 +666,21 @@ async function getInventoryProducts({ scope = 'low-stock' } = {}) {
         (
           SELECT ROUND(ib.unit_cost * 1.1)
           FROM inventory_batches ib
-          WHERE ib.sku COLLATE utf8mb4_unicode_ci = p.sku COLLATE utf8mb4_unicode_ci
+          WHERE ib.tenant_id = p.tenant_id
+            AND ib.sku COLLATE utf8mb4_unicode_ci = p.sku COLLATE utf8mb4_unicode_ci
             AND ib.unit_cost > 0
           ORDER BY (ib.received_at IS NULL), ib.received_at DESC, ib.id DESC
           LIMIT 1
         ) AS latest_unit_cost_vat
      FROM products p
-     ${whereClause}
-     ORDER BY p.stock_quantity ASC, p.sku ASC`
+     WHERE ${whereConditions.join(' AND ')}
+     ORDER BY p.stock_quantity ASC, p.sku ASC`,
+    params
   );
   return rows;
 }
 
-async function getInventorySummary() {
+async function getInventorySummary({ tenantId = CURRENT_TENANT_ID } = {}) {
   const [productRows] = await db.query(
     `SELECT
        COALESCE(SUM(CASE WHEN stock_quantity < 0 THEN 1 ELSE 0 END), 0) AS purchase_needed_sku_count,
@@ -682,11 +688,15 @@ async function getInventorySummary() {
        COALESCE(SUM(CASE WHEN stock_quantity > 0 AND stock_quantity <= COALESCE(low_stock_threshold, 0) THEN 1 ELSE 0 END), 0) AS low_stock_count,
        COALESCE(SUM(CASE WHEN stock_quantity > 0 THEN 1 ELSE 0 END), 0) AS in_stock_sku_count,
        COALESCE(SUM(stock_quantity), 0) AS total_stock_quantity
-     FROM products`
+     FROM products
+     WHERE tenant_id = ?`,
+    [tenantId]
   );
   const [valueRows] = await db.query(
     `SELECT COALESCE(SUM(remaining_qty * unit_cost * 1.1), 0) AS total_inventory_value
-     FROM inventory_batches`
+     FROM inventory_batches
+     WHERE tenant_id = ?`,
+    [tenantId]
   );
 
   return {
@@ -699,11 +709,11 @@ async function getInventorySummary() {
   };
 }
 
-async function getLowStockProducts() {
-  return getInventoryProducts();
+async function getLowStockProducts({ tenantId = CURRENT_TENANT_ID } = {}) {
+  return getInventoryProducts({ tenantId });
 }
 
-async function getTodayOrderInventory() {
+async function getTodayOrderInventory({ tenantId = CURRENT_TENANT_ID } = {}) {
   const { start, end } = getTodayKstUtcRange();
   const [orderItems] = await db.query(
     `SELECT
@@ -721,16 +731,19 @@ async function getTodayOrderInventory() {
        oi.item_image_url
      FROM orders o
      INNER JOIN order_items oi
-       ON oi.order_sn = o.order_sn
+       ON oi.tenant_id = o.tenant_id
+      AND oi.order_sn = o.order_sn
       AND oi.shop_id = o.shop_id
      INNER JOIN shops s
-       ON s.shop_id = o.shop_id
+       ON s.tenant_id = o.tenant_id
+      AND s.shop_id = o.shop_id
       AND s.is_active = 1
-     WHERE COALESCE(o.display_status, o.order_status) IN ('READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'TO_CONFIRM_RECEIVE', 'COMPLETED')
+     WHERE o.tenant_id = ?
+       AND COALESCE(o.display_status, o.order_status) IN ('READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'TO_CONFIRM_RECEIVE', 'COMPLETED')
        AND o.order_created_at >= ?
        AND o.order_created_at < ?
      ORDER BY o.order_created_at DESC, o.order_sn ASC, oi.id ASC`,
-    [start, end]
+    [tenantId, start, end]
   );
 
   const componentCache = new Map();
@@ -741,9 +754,10 @@ async function getTodayOrderInventory() {
       const [rows] = await db.query(
         `SELECT source_sku, base_sku, factor, composition_type, note
          FROM sku_compositions
-         WHERE source_sku = ?
+         WHERE tenant_id = ?
+           AND source_sku = ?
          ORDER BY id ASC`,
-        [sourceSku]
+        [tenantId, sourceSku]
       );
       componentCache.set(sourceSku, rows.length
         ? rows.map(row => ({
@@ -795,110 +809,118 @@ async function getTodayOrderInventory() {
     }
   }
 
-    const [negativeProducts] = await db.query(
-      `SELECT sku, product_name_kr, product_name_en, option_name, stock_quantity
-       FROM products
-       WHERE stock_quantity < 0`
+  const [negativeProducts] = await db.query(
+    `SELECT sku, product_name_kr, product_name_en, option_name, stock_quantity
+     FROM products
+     WHERE tenant_id = ?
+       AND stock_quantity < 0`,
+    [tenantId]
+  );
+
+  const negativeSkus = negativeProducts
+    .map(product => String(product.sku || '').trim())
+    .filter(Boolean);
+
+  if (negativeSkus.length) {
+    const negativePlaceholders = negativeSkus.map(() => '?').join(',');
+    const [negativeOrderRows] = await db.query(
+      `SELECT
+         sm.sku,
+         sm.order_sn,
+         sm.shop_id,
+         sm.qty,
+         o.order_created_at,
+         MAX(oi.item_name) AS item_name,
+         MAX(COALESCE(oi.image_info_image_url, oi.item_image_url)) AS image_url
+       FROM (
+         SELECT
+           im.tenant_id,
+           im.sku,
+           im.order_sn,
+           im.shop_id,
+           SUM(ABS(im.qty_delta)) AS qty,
+           MAX(im.item_id) AS item_id,
+           MAX(im.model_id) AS model_id
+         FROM inventory_movements im
+         WHERE im.tenant_id = ?
+           AND im.movement_type = 'SALE'
+           AND im.sku IN (${negativePlaceholders})
+           AND NOT EXISTS (
+             SELECT 1
+             FROM inventory_movements cr
+             WHERE cr.tenant_id = im.tenant_id
+               AND cr.movement_type = 'CANCEL_RESTORE'
+               AND cr.sku = im.sku
+               AND cr.order_sn = im.order_sn
+               AND cr.shop_id = im.shop_id
+           )
+         GROUP BY im.tenant_id, im.sku, im.order_sn, im.shop_id
+       ) sm
+       INNER JOIN orders o
+         ON o.tenant_id = sm.tenant_id
+        AND o.order_sn = sm.order_sn
+        AND o.shop_id = sm.shop_id
+       INNER JOIN shops s
+         ON s.tenant_id = o.tenant_id
+        AND s.shop_id = o.shop_id
+        AND s.is_active = 1
+       LEFT JOIN order_items oi
+         ON oi.tenant_id = o.tenant_id
+        AND oi.order_sn = sm.order_sn
+        AND oi.shop_id = sm.shop_id
+        AND (
+          (sm.item_id IS NOT NULL AND oi.item_id = sm.item_id AND (sm.model_id IS NULL OR oi.model_id = sm.model_id))
+          OR
+          (sm.item_id IS NULL AND (oi.model_sku = sm.sku OR oi.item_sku = sm.sku))
+        )
+       WHERE COALESCE(o.display_status, o.order_status) IN ('READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'TO_CONFIRM_RECEIVE', 'COMPLETED')
+       GROUP BY sm.sku, sm.order_sn, sm.shop_id, sm.qty, o.order_created_at
+       ORDER BY o.order_created_at DESC, sm.order_sn ASC`,
+      [tenantId, ...negativeSkus]
     );
 
-    const negativeSkus = negativeProducts
-      .map(product => String(product.sku || '').trim())
-      .filter(Boolean);
+    const negativeOrderMap = new Map();
+    for (const row of negativeOrderRows) {
+      const sku = String(row.sku || '').trim();
+      if (!negativeOrderMap.has(sku)) negativeOrderMap.set(sku, []);
+      negativeOrderMap.get(sku).push(row);
+    }
 
-    if (negativeSkus.length) {
-      const negativePlaceholders = negativeSkus.map(() => '?').join(',');
-      const [negativeOrderRows] = await db.query(
-        `SELECT
-           sm.sku,
-           sm.order_sn,
-           sm.shop_id,
-           sm.qty,
-           o.order_created_at,
-           MAX(oi.item_name) AS item_name,
-           MAX(COALESCE(oi.image_info_image_url, oi.item_image_url)) AS image_url
-         FROM (
-           SELECT
-             im.sku,
-             im.order_sn,
-             im.shop_id,
-             SUM(ABS(im.qty_delta)) AS qty,
-             MAX(im.item_id) AS item_id,
-             MAX(im.model_id) AS model_id
-           FROM inventory_movements im
-           WHERE im.movement_type = 'SALE'
-             AND im.sku IN (${negativePlaceholders})
-             AND NOT EXISTS (
-               SELECT 1
-               FROM inventory_movements cr
-               WHERE cr.movement_type = 'CANCEL_RESTORE'
-                 AND cr.sku = im.sku
-                 AND cr.order_sn = im.order_sn
-                 AND cr.shop_id = im.shop_id
-             )
-           GROUP BY im.sku, im.order_sn, im.shop_id
-         ) sm
-         INNER JOIN orders o
-           ON o.order_sn = sm.order_sn
-          AND o.shop_id = sm.shop_id
-         INNER JOIN shops s
-           ON s.shop_id = o.shop_id
-          AND s.is_active = 1
-         LEFT JOIN order_items oi
-           ON oi.order_sn = sm.order_sn
-          AND oi.shop_id = sm.shop_id
-          AND (
-            (sm.item_id IS NOT NULL AND oi.item_id = sm.item_id AND (sm.model_id IS NULL OR oi.model_id = sm.model_id))
-            OR
-            (sm.item_id IS NULL AND (oi.model_sku = sm.sku OR oi.item_sku = sm.sku))
-          )
-         WHERE COALESCE(o.display_status, o.order_status) IN ('READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'TO_CONFIRM_RECEIVE', 'COMPLETED')
-         GROUP BY sm.sku, sm.order_sn, sm.shop_id, sm.qty, o.order_created_at
-         ORDER BY o.order_created_at DESC, sm.order_sn ASC`,
-        negativeSkus
-      );
+    for (const product of negativeProducts) {
+      const sku = String(product.sku || '').trim();
+      if (!sku) continue;
 
-      const negativeOrderMap = new Map();
-      for (const row of negativeOrderRows) {
-        const sku = String(row.sku || '').trim();
-        if (!negativeOrderMap.has(sku)) negativeOrderMap.set(sku, []);
-        negativeOrderMap.get(sku).push(row);
-      }
+      const existing = aggregates.get(sku) || {
+        sku,
+        ordered_qty: 0,
+        orderMap: new Map(),
+        sourceNames: [],
+        image_url: null,
+        last_order_created_at: null,
+      };
 
-      for (const product of negativeProducts) {
-        const sku = String(product.sku || '').trim();
-        if (!sku) continue;
+      existing.sourceNames.push(product.product_name_kr || product.product_name_en || sku);
 
-        const existing = aggregates.get(sku) || {
-          sku,
-          ordered_qty: 0,
-          orderMap: new Map(),
-          sourceNames: [],
-          image_url: null,
-          last_order_created_at: null,
-        };
-
-        existing.sourceNames.push(product.product_name_kr || product.product_name_en || sku);
-
-        for (const row of negativeOrderMap.get(sku) || []) {
-          const qty = Number(row.qty || 0);
-          if (!existing.orderMap.has(row.order_sn)) {
-            existing.ordered_qty += qty;
-            existing.orderMap.set(row.order_sn, {
-              order_sn: row.order_sn,
-              qty,
-            });
-          }
-
-          existing.image_url = existing.image_url || row.image_url || null;
-          existing.sourceNames.push(row.item_name);
-          if (!existing.last_order_created_at || new Date(row.order_created_at) > new Date(existing.last_order_created_at)) {
-            existing.last_order_created_at = row.order_created_at;
-          }
+      for (const row of negativeOrderMap.get(sku) || []) {
+        const qty = Number(row.qty || 0);
+        if (!existing.orderMap.has(row.order_sn)) {
+          existing.ordered_qty += qty;
+          existing.orderMap.set(row.order_sn, {
+            order_sn: row.order_sn,
+            qty,
+          });
         }
 
-        aggregates.set(sku, existing);
+        existing.image_url = existing.image_url || row.image_url || null;
+        existing.sourceNames.push(row.item_name);
+        if (!existing.last_order_created_at || new Date(row.order_created_at) > new Date(existing.last_order_created_at)) {
+          existing.last_order_created_at = row.order_created_at;
+        }
       }
+
+      aggregates.set(sku, existing);
     }
+  }
 
   const skus = Array.from(aggregates.keys());
   if (!skus.length) {
@@ -916,19 +938,21 @@ async function getTodayOrderInventory() {
   const [products] = await db.query(
     `SELECT sku, brand, product_name_kr, product_name_en, option_name,
             stock_quantity, low_stock_threshold, stock_tracking_started_at,
-              cost_price_with_vat, discounted_price_with_vat, cost_price
+            cost_price_with_vat, discounted_price_with_vat, cost_price
      FROM products
-     WHERE sku IN (${placeholders})`,
-    skus
+     WHERE tenant_id = ?
+       AND sku IN (${placeholders})`,
+    [tenantId, ...skus]
   );
   const productMap = new Map(products.map(product => [product.sku, product]));
 
   const [batchRows] = await db.query(
     `SELECT sku, unit_cost
      FROM inventory_batches
-     WHERE sku IN (${placeholders})
+     WHERE tenant_id = ?
+       AND sku IN (${placeholders})
      ORDER BY sku ASC, received_at IS NULL, received_at DESC, id DESC`,
-    skus
+    [tenantId, ...skus]
   );
   const latestCostMap = new Map();
   for (const batch of batchRows) {
@@ -937,20 +961,21 @@ async function getTodayOrderInventory() {
     }
   }
 
-    const [allocationRows] = await db.query(
-      `SELECT sku, unit_cost
-       FROM inventory_allocations
-       WHERE sku IN (${placeholders})
-         AND unit_cost > 0
-       ORDER BY sku ASC, created_at DESC, id DESC`,
-      skus
-    );
-    const allocationCostMap = new Map();
-    for (const allocation of allocationRows) {
-      if (!allocationCostMap.has(allocation.sku) && Number(allocation.unit_cost || 0) > 0) {
-        allocationCostMap.set(allocation.sku, Number(allocation.unit_cost || 0) * 1.1);
-      }
+  const [allocationRows] = await db.query(
+    `SELECT sku, unit_cost
+     FROM inventory_allocations
+     WHERE tenant_id = ?
+       AND sku IN (${placeholders})
+       AND unit_cost > 0
+     ORDER BY sku ASC, created_at DESC, id DESC`,
+    [tenantId, ...skus]
+  );
+  const allocationCostMap = new Map();
+  for (const allocation of allocationRows) {
+    if (!allocationCostMap.has(allocation.sku) && Number(allocation.unit_cost || 0) > 0) {
+      allocationCostMap.set(allocation.sku, Number(allocation.unit_cost || 0) * 1.1);
     }
+  }
 
   const data = Array.from(aggregates.values()).map(row => {
     const product = productMap.get(row.sku) || {};
@@ -973,12 +998,12 @@ async function getTodayOrderInventory() {
       low_stock_threshold: lowStockThreshold,
       status: stockStatus(stockQuantity, lowStockThreshold),
       purchase_needed_qty: stockQuantity < 0 ? Math.abs(stockQuantity) : 0,
-        latest_unit_cost_vat:
-          latestCostMap.get(row.sku) ||
-          allocationCostMap.get(row.sku) ||
-          Number(product.cost_price_with_vat || 0) ||
-          Number(product.discounted_price_with_vat || 0) ||
-          (Number(product.cost_price || 0) > 0 ? Number(product.cost_price || 0) * 1.1 : null),
+      latest_unit_cost_vat:
+        latestCostMap.get(row.sku) ||
+        allocationCostMap.get(row.sku) ||
+        Number(product.cost_price_with_vat || 0) ||
+        Number(product.discounted_price_with_vat || 0) ||
+        (Number(product.cost_price || 0) > 0 ? Number(product.cost_price || 0) * 1.1 : null),
       image_url: row.image_url,
       last_order_created_at: row.last_order_created_at,
     };
@@ -1045,7 +1070,7 @@ async function updateProductStockSettings(sku, data) {
   }
 }
 
-async function getInventoryMovements(sku, limit = 100) {
+async function getInventoryMovements(sku, limit = 100, { tenantId = CURRENT_TENANT_ID } = {}) {
   const normalizedSku = normalizeSku(sku);
   if (!normalizedSku) throw new Error('sku is required');
   const safeLimit = Math.min(500, Math.max(1, parseInt(limit, 10) || 100));
@@ -1053,10 +1078,11 @@ async function getInventoryMovements(sku, limit = 100) {
     `SELECT id, sku, order_sn, shop_id, item_id, model_id, movement_type,
             qty_delta, note, created_at
      FROM inventory_movements
-     WHERE sku = ?
+     WHERE tenant_id = ?
+       AND sku = ?
      ORDER BY created_at DESC, id DESC
      LIMIT ?`,
-    [normalizedSku, safeLimit]
+    [tenantId, normalizedSku, safeLimit]
   );
   return rows;
 }

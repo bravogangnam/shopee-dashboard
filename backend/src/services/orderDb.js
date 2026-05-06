@@ -437,12 +437,12 @@ async function getNonFinalOrders(shopId, { tenantId = CURRENT_TENANT_ID } = {}) 
 /**
  * sync_logs 기록
  */
-async function logSync(shopId, syncType, windowStart, windowEnd, fetched, updated, status, errorMsg) {
+async function logSync(shopId, syncType, windowStart, windowEnd, fetched, updated, status, errorMsg, { tenantId = CURRENT_TENANT_ID } = {}) {
   await db.query(
     `INSERT INTO sync_logs
-     (shop_id, sync_type, sync_window_start, sync_window_end, orders_fetched, orders_updated, status, error_message)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [shopId, syncType, windowStart, windowEnd, fetched, updated, status, errorMsg || null]
+     (tenant_id, shop_id, sync_type, sync_window_start, sync_window_end, orders_fetched, orders_updated, status, error_message)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [tenantId, shopId, syncType, windowStart, windowEnd, fetched, updated, status, errorMsg || null]
   );
 }
 

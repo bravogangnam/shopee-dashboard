@@ -370,19 +370,20 @@ function parseOrderDate(order) {
   return null;
 }
 
-async function getProductTrackingInfo(conn, sku) {
+async function getProductTrackingInfo(conn, sku, { tenantId = CURRENT_TENANT_ID } = {}) {
   const [rows] = await conn.query(
-    `SELECT sku, stock_tracking_started_at
+    `SELECT tenant_id, sku, stock_tracking_started_at
      FROM products
-     WHERE sku = ?
+     WHERE tenant_id = ?
+       AND sku = ?
      LIMIT 1`,
-    [sku]
+    [tenantId, sku]
   );
   return rows[0] || null;
 }
 
-async function shouldSkipByTrackingStart(conn, order, baseSku) {
-  const product = await getProductTrackingInfo(conn, baseSku);
+async function shouldSkipByTrackingStart(conn, order, baseSku, { tenantId = CURRENT_TENANT_ID } = {}) {
+  const product = await getProductTrackingInfo(conn, baseSku, { tenantId });
   if (!product) {
     console.warn(`[InventoryFIFO] product not found, skip sale allocation: order=${order.order_sn}, shop=${order.shop_id}, baseSku=${baseSku}`);
     return true;
@@ -404,35 +405,38 @@ async function shouldSkipByTrackingStart(conn, order, baseSku) {
 }
 
 async function getOrderItemsForInventory(conn, order) {
+  const tenantId = order?.tenant_id ?? CURRENT_TENANT_ID;
   const [items] = await conn.query(
-    `SELECT order_sn, shop_id, item_id, item_name, item_sku,
+    `SELECT tenant_id, order_sn, shop_id, item_id, item_name, item_sku,
             model_id, model_name, model_sku, model_quantity_purchased,
             image_info_image_url, item_image_url
      FROM order_items
-     WHERE order_sn = ? AND shop_id = ?
+     WHERE tenant_id = ? AND order_sn = ? AND shop_id = ?
      ORDER BY id ASC`,
-    [order.order_sn, order.shop_id]
+    [tenantId, order.order_sn, order.shop_id]
   );
   return items;
 }
 
-async function saleMovementExists(conn, { orderSn, shopId, sku, itemId, modelId }) {
+async function saleMovementExists(conn, { tenantId = CURRENT_TENANT_ID, orderSn, shopId, sku, itemId, modelId }) {
   const [rows] = await conn.query(
     `SELECT id, qty_delta
      FROM inventory_movements
-     WHERE movement_type = 'SALE'
+     WHERE tenant_id = ?
+       AND movement_type = 'SALE'
        AND order_sn = ?
        AND shop_id = ?
        AND sku = ?
        AND item_id <=> ?
        AND model_id <=> ?
      LIMIT 1`,
-    [orderSn, shopId, sku, itemId ?? null, modelId ?? null]
+    [tenantId, orderSn, shopId, sku, itemId ?? null, modelId ?? null]
   );
   return rows[0] || null;
 }
 
 async function insertSaleMovement(conn, {
+  tenantId = CURRENT_TENANT_ID,
   orderSn,
   shopId,
   itemId,
@@ -442,6 +446,7 @@ async function insertSaleMovement(conn, {
   requiredQty,
 }) {
   await insertInventoryMovement(conn, {
+    tenant_id: tenantId,
     sku: baseSku,
     order_sn: orderSn,
     shop_id: shopId,
@@ -457,27 +462,29 @@ async function insertSaleMovement(conn, {
   const [rows] = await conn.query(
     `SELECT id
      FROM inventory_movements
-     WHERE movement_type = 'SALE'
+     WHERE tenant_id = ?
+       AND movement_type = 'SALE'
        AND order_sn = ?
        AND shop_id = ?
        AND sku = ?
        AND item_id <=> ?
        AND model_id <=> ?
      LIMIT 1`,
-    [orderSn, shopId, baseSku, itemId ?? null, modelId ?? null]
+    [tenantId, orderSn, shopId, baseSku, itemId ?? null, modelId ?? null]
   );
 
   return rows[0]?.id || null;
 }
 
-async function getRecentUnitCostVatIncluded(conn, sku) {
+async function getRecentUnitCostVatIncluded(conn, sku, { tenantId = CURRENT_TENANT_ID } = {}) {
   const [batchRows] = await conn.query(
     `SELECT unit_cost
      FROM inventory_batches
-     WHERE sku = ?
+     WHERE tenant_id = ?
+       AND sku = ?
      ORDER BY received_at IS NULL, received_at DESC, id DESC
      LIMIT 1`,
-    [sku]
+    [tenantId, sku]
   );
   if (batchRows.length && Number(batchRows[0].unit_cost || 0) > 0) {
     return Number(batchRows[0].unit_cost || 0) * 1.1;
@@ -486,9 +493,10 @@ async function getRecentUnitCostVatIncluded(conn, sku) {
   const [productRows] = await conn.query(
     `SELECT cost_price_with_vat, cost_price
      FROM products
-     WHERE sku = ?
+     WHERE tenant_id = ?
+       AND sku = ?
      LIMIT 1`,
-    [sku]
+    [tenantId, sku]
   );
   const product = productRows[0] || {};
   if (Number(product.cost_price_with_vat || 0) > 0) return Number(product.cost_price_with_vat);
@@ -496,15 +504,16 @@ async function getRecentUnitCostVatIncluded(conn, sku) {
   return null;
 }
 
-async function decrementProductStock(conn, sku, requiredQty) {
+async function decrementProductStock(conn, sku, requiredQty, { tenantId = CURRENT_TENANT_ID } = {}) {
   if (!requiredQty) return null;
   const [productRows] = await conn.query(
-    `SELECT sku, product_name_kr, product_name_en, option_name, stock_quantity
+    `SELECT tenant_id, sku, product_name_kr, product_name_en, option_name, stock_quantity
      FROM products
-     WHERE sku = ?
+     WHERE tenant_id = ?
+       AND sku = ?
      LIMIT 1
      FOR UPDATE`,
-    [sku]
+    [tenantId, sku]
   );
   const product = productRows[0] || null;
   if (!product) {
@@ -516,8 +525,9 @@ async function decrementProductStock(conn, sku, requiredQty) {
   const [result] = await conn.query(
     `UPDATE products
      SET stock_quantity = stock_quantity - ?
-     WHERE sku = ?`,
-    [requiredQty, sku]
+     WHERE tenant_id = ?
+       AND sku = ?`,
+    [requiredQty, tenantId, sku]
   );
   if (result.affectedRows === 0) return null;
 
@@ -529,6 +539,7 @@ async function decrementProductStock(conn, sku, requiredQty) {
 }
 
 async function allocateSaleInventoryForOrderItem(conn, order, item) {
+  const tenantId = order?.tenant_id ?? item?.tenant_id ?? CURRENT_TENANT_ID;
   const sourceSku = getProductSkuForOrderItem(item);
   if (!sourceSku) {
     console.warn(`[InventoryFIFO] skip item without SKU: order=${order.order_sn}, shop=${order.shop_id}, item=${item.item_id || '-'}`);
@@ -556,12 +567,13 @@ async function allocateSaleInventoryForOrderItem(conn, order, item) {
       continue;
     }
 
-    if (await shouldSkipByTrackingStart(conn, order, baseSku)) {
+    if (await shouldSkipByTrackingStart(conn, order, baseSku, { tenantId })) {
       results.push({ skipped: true, reason: 'tracking_not_started', sourceSku, baseSku, requiredQty });
       continue;
     }
 
     const movementKey = {
+      tenantId,
       orderSn: order.order_sn,
       shopId: order.shop_id,
       sku: baseSku,
@@ -577,6 +589,7 @@ async function allocateSaleInventoryForOrderItem(conn, order, item) {
     }
 
     const movementId = await insertSaleMovement(conn, {
+      tenantId,
       orderSn: order.order_sn,
       shopId: order.shop_id,
       itemId: movementKey.itemId,
@@ -587,6 +600,7 @@ async function allocateSaleInventoryForOrderItem(conn, order, item) {
     });
 
     const allocation = await allocateInventoryFifo(conn, {
+      tenantId,
       movementId,
       orderSn: order.order_sn,
       shopId: order.shop_id,
@@ -595,7 +609,7 @@ async function allocateSaleInventoryForOrderItem(conn, order, item) {
       qty: requiredQty,
     });
 
-    const stockChange = await decrementProductStock(conn, baseSku, requiredQty);
+    const stockChange = await decrementProductStock(conn, baseSku, requiredQty, { tenantId });
 
     if (stockChange?.beforeStock >= 0 && stockChange.afterStock < 0) {
       const purchaseNeededQty = Math.abs(stockChange.afterStock);
@@ -604,7 +618,7 @@ async function allocateSaleInventoryForOrderItem(conn, order, item) {
         item.item_name ||
         baseSku;
       const imageUrl = item.image_info_image_url || item.item_image_url || null;
-      const unitCostVatIncluded = await getRecentUnitCostVatIncluded(conn, baseSku);
+      const unitCostVatIncluded = await getRecentUnitCostVatIncluded(conn, baseSku, { tenantId });
       purchaseAlerts.push({
         sku: baseSku,
         productName,
@@ -636,6 +650,7 @@ async function allocateSaleInventoryForOrder(order, conn) {
   if (!SALE_STOCK_STATUSES.has(order.display_status || order.order_status)) return;
   if (order.order_status === 'CANCELLED') return;
 
+  const tenantId = order?.tenant_id ?? CURRENT_TENANT_ID;
   const ownsConnection = !conn;
   const workConn = conn || await require('../config/database').getConnection();
   const pendingPurchaseAlerts = [];

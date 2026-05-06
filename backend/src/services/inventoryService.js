@@ -396,7 +396,7 @@ async function processInventoryForOrder(order) {
   }
 }
 
-async function processInventoryForOrders(orderKeys) {
+async function processInventoryForOrders(orderKeys, { tenantId = CURRENT_TENANT_ID } = {}) {
   const uniqueKeys = Array.from(
     new Map(
       orderKeys
@@ -407,14 +407,14 @@ async function processInventoryForOrders(orderKeys) {
 
   if (!uniqueKeys.length) return;
 
-  const whereClauses = uniqueKeys.map(() => '(shop_id = ? AND order_sn = ?)').join(' OR ');
+  const whereClauses = uniqueKeys.map(() => '(tenant_id = ? AND shop_id = ? AND order_sn = ?)').join(' OR ');
   const params = [];
   for (const key of uniqueKeys) {
-    params.push(key.shopId, key.orderSn);
+    params.push(tenantId, key.shopId, key.orderSn);
   }
 
   const [orders] = await db.query(
-    `SELECT order_sn, shop_id, order_status, display_status, order_created_at, create_time, update_time
+    `SELECT tenant_id, order_sn, shop_id, order_status, display_status, order_created_at, create_time, update_time
      FROM orders
      WHERE ${whereClauses}`,
     params

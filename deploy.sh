@@ -1,32 +1,52 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 APP_DIR="/var/www/shopee-dashboard"
 BACKEND_DIR="$APP_DIR/backend"
-FRONTEND_BUILD_DIR="$APP_DIR/frontend/build"
-PM2_APP_NAME="shopee-dashboard-backend"
+FRONTEND_DIR="$APP_DIR/frontend"
+FRONTEND_BUILD_DIR="$FRONTEND_DIR/build"
+FRONTEND_TMP_BUILD_DIR="$FRONTEND_DIR/unified-build"
+PM2_APP_NAME="shopee-backend"
 
 echo "== Deploy started =="
 
 cd "$APP_DIR"
 
 echo "== Pull latest code =="
-git pull origin main
+git pull --ff-only origin main
 
-echo "== Check frontend build =="
-if [ ! -d "$FRONTEND_BUILD_DIR" ]; then
-  echo "ERROR: frontend build directory not found: $FRONTEND_BUILD_DIR"
+echo "== Install frontend dependencies =="
+cd "$FRONTEND_DIR"
+npm install
+
+echo "== Build frontend =="
+rm -rf "$FRONTEND_TMP_BUILD_DIR"
+npm run build -- --outDir unified-build --base /
+
+if [ ! -f "$FRONTEND_TMP_BUILD_DIR/index.html" ]; then
+  echo "ERROR: frontend build failed; index.html not found"
   exit 1
 fi
+
+echo "== Replace frontend build =="
+cd "$APP_DIR"
+if [ -d "$FRONTEND_BUILD_DIR" ]; then
+  BUILD_BACKUP="$FRONTEND_DIR/build-backup-deploy-$(date +%Y%m%d_%H%M%S)"
+  mv "$FRONTEND_BUILD_DIR" "$BUILD_BACKUP"
+  echo "frontend build backup: $BUILD_BACKUP"
+fi
+mv "$FRONTEND_TMP_BUILD_DIR" "$FRONTEND_BUILD_DIR"
 
 echo "== Install backend dependencies =="
 cd "$BACKEND_DIR"
 npm install --production
 
 echo "== Restart backend =="
-pm2 describe "$PM2_APP_NAME" > /dev/null 2>&1 \
-  && pm2 reload "$PM2_APP_NAME" \
-  || pm2 start ecosystem.config.cjs
+if pm2 describe "$PM2_APP_NAME" > /dev/null 2>&1; then
+  pm2 reload "$PM2_APP_NAME" --update-env
+else
+  pm2 start ecosystem.config.cjs --update-env
+fi
 
 pm2 save
 
@@ -38,6 +58,6 @@ systemctl reload nginx
 
 echo "== Health check =="
 curl -I http://127.0.0.1:4000 || true
-curl -I http://junandkang.com || true
+curl -k --resolve junandkang.com:443:127.0.0.1 -I https://junandkang.com/ || true
 
 echo "== Deploy completed successfully =="

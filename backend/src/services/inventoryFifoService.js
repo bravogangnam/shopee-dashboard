@@ -7,6 +7,7 @@ const {
 } = require('./inventoryService');
 const { notifyPurchaseNeeded } = require('./purchaseAlertService');
 const { getSkuComponents } = require('./skuCompositionService');
+const { CURRENT_TENANT_ID } = require('../config/tenant');
 
 function roundMoney(value) {
   return Math.round(Number(value || 0) * 100) / 100;
@@ -20,14 +21,15 @@ function toPositiveInteger(value, fieldName) {
   return Math.trunc(number);
 }
 
-async function getExistingAllocations(conn, movementId) {
+async function getExistingAllocations(conn, movementId, { tenantId = CURRENT_TENANT_ID } = {}) {
   const [rows] = await conn.query(
-    `SELECT id, movement_id, batch_id, order_sn, shop_id, source_sku, sku,
+    `SELECT tenant_id, id, movement_id, batch_id, order_sn, shop_id, source_sku, sku,
             qty, unit_cost, total_cost, created_at
      FROM inventory_allocations
-     WHERE movement_id = ?
+     WHERE tenant_id = ?
+       AND movement_id = ?
      ORDER BY id ASC`,
-    [movementId]
+    [tenantId, movementId]
   );
   return rows;
 }
@@ -41,6 +43,7 @@ function summarizeExistingAllocations(requestedQty, rows) {
     shortageQty: Math.max(0, requestedQty - allocatedQty),
     totalCost: roundMoney(totalCost),
     allocations: rows.map(row => ({
+      tenantId: row.tenant_id,
       id: row.id,
       movementId: row.movement_id,
       batchId: row.batch_id,
@@ -58,6 +61,7 @@ function summarizeExistingAllocations(requestedQty, rows) {
 }
 
 async function allocateInventoryFifo(conn, {
+  tenantId = CURRENT_TENANT_ID,
   movementId,
   orderSn = null,
   shopId = null,
@@ -70,19 +74,20 @@ async function allocateInventoryFifo(conn, {
   if (!normalizedBaseSku) throw new Error('baseSku is required');
   const requestedQty = toPositiveInteger(qty, 'qty');
 
-  const existingAllocations = await getExistingAllocations(conn, movementId);
+  const existingAllocations = await getExistingAllocations(conn, movementId, { tenantId });
   if (existingAllocations.length) {
     return summarizeExistingAllocations(requestedQty, existingAllocations);
   }
 
   const [batches] = await conn.query(
-    `SELECT id, sku, remaining_qty, unit_cost, received_at
+    `SELECT tenant_id, id, sku, remaining_qty, unit_cost, received_at
      FROM inventory_batches
-     WHERE sku = ?
+     WHERE tenant_id = ?
+       AND sku = ?
        AND remaining_qty > 0
      ORDER BY received_at IS NULL, received_at ASC, id ASC
      FOR UPDATE`,
-    [normalizedBaseSku]
+    [tenantId, normalizedBaseSku]
   );
 
   let remainingToAllocate = requestedQty;
@@ -103,9 +108,10 @@ async function allocateInventoryFifo(conn, {
     const [updateResult] = await conn.query(
       `UPDATE inventory_batches
        SET remaining_qty = remaining_qty - ?
-       WHERE id = ?
+       WHERE tenant_id = ?
+         AND id = ?
          AND remaining_qty >= ?`,
-      [allocationQty, batch.id, allocationQty]
+      [allocationQty, tenantId, batch.id, allocationQty]
     );
     if (updateResult.affectedRows !== 1) {
       throw new Error(`FIFO batch update failed: batch_id=${batch.id}`);
@@ -113,10 +119,11 @@ async function allocateInventoryFifo(conn, {
 
     await conn.query(
       `INSERT INTO inventory_allocations
-         (movement_id, batch_id, order_sn, shop_id, source_sku, sku,
+         (tenant_id, movement_id, batch_id, order_sn, shop_id, source_sku, sku,
           qty, unit_cost, total_cost)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        tenantId,
         movementId,
         batch.id,
         orderSn,
@@ -133,6 +140,7 @@ async function allocateInventoryFifo(conn, {
     allocatedQty += allocationQty;
     totalCost += allocationCost;
     allocations.push({
+      tenantId,
       movementId,
       batchId: batch.id,
       orderSn,
@@ -155,9 +163,10 @@ async function allocateInventoryFifo(conn, {
   };
 }
 
-async function getOpenSaleShortages(conn, sku) {
+async function getOpenSaleShortages(conn, sku, { tenantId = CURRENT_TENANT_ID } = {}) {
   const [rows] = await conn.query(
     `SELECT
+       m.tenant_id,
        m.id,
        m.order_sn,
        m.shop_id,
@@ -167,25 +176,29 @@ async function getOpenSaleShortages(conn, sku) {
        ABS(m.qty_delta) - COALESCE(SUM(a.qty), 0) AS shortage_qty,
        m.created_at
      FROM inventory_movements m
-     LEFT JOIN inventory_allocations a ON a.movement_id = m.id
-     WHERE m.movement_type = 'SALE'
+     LEFT JOIN inventory_allocations a
+       ON a.tenant_id = m.tenant_id
+      AND a.movement_id = m.id
+     WHERE m.tenant_id = ?
+       AND m.movement_type = 'SALE'
        AND m.sku = ?
-     GROUP BY m.id, m.order_sn, m.shop_id, m.sku, m.qty_delta, m.created_at
+     GROUP BY m.tenant_id, m.id, m.order_sn, m.shop_id, m.sku, m.qty_delta, m.created_at
      HAVING shortage_qty > 0
      ORDER BY m.created_at ASC, m.id ASC`,
-    [normalizeSku(sku)]
+    [tenantId, normalizeSku(sku)]
   );
   return rows;
 }
 
-async function getMovementShortage(conn, movementId) {
+async function getMovementShortage(conn, movementId, { tenantId = CURRENT_TENANT_ID } = {}) {
   const [movementRows] = await conn.query(
-    `SELECT id, order_sn, shop_id, sku, ABS(qty_delta) AS required_qty
+    `SELECT tenant_id, id, order_sn, shop_id, sku, ABS(qty_delta) AS required_qty
      FROM inventory_movements
-     WHERE id = ?
+     WHERE tenant_id = ?
+       AND id = ?
        AND movement_type = 'SALE'
      FOR UPDATE`,
-    [movementId]
+    [tenantId, movementId]
   );
   const movement = movementRows[0];
   if (!movement) return null;
@@ -193,12 +206,14 @@ async function getMovementShortage(conn, movementId) {
   const [allocationRows] = await conn.query(
     `SELECT COALESCE(SUM(qty), 0) AS allocated_qty
      FROM inventory_allocations
-     WHERE movement_id = ?`,
-    [movementId]
+     WHERE tenant_id = ?
+       AND movement_id = ?`,
+    [tenantId, movementId]
   );
   const requiredQty = Number(movement.required_qty || 0);
   const allocatedQty = Number(allocationRows[0]?.allocated_qty || 0);
   return {
+    tenantId: movement.tenant_id,
     id: movement.id,
     orderSn: movement.order_sn,
     shopId: movement.shop_id,
@@ -211,6 +226,7 @@ async function getMovementShortage(conn, movementId) {
 }
 
 async function allocateOpenShortagesForBatch(conn, {
+  tenantId = CURRENT_TENANT_ID,
   batchId,
   sku,
   availableQty = null,
@@ -221,12 +237,13 @@ async function allocateOpenShortagesForBatch(conn, {
   if (!normalizedSku) throw new Error('sku is required');
 
   const [batchRows] = await conn.query(
-    `SELECT id, sku, remaining_qty, unit_cost
+    `SELECT tenant_id, id, sku, remaining_qty, unit_cost
      FROM inventory_batches
-     WHERE id = ?
+     WHERE tenant_id = ?
+       AND id = ?
        AND sku = ?
      FOR UPDATE`,
-    [batchId, normalizedSku]
+    [tenantId, batchId, normalizedSku]
   );
   const batch = batchRows[0];
   if (!batch) throw new Error(`inventory batch not found: batch_id=${batchId}, sku=${normalizedSku}`);
@@ -245,11 +262,11 @@ async function allocateOpenShortagesForBatch(conn, {
     return { allocatedQty: 0, allocations };
   }
 
-  const openMovements = await getOpenSaleShortages(conn, normalizedSku);
+  const openMovements = await getOpenSaleShortages(conn, normalizedSku, { tenantId });
   for (const openMovement of openMovements) {
     if (remainingBatchQty <= 0) break;
 
-    const movementShortage = await getMovementShortage(conn, openMovement.id);
+    const movementShortage = await getMovementShortage(conn, openMovement.id, { tenantId });
     if (!movementShortage || movementShortage.shortageQty <= 0) continue;
 
     const allocationQty = Math.min(remainingBatchQty, movementShortage.shortageQty);
@@ -258,10 +275,11 @@ async function allocateOpenShortagesForBatch(conn, {
     try {
       await conn.query(
         `INSERT INTO inventory_allocations
-           (movement_id, batch_id, order_sn, shop_id, source_sku, sku,
+           (tenant_id, movement_id, batch_id, order_sn, shop_id, source_sku, sku,
             qty, unit_cost, total_cost)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
+          tenantId,
           movementShortage.id,
           batchId,
           movementShortage.orderSn,
@@ -284,9 +302,10 @@ async function allocateOpenShortagesForBatch(conn, {
     const [updateResult] = await conn.query(
       `UPDATE inventory_batches
        SET remaining_qty = remaining_qty - ?
-       WHERE id = ?
+       WHERE tenant_id = ?
+         AND id = ?
          AND remaining_qty >= ?`,
-      [allocationQty, batchId, allocationQty]
+      [allocationQty, tenantId, batchId, allocationQty]
     );
     if (updateResult.affectedRows !== 1) {
       throw new Error(`FIFO shortage batch update failed: batch_id=${batchId}`);
@@ -295,6 +314,7 @@ async function allocateOpenShortagesForBatch(conn, {
     remainingBatchQty -= allocationQty;
     allocatedQty += allocationQty;
     allocations.push({
+      tenantId,
       movementId: movementShortage.id,
       orderSn: movementShortage.orderSn,
       shopId: movementShortage.shopId,

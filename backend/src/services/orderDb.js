@@ -157,7 +157,7 @@ async function insertOrder(conn, orderRow) {
  * @param {object[]} orderRows
  * @returns {{ inserted: number }}
  */
-async function batchInsertOrders(orderRows) {
+async function batchInsertOrders(orderRows, { tenantId = CURRENT_TENANT_ID } = {}) {
   if (!orderRows.length) return { inserted: 0 };
 
   const conn = await db.getConnection();
@@ -167,7 +167,7 @@ async function batchInsertOrders(orderRows) {
     for (const row of orderRows) {
       const [result] = await conn.query(
         `INSERT IGNORE INTO orders (
-          shop_id, region, order_sn, order_status, display_status, display_status_reason, display_status_checked_at, is_final_status,
+          tenant_id, shop_id, region, order_sn, order_status, display_status, display_status_reason, display_status_checked_at, is_final_status,
           merchandise_subtotal, total_amount, currency,
           original_price, seller_discount, voucher_from_seller, voucher_from_shopee,
           coins_offset, buyer_total_amount,
@@ -176,7 +176,7 @@ async function batchInsertOrders(orderRows) {
           commission_fee, service_fee, transaction_fee, escrow_amount,
           create_time, order_created_at, update_time, synced_at
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?,
           ?, ?, ?, ?,
           ?, ?,
@@ -186,7 +186,7 @@ async function batchInsertOrders(orderRows) {
           ?, ?, ?, NOW()
         )`,
         [
-          row.shop_id, row.region, row.order_sn, row.order_status,
+          tenantId, row.shop_id, row.region, row.order_sn, row.order_status,
 
           row.display_status || row.order_status,
 

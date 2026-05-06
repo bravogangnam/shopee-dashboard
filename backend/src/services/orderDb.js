@@ -280,9 +280,10 @@ async function batchInsertOrderItems(itemRows, { tenantId = CURRENT_TENANT_ID } 
              cost_price_at_order = COALESCE(cost_price_at_order, ?),
              discounted_price_at_order = COALESCE(discounted_price_at_order, ?),
              vat_at_order = COALESCE(vat_at_order, ?)
-           WHERE order_sn = ?
-             AND shop_id = ?
-             AND model_sku = ?
+           WHERE tenant_id = ?
+              AND order_sn = ?
+              AND shop_id = ?
+              AND model_sku = ?
              AND (
                cost_price_at_order IS NULL
                OR discounted_price_at_order IS NULL
@@ -292,9 +293,10 @@ async function batchInsertOrderItems(itemRows, { tenantId = CURRENT_TENANT_ID } 
             product.cost_price,
             product.discounted_price_with_vat,
             product.vat,
-            item.order_sn,
-            item.shop_id,
-            modelSku,
+            tenantId,
+              item.order_sn,
+              item.shop_id,
+              modelSku,
           ]
         );
       }

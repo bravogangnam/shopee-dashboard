@@ -219,7 +219,7 @@ async function batchInsertOrders(orderRows, { tenantId = CURRENT_TENANT_ID } = {
 /**
  * order_items 배치 INSERT (중복 무시)
  */
-async function batchInsertOrderItems(itemRows) {
+async function batchInsertOrderItems(itemRows, { tenantId = CURRENT_TENANT_ID } = {}) {
   if (!itemRows.length) return;
 
   const skuList = Array.from(new Set(
@@ -236,11 +236,12 @@ async function batchInsertOrderItems(itemRows) {
     if (skuList.length > 0) {
       const placeholders = skuList.map(() => '?').join(',');
       const [products] = await conn.query(
-        `SELECT sku, cost_price, discounted_price_with_vat, vat
-         FROM products
-         WHERE sku IN (${placeholders})`,
-        skuList
-      );
+          `SELECT sku, cost_price, discounted_price_with_vat, vat
+           FROM products
+           WHERE tenant_id = ?
+             AND sku IN (${placeholders})`,
+          [tenantId, ...skuList]
+        );
       for (const product of products) {
         productMap.set(product.sku, product);
       }
@@ -257,14 +258,14 @@ async function batchInsertOrderItems(itemRows) {
 
       await conn.query(
         `INSERT IGNORE INTO order_items (
-          order_sn, shop_id, item_id, item_name, item_sku,
+          tenant_id, order_sn, shop_id, item_id, item_name, item_sku,
           model_id, model_name, model_sku,
           model_quantity_purchased, model_original_price, model_discounted_price,
           image_info_image_url, item_image_url,
           cost_price_at_order, discounted_price_at_order, vat_at_order
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          item.order_sn, item.shop_id, item.item_id, item.item_name, item.item_sku,
+          tenantId, item.order_sn, item.shop_id, item.item_id, item.item_name, item.item_sku,
           item.model_id, item.model_name, item.model_sku,
           item.model_quantity_purchased, item.model_original_price, item.model_discounted_price,
           item.image_info_image_url, item.item_image_url,

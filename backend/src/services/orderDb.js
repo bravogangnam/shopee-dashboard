@@ -48,6 +48,8 @@ async function getExchangeRateMap(conn) {
 }
 
 async function recalculateMarginsForOrders(conn, orderKeys, options = {}) {
+  const tenantId = options.tenantId ?? CURRENT_TENANT_ID;
+
   const uniqueKeys = Array.from(
     new Map(
       orderKeys
@@ -59,15 +61,15 @@ async function recalculateMarginsForOrders(conn, orderKeys, options = {}) {
   if (!uniqueKeys.length) return;
 
   const rateMap = await getExchangeRateMap(conn);
-  const whereClauses = uniqueKeys.map(() => '(shop_id = ? AND order_sn = ?)').join(' OR ');
+  const whereClauses = uniqueKeys.map(() => '(tenant_id = ? AND shop_id = ? AND order_sn = ?)').join(' OR ');
   const params = [];
   for (const key of uniqueKeys) {
-    params.push(key.shopId, key.orderSn);
+    params.push(tenantId, key.shopId, key.orderSn);
   }
 
   const [orders] = await conn.query(
     `SELECT
-       order_sn, shop_id, currency, escrow_amount, total_cost_price,
+       tenant_id, order_sn, shop_id, currency, escrow_amount, total_cost_price,
        total_discounted_price, order_status,
        margin_status, net_profit, product_profit
      FROM orders
@@ -80,8 +82,8 @@ async function recalculateMarginsForOrders(conn, orderKeys, options = {}) {
       await conn.query(
         `UPDATE orders
          SET net_profit = NULL, product_profit = NULL, margin_status = ?
-         WHERE order_sn = ? AND shop_id = ?`,
-        ['cancelled', order.order_sn, order.shop_id]
+         WHERE tenant_id = ? AND order_sn = ? AND shop_id = ?`,
+        ['cancelled', tenantId, order.order_sn, order.shop_id]
       );
       continue;
     }
@@ -100,8 +102,8 @@ async function recalculateMarginsForOrders(conn, orderKeys, options = {}) {
       await conn.query(
         `UPDATE orders
          SET margin_status = ?
-         WHERE order_sn = ? AND shop_id = ?`,
-        [marginStatus, order.order_sn, order.shop_id]
+         WHERE tenant_id = ? AND order_sn = ? AND shop_id = ?`,
+        [marginStatus, tenantId, order.order_sn, order.shop_id]
       );
       continue;
     }
@@ -130,8 +132,8 @@ async function recalculateMarginsForOrders(conn, orderKeys, options = {}) {
     await conn.query(
       `UPDATE orders
        SET net_profit = ?, product_profit = ?, margin_status = ?
-       WHERE order_sn = ? AND shop_id = ?`,
-      [netProfit, productProfit, marginStatus, order.order_sn, order.shop_id]
+       WHERE tenant_id = ? AND order_sn = ? AND shop_id = ?`,
+      [netProfit, productProfit, marginStatus, tenantId, order.order_sn, order.shop_id]
     );
   }
 }

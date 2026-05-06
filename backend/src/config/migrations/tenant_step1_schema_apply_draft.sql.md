@@ -26,6 +26,13 @@ Important:
 - Execute only during a quiet period.
 - Do not run PM2 restart, npm build, or deployment as part of this schema step.
 - Backend code currently does not use tenant_id yet, so all tenant_id columns use DEFAULT 1 to preserve current behavior.
+- Do not execute this whole draft as one large production script.
+- Final execution should be split into smaller reviewed phases:
+  1. Create tenants table.
+  2. Add tenant_id columns with DEFAULT 1.
+  3. Verify row counts and tenant_id backfill.
+  4. Add supporting tenant-aware indexes.
+  5. Replace unique keys only after duplicate checks pass again.
 
 ```sql
 USE shopee_dashboard;
@@ -195,4 +202,4 @@ SHOW INDEX FROM sku_compositions;
 SHOW INDEX FROM inventory_batches;
 SHOW INDEX FROM inventory_movements;
 SHOW INDEX FROM orders;
-
+```

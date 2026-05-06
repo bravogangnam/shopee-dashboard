@@ -10,6 +10,7 @@
  */
 
 const db = require('../config/database');
+const { CURRENT_TENANT_ID } = require('../config/tenant');
 const { getOrRefreshShopToken } = require('../services/shopeeAuth');
 const {
   getOrderList,
@@ -151,7 +152,7 @@ function applyDisplayStatus(orderRow, displayStatus) {
  * 수동 동기화 메인 실행 함수
  * @param {string} jobId
  */
-async function runSync(jobId) {
+async function runSync(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
   const syncStart = t();
   console.log(`\n${'═'.repeat(60)}`);
   console.log(`[Sync] ▶ START  jobId=${jobId}  ${new Date().toISOString()}`);
@@ -159,8 +160,9 @@ async function runSync(jobId) {
 
   try {
     const [shops] = await db.query(
-      'SELECT shop_id, alias, region FROM shops WHERE is_active = 1 ORDER BY id ASC'
-    );
+        'SELECT shop_id, alias, region FROM shops WHERE tenant_id = ? AND is_active = 1 ORDER BY id ASC',
+        [tenantId]
+      );
     if (!shops.length) {
       await failJob(jobId, '활성화된 샵이 없습니다');
       return;
@@ -199,7 +201,7 @@ async function runSync(jobId) {
       try {
         // ── DB에서 최신 타임스탬프 조회 ──
         const tsStart = t();
-        const latestTs = await getLatestCreateTime(shop.shop_id);
+        const latestTs = await getLatestCreateTime(shop.shop_id, { tenantId });
         console.log(`[Sync][Step1] │  getLatestCreateTime: ${ms(tsStart)}  → latestTs=${latestTs ? new Date(latestTs*1000).toISOString() : 'none(최초)'}`);
 
         const now = Math.floor(Date.now() / 1000);
@@ -232,7 +234,7 @@ async function runSync(jobId) {
 
           // ── filterNewOrderSns (DB 중복 체크) ──
           const filterStart = t();
-          const newSns = await filterNewOrderSns(shop.shop_id, allSns);
+          const newSns = await filterNewOrderSns(shop.shop_id, allSns, { tenantId });
           console.log(`[Sync][Step1] │  filterNewOrderSns ${winLabel}: ${ms(filterStart)}  → 신규 ${newSns.length}/${allSns.length}건`);
 
           if (newSns.length > 0) {
@@ -268,8 +270,8 @@ async function runSync(jobId) {
 
             // ── DB INSERT ──
             const insertStart = t();
-            const { inserted } = await batchInsertOrders(orderRows);
-            await batchInsertOrderItems(itemRowsAll);
+            const { inserted } = await batchInsertOrders(orderRows, { tenantId });
+            await batchInsertOrderItems(itemRowsAll, { tenantId });
             console.log(`[Sync][Step1] │  batchInsert: ${ms(insertStart)}  → inserted=${inserted}`);
               const readyToShipInserted = inserted > 0
                   ? orderRows.filter(o => o.display_status === 'READY_TO_SHIP').length
@@ -294,7 +296,7 @@ async function runSync(jobId) {
             readyToShipAlertOrdersByRegion[shop.region] = (readyToShipAlertOrdersByRegion[shop.region] || 0) + shopReadyToShipAlertCount;
           }
         await logSync(shop.shop_id, 'manual', new Date(timeFrom * 1000), new Date(timeTo * 1000),
-          shopNewCount, shopNewCount, 'success', null);
+            shopNewCount, shopNewCount, 'success', null, { tenantId });
 
         console.log(`[Sync][Step1] └─ shop=${shopAlias} 완료  신규=${shopNewCount}건  ${ms(shopStart)}`);
         await updateProgress(jobId, step, totalSteps,
@@ -302,7 +304,7 @@ async function runSync(jobId) {
 
       } catch (err) {
         console.error(`[Sync][Step1] └─ shop=${shopAlias} ERROR: ${err.message}  ${ms(shopStart)}`);
-        await logSync(shop.shop_id, 'manual', null, null, 0, 0, 'fail', err.message);
+        await logSync(shop.shop_id, 'manual', null, null, 0, 0, 'fail', err.message, { tenantId });
       }
     }
 
@@ -328,7 +330,7 @@ async function runSync(jobId) {
       try {
         // ── getNonFinalOrders (DB 조회) ──
         const dbQueryStart = t();
-        const nonFinalOrders = await getNonFinalOrders(shop.shop_id);
+        const nonFinalOrders = await getNonFinalOrders(shop.shop_id, { tenantId });
         console.log(`[Sync][Step2] │  getNonFinalOrders: ${ms(dbQueryStart)}  → ${nonFinalOrders.length}건`);
 
         if (!nonFinalOrders.length) {
@@ -386,7 +388,7 @@ async function runSync(jobId) {
                   console.log(`[Sync][Step2] │  새주문 알림 대상 전환: ${order.order_sn} ${previousDisplayStatus} → READY_TO_SHIP`);
                 }
 
-            await updateOrder(order.order_sn, shop.shop_id, diff);
+            await updateOrder(order.order_sn, shop.shop_id, diff, { tenantId });
             shopUpdated++;
           }
         }
@@ -434,12 +436,13 @@ async function runSync(jobId) {
       try {
         // tracking_number가 없는 배송 진행 주문 조회
         const [noTrackingOrders] = await db.query(
-          `SELECT order_sn FROM orders
-           WHERE shop_id = ?
-             AND order_status IN ('READY_TO_SHIP','PROCESSED','SHIPPED','COMPLETED')
-             AND (tracking_number IS NULL OR tracking_number = '')`,
-          [shop.shop_id]
-        );
+            `SELECT order_sn FROM orders
+             WHERE tenant_id = ?
+               AND shop_id = ?
+               AND order_status IN ('READY_TO_SHIP','PROCESSED','SHIPPED','COMPLETED')
+               AND (tracking_number IS NULL OR tracking_number = '')`,
+            [tenantId, shop.shop_id]
+          );
 
         console.log(`[Sync][Step3] │  tracking 미확보 주문: ${noTrackingOrders.length}건`);
 
@@ -475,10 +478,10 @@ async function runSync(jobId) {
             const { order_sn, tracking_number, error } = r.value;
             if (tracking_number) {
               await db.query(
-                `UPDATE orders SET tracking_number = ?, synced_at = NOW()
-                 WHERE order_sn = ? AND shop_id = ?`,
-                [tracking_number, order_sn, shop.shop_id]
-              );
+                  `UPDATE orders SET tracking_number = ?, synced_at = NOW()
+                   WHERE tenant_id = ? AND order_sn = ? AND shop_id = ?`,
+                  [tracking_number, tenantId, order_sn, shop.shop_id]
+                );
               shopTrackingUpdated++;
               console.log(`[Sync][Step3] │    ${order_sn} → ${tracking_number}`);
             } else {

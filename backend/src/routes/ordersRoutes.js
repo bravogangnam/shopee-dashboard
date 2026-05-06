@@ -10,22 +10,26 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const db = require('../config/database');
+const { getCurrentTenantId } = require('../config/tenant');
 
 router.use(requireAuth);
 
 const FIFO_COST_JOIN = `
   LEFT JOIN (
     SELECT
+      m.tenant_id,
       m.order_sn,
       m.shop_id,
       SUM(a.total_cost) AS fifo_cost_price
     FROM inventory_movements m
     INNER JOIN inventory_allocations a
-      ON a.movement_id = m.id
+      ON a.tenant_id = m.tenant_id
+     AND a.movement_id = m.id
     WHERE m.movement_type = 'SALE'
-    GROUP BY m.order_sn, m.shop_id
+    GROUP BY m.tenant_id, m.order_sn, m.shop_id
   ) fifo
-    ON fifo.order_sn = o.order_sn
+    ON fifo.tenant_id = o.tenant_id
+   AND fifo.order_sn = o.order_sn
    AND fifo.shop_id = o.shop_id
 `;
 
@@ -76,6 +80,8 @@ router.get('/', async (req, res) => {
     include_open_backlog,
   } = req.query;
 
+  const tenantId = getCurrentTenantId(req);
+
   const pageNum = Math.max(1, parseInt(page));
   const pageSize = Math.min(100, Math.max(1, parseInt(page_size)));
   const offset = (pageNum - 1) * pageSize;
@@ -87,8 +93,8 @@ router.get('/', async (req, res) => {
   }
 
   // 활성 샵 기반 필터
-  let whereClause = `o.shop_id IN (SELECT shop_id FROM shops WHERE is_active = 1)`;
-  const params = [];
+  let whereClause = `o.tenant_id = ? AND o.shop_id IN (SELECT shop_id FROM shops WHERE tenant_id = ? AND is_active = 1)`;
+  const params = [tenantId, tenantId];
   const openBacklogStatuses = ['UNPAID', 'READY_TO_SHIP'];
   const includeOpenBacklog = ['1', 'true', 'yes'].includes(String(include_open_backlog || '').toLowerCase());
   let statusFilters = [];
@@ -213,7 +219,7 @@ router.get('/', async (req, res) => {
         r.rate_to_krw as krw_rate
        FROM orders o
        ${FIFO_COST_JOIN}
-       LEFT JOIN shops s ON o.shop_id = s.shop_id
+       LEFT JOIN shops s ON s.tenant_id = o.tenant_id AND o.shop_id = s.shop_id
        LEFT JOIN exchange_rates r
          ON o.currency COLLATE utf8mb4_general_ci = r.currency
        WHERE o.id IN (${idPlaceholders})
@@ -230,9 +236,10 @@ router.get('/', async (req, res) => {
               image_info_image_url, item_image_url,
               cost_price_at_order, discounted_price_at_order, vat_at_order
        FROM order_items
-       WHERE order_sn IN (${snPlaceholders})
+       WHERE tenant_id = ?
+         AND order_sn IN (${snPlaceholders})
        ORDER BY id ASC`,
-      orderSnList
+      [tenantId, ...orderSnList]
     );
 
     const itemsByOrderSn = {};
@@ -284,6 +291,7 @@ router.get('/', async (req, res) => {
  */
 router.get('/stats', async (req, res) => {
   const { date_from, date_to, shop_id } = req.query;
+  const tenantId = getCurrentTenantId(req);
 
   // ── 날짜 범위 결정 ─────────────────────────────────────────────
   // 기본값: 이번달 1일 ~ 오늘 (KST)
@@ -323,8 +331,8 @@ router.get('/stats', async (req, res) => {
   console.log(`[Stats] 기간: ${rangeFrom}~${rangeTo} | 전월비교: ${prevFrom}~${prevTo}`);
 
   // ── 필터 빌더 ──────────────────────────────────────────────────
-  const shopFilter = `AND o.shop_id IN (SELECT shop_id FROM shops WHERE is_active = 1)${shop_id ? ' AND o.shop_id = ?' : ''}`;
-  const shopParams = shop_id ? [shop_id] : [];
+  const shopFilter = `AND o.tenant_id = ? AND o.shop_id IN (SELECT shop_id FROM shops WHERE tenant_id = ? AND is_active = 1)${shop_id ? ' AND o.shop_id = ?' : ''}`;
+  const shopParams = shop_id ? [tenantId, tenantId, shop_id] : [tenantId, tenantId];
 
   const buildDateFilter = (f, t) =>
     `AND o.order_created_at >= '${f} 00:00:00' AND o.order_created_at <= '${t} 23:59:59'`;
@@ -386,7 +394,7 @@ router.get('/stats', async (req, res) => {
       return Math.round(((cur - prev) / prev) * 1000) / 10; // 소수점1자리
     };
 
-    const shopFilter2 = `AND o.shop_id IN (SELECT shop_id FROM shops WHERE is_active = 1)${shop_id ? ' AND o.shop_id = ?' : ''}`;
+    const shopFilter2 = `AND o.tenant_id = ? AND o.shop_id IN (SELECT shop_id FROM shops WHERE tenant_id = ? AND is_active = 1)${shop_id ? ' AND o.shop_id = ?' : ''}`;
 
     // 샵별 집계 (현재 기간) - UNPAID/PENDING/CANCELLED 제외, merchandise_subtotal 기준
     const [byShop] = await db.query(
@@ -400,7 +408,7 @@ router.get('/stats', async (req, res) => {
         o.currency,
         r.rate_to_krw
        FROM orders o
-       LEFT JOIN shops s ON o.shop_id = s.shop_id
+       LEFT JOIN shops s ON s.tenant_id = o.tenant_id AND o.shop_id = s.shop_id
        LEFT JOIN exchange_rates r ON o.currency = r.currency
        WHERE 1=1 ${shopFilter2} ${curFilter}
        GROUP BY o.shop_id, o.region, s.alias, o.currency, r.rate_to_krw`,
@@ -503,6 +511,7 @@ router.get('/summary', async (req, res) => {
   const regionFilter = region || null;
   const statusFilter = order_status || null;
   const orderSnFilter = order_sn || null;
+  const tenantId = getCurrentTenantId(req);
 
   try {
     const summarySql = `SELECT
@@ -526,7 +535,8 @@ router.get('/summary', async (req, res) => {
        ${FIFO_COST_JOIN}
        LEFT JOIN exchange_rates er
          ON o.currency COLLATE utf8mb4_general_ci = er.currency
-       WHERE o.order_status NOT IN ('UNPAID', 'PENDING', 'CANCELLED')
+       WHERE o.tenant_id = ?
+          AND o.order_status NOT IN ('UNPAID', 'PENDING', 'CANCELLED')
          AND (? IS NULL OR o.order_created_at >= ?)
          AND (? IS NULL OR o.order_created_at < DATE_ADD(?, INTERVAL 1 DAY))
          AND (? IS NULL OR o.region = ?)
@@ -534,7 +544,8 @@ router.get('/summary', async (req, res) => {
          AND (? IS NULL OR o.order_sn LIKE CONCAT('%', ?, '%'))`;
 
     const buildSummaryParams = (from, to) => [
-      from, from,
+        tenantId,
+        from, from,
       to, to,
       regionFilter, regionFilter,
       statusFilter, statusFilter,
@@ -649,6 +660,7 @@ router.get('/daily-sales', async (req, res) => {
   const [year, monthNumber] = month.split('-').map(Number);
   const monthStart = `${month}-01`;
   const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  const tenantId = getCurrentTenantId(req);
 
   try {
     const [rows] = await db.query(
@@ -660,12 +672,13 @@ router.get('/daily-sales', async (req, res) => {
        FROM orders o
        LEFT JOIN exchange_rates er
          ON o.currency COLLATE utf8mb4_general_ci = er.currency
-       WHERE o.order_status NOT IN ('UNPAID', 'PENDING', 'CANCELLED')
-         AND o.order_created_at >= ?
+       WHERE o.tenant_id = ?
+          AND o.order_status NOT IN ('UNPAID', 'PENDING', 'CANCELLED')
+          AND o.order_created_at >= ?
          AND o.order_created_at < DATE_ADD(?, INTERVAL 1 MONTH)
        GROUP BY DATE(o.order_created_at), DAY(o.order_created_at)
        ORDER BY sales_date ASC`,
-      [monthStart, monthStart]
+      [tenantId, monthStart, monthStart]
     );
 
     const rowMap = new Map(
@@ -699,6 +712,7 @@ router.get('/daily-sales', async (req, res) => {
 
 router.get('/:orderSn', async (req, res) => {
   const { orderSn } = req.params;
+  const tenantId = getCurrentTenantId(req);
 
   try {
     // 주문 기본 정보
@@ -710,11 +724,12 @@ router.get('/:orderSn', async (req, res) => {
         r.rate_to_krw as krw_rate
        FROM orders o
        ${FIFO_COST_JOIN}
-       LEFT JOIN shops s ON o.shop_id = s.shop_id
+       LEFT JOIN shops s ON s.tenant_id = o.tenant_id AND o.shop_id = s.shop_id
        LEFT JOIN exchange_rates r ON o.currency = r.currency
-       WHERE o.order_sn = ?
-       LIMIT 1`,
-      [orderSn]
+       WHERE o.tenant_id = ?
+          AND o.order_sn = ?
+         LIMIT 1`,
+       [tenantId, orderSn]
     );
 
     if (!orders.length) {
@@ -723,8 +738,8 @@ router.get('/:orderSn', async (req, res) => {
 
     // order_items
     const [items] = await db.query(
-      `SELECT * FROM order_items WHERE order_sn = ? ORDER BY id ASC`,
-      [orderSn]
+      `SELECT * FROM order_items WHERE tenant_id = ? AND order_sn = ? ORDER BY id ASC`,
+       [tenantId, orderSn]
     );
 
     return res.json({

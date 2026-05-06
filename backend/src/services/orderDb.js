@@ -7,6 +7,7 @@
  */
 
 const db = require('../config/database');
+const { CURRENT_TENANT_ID } = require('../config/tenant');
 const { processInventoryForOrders } = require('./inventoryService');
 
 function parseNullableNumber(value) {
@@ -390,13 +391,13 @@ async function updateOrder(orderSn, shopId, diff) {
  * @param {string[]} orderSns
  * @returns {string[]} DB에 없는 order_sn만
  */
-async function filterNewOrderSns(shopId, orderSns) {
+async function filterNewOrderSns(shopId, orderSns, { tenantId = CURRENT_TENANT_ID } = {}) {
   if (!orderSns.length) return [];
 
   const placeholders = orderSns.map(() => '?').join(',');
   const [rows] = await db.query(
-    `SELECT order_sn FROM orders WHERE shop_id = ? AND order_sn IN (${placeholders})`,
-    [shopId, ...orderSns]
+    `SELECT order_sn FROM orders WHERE tenant_id = ? AND shop_id = ? AND order_sn IN (${placeholders})`,
+    [tenantId, shopId, ...orderSns]
   );
   const existing = new Set(rows.map(r => r.order_sn));
   return orderSns.filter(sn => !existing.has(sn));
@@ -406,10 +407,10 @@ async function filterNewOrderSns(shopId, orderSns) {
  * 특정 샵의 가장 최근 create_time 조회
  * @returns {number|null} unix timestamp
  */
-async function getLatestCreateTime(shopId) {
+async function getLatestCreateTime(shopId, { tenantId = CURRENT_TENANT_ID } = {}) {
   const [rows] = await db.query(
-    'SELECT MAX(create_time) as latest FROM orders WHERE shop_id = ?',
-    [shopId]
+    'SELECT MAX(create_time) as latest FROM orders WHERE tenant_id = ? AND shop_id = ?',
+    [tenantId, shopId]
   );
   return rows[0]?.latest || null;
 }
@@ -419,7 +420,7 @@ async function getLatestCreateTime(shopId) {
  * @param {number} shopId
  * @returns {{ order_sn: string, order_status: string, ... }[]}
  */
-async function getNonFinalOrders(shopId) {
+async function getNonFinalOrders(shopId, { tenantId = CURRENT_TENANT_ID } = {}) {
   const [rows] = await db.query(
     `SELECT order_sn, order_status, display_status, display_status_reason, display_status_checked_at,
               merchandise_subtotal, total_amount, original_price, seller_discount,
@@ -427,8 +428,8 @@ async function getNonFinalOrders(shopId) {
               actual_shipping_fee, order_chargeable_weight_gram,
             commission_fee, service_fee, transaction_fee, escrow_amount, tracking_number,
             is_final_status, update_time
-     FROM orders WHERE shop_id = ? AND is_final_status = 0`,
-    [shopId]
+     FROM orders WHERE tenant_id = ? AND shop_id = ? AND is_final_status = 0`,
+    [tenantId, shopId]
   );
   return rows;
 }
@@ -450,12 +451,12 @@ async function logSync(shopId, syncType, windowStart, windowEnd, fetched, update
  * @param {number} shopId
  * @returns {Date|null}
  */
-async function getLastSuccessfulBackfillEnd(shopId) {
+async function getLastSuccessfulBackfillEnd(shopId, { tenantId = CURRENT_TENANT_ID } = {}) {
   const [rows] = await db.query(
     `SELECT MAX(sync_window_end) as last_end
      FROM sync_logs
-     WHERE shop_id = ? AND sync_type = 'backfill' AND status = 'success'`,
-    [shopId]
+     WHERE tenant_id = ? AND shop_id = ? AND sync_type = 'backfill' AND status = 'success'`,
+    [tenantId, shopId]
   );
   return rows[0]?.last_end || null;
 }

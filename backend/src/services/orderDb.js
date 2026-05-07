@@ -237,13 +237,27 @@ async function batchInsertOrderItems(itemRows, { tenantId = CURRENT_TENANT_ID } 
     const productMap = new Map();
     if (skuList.length > 0) {
       const placeholders = skuList.map(() => '?').join(',');
+      const [marginChartProducts] = await conn.query(
+        `SELECT sku, cost_price, discounted_price_with_vat, vat
+         FROM margin_chart_items
+         WHERE tenant_id = ?
+           AND is_active = 1
+           AND sku IN (${placeholders})`,
+        [tenantId, ...skuList]
+      );
+
+      for (const product of marginChartProducts) {
+        productMap.set(product.sku, product);
+      }
+
       const [products] = await conn.query(
-          `SELECT sku, cost_price, discounted_price_with_vat, vat
-           FROM products
-           WHERE tenant_id = ?
-             AND sku IN (${placeholders})`,
-          [tenantId, ...skuList]
-        );
+        `SELECT sku, cost_price, discounted_price_with_vat, vat
+         FROM products
+         WHERE tenant_id = ?
+           AND sku IN (${placeholders})`,
+        [tenantId, ...skuList]
+      );
+
       for (const product of products) {
         productMap.set(product.sku, product);
       }

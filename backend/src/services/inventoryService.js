@@ -697,6 +697,42 @@ async function getInventoryProducts({ scope = 'low-stock', tenantId = CURRENT_TE
      ORDER BY p.stock_quantity ASC, p.sku ASC`,
     params
   );
+
+  if (scope === 'all') {
+    const existingSkus = new Set(rows.map(row => String(row.sku || '').trim()));
+
+    const [chartFallbackRows] = await db.query(
+      `SELECT
+          mci.sku,
+          mci.brand,
+          mci.product_name_kr,
+          mci.product_name_en,
+          mci.option_name,
+          0 AS stock_quantity,
+          0 AS low_stock_threshold,
+          NULL AS stock_tracking_started_at,
+          ROUND(COALESCE(mci.cost_price_with_vat, mci.cost_price * 1.1)) AS latest_unit_cost_vat
+       FROM margin_chart_items mci
+       WHERE mci.tenant_id = ?
+         AND mci.is_active = 1
+       ORDER BY mci.sku ASC`,
+      [tenantId]
+    );
+
+    for (const item of chartFallbackRows) {
+      const sku = String(item.sku || '').trim();
+      if (!sku || existingSkus.has(sku)) continue;
+      rows.push(item);
+      existingSkus.add(sku);
+    }
+
+    rows.sort((left, right) => {
+      const stockDiff = Number(left.stock_quantity || 0) - Number(right.stock_quantity || 0);
+      if (stockDiff !== 0) return stockDiff;
+      return String(left.sku || '').localeCompare(String(right.sku || ''));
+    });
+  }
+
   return rows;
 }
 

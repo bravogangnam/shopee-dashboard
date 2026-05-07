@@ -440,7 +440,7 @@ async function processInventoryForOrders(orderKeys, { tenantId = CURRENT_TENANT_
   }
 }
 
-async function manuallyAdjustStock({ sku, qty_delta, note }) {
+async function manuallyAdjustStock({ sku, qty_delta, note }, { tenantId = CURRENT_TENANT_ID } = {}) {
   const normalizedSku = normalizeSku(sku);
   const qtyDelta = Number(qty_delta);
   if (!normalizedSku) throw new Error('sku is required');
@@ -451,15 +451,16 @@ async function manuallyAdjustStock({ sku, qty_delta, note }) {
     await conn.beginTransaction();
     const [result] = await conn.query(
       `UPDATE products
-       SET stock_quantity = stock_quantity + ?
-       WHERE sku = ?`,
-      [Math.trunc(qtyDelta), normalizedSku]
+         SET stock_quantity = stock_quantity + ?
+         WHERE tenant_id = ? AND sku = ?`,
+        [Math.trunc(qtyDelta), tenantId, normalizedSku]
     );
     if (result.affectedRows === 0) {
       throw new Error(`Product not found: ${normalizedSku}`);
     }
 
     await insertMovement(conn, {
+      tenant_id: tenantId,
       sku: normalizedSku,
       movement_type: 'MANUAL_ADJUST',
       qty_delta: Math.trunc(qtyDelta),
@@ -493,27 +494,28 @@ function truncateNote(value) {
   return String(value).slice(0, 255);
 }
 
-async function getProductStockForUpdate(conn, sku) {
+async function getProductStockForUpdate(conn, sku, { tenantId = CURRENT_TENANT_ID } = {}) {
   const [rows] = await conn.query(
-    `SELECT sku, stock_quantity
+    `SELECT tenant_id, sku, stock_quantity
      FROM products
-     WHERE sku = ?
+     WHERE tenant_id = ? AND sku = ?
      LIMIT 1
      FOR UPDATE`,
-    [sku]
+    [tenantId, sku]
   );
   return rows[0] || null;
 }
 
-async function buildStartBalanceAllocationPlan(conn, sku, adjustQty) {
+async function buildStartBalanceAllocationPlan(conn, sku, adjustQty, { tenantId = CURRENT_TENANT_ID } = {}) {
   const [batches] = await conn.query(
-    `SELECT id, sku, remaining_qty, unit_cost, received_at
+    `SELECT tenant_id, id, sku, remaining_qty, unit_cost, received_at
      FROM inventory_batches
-     WHERE sku = ?
+     WHERE tenant_id = ?
+       AND sku = ?
        AND remaining_qty > 0
      ORDER BY received_at IS NULL, received_at ASC, id ASC
      FOR UPDATE`,
-    [sku]
+    [tenantId, sku]
   );
 
   let remainingToAdjust = adjustQty;
@@ -551,7 +553,7 @@ async function buildStartBalanceAllocationPlan(conn, sku, adjustQty) {
   return allocations;
 }
 
-async function adjustStartBalanceStock({ sku, target_stock_quantity, note }) {
+async function adjustStartBalanceStock({ sku, target_stock_quantity, note }, { tenantId = CURRENT_TENANT_ID } = {}) {
   const normalizedSku = normalizeSku(sku);
   if (!normalizedSku) throw new Error('sku is required');
 
@@ -561,7 +563,7 @@ async function adjustStartBalanceStock({ sku, target_stock_quantity, note }) {
   try {
     await conn.beginTransaction();
 
-    const product = await getProductStockForUpdate(conn, normalizedSku);
+    const product = await getProductStockForUpdate(conn, normalizedSku, { tenantId });
     if (!product) {
       throw new Error(`Product not found: ${normalizedSku}`);
     }
@@ -585,12 +587,13 @@ async function adjustStartBalanceStock({ sku, target_stock_quantity, note }) {
     }
 
     const adjustQty = previousStockQuantity - targetStockQuantity;
-    const allocations = await buildStartBalanceAllocationPlan(conn, normalizedSku, adjustQty);
+    const allocations = await buildStartBalanceAllocationPlan(conn, normalizedSku, adjustQty, { tenantId });
     const movementNote = truncateNote(
       `START_BALANCE_ADJUST; previous=${previousStockQuantity}; target=${targetStockQuantity}; adjusted=-${adjustQty}; note=${note || ''}`
     );
 
     const movementId = await insertMovement(conn, {
+      tenant_id: tenantId,
       sku: normalizedSku,
       movement_type: 'MANUAL_ADJUST',
       qty_delta: -adjustQty,
@@ -600,10 +603,11 @@ async function adjustStartBalanceStock({ sku, target_stock_quantity, note }) {
     for (const allocation of allocations) {
       const [batchUpdate] = await conn.query(
         `UPDATE inventory_batches
-         SET remaining_qty = remaining_qty - ?
-         WHERE id = ?
-           AND remaining_qty >= ?`,
-        [allocation.qty, allocation.batchId, allocation.qty]
+           SET remaining_qty = remaining_qty - ?
+           WHERE tenant_id = ?
+             AND id = ?
+             AND remaining_qty >= ?`,
+          [allocation.qty, tenantId, allocation.batchId, allocation.qty]
       );
       if (batchUpdate.affectedRows !== 1) {
         throw new Error(`FIFO batch update failed: batch_id=${allocation.batchId}`);
@@ -611,28 +615,29 @@ async function adjustStartBalanceStock({ sku, target_stock_quantity, note }) {
 
       await conn.query(
         `INSERT INTO inventory_allocations
-           (movement_id, batch_id, order_sn, shop_id, source_sku, sku,
-            qty, unit_cost, total_cost)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          movementId,
-          allocation.batchId,
-          null,
-          null,
-          normalizedSku,
-          normalizedSku,
-          allocation.qty,
-          allocation.unitCost,
-          allocation.totalCost,
-        ]
+             (tenant_id, movement_id, batch_id, order_sn, shop_id, source_sku, sku,
+              qty, unit_cost, total_cost)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            tenantId,
+            movementId,
+            allocation.batchId,
+            null,
+            null,
+            normalizedSku,
+            normalizedSku,
+            allocation.qty,
+            allocation.unitCost,
+            allocation.totalCost,
+          ]
       );
     }
 
     const [productUpdate] = await conn.query(
       `UPDATE products
-       SET stock_quantity = ?
-       WHERE sku = ?`,
-      [targetStockQuantity, normalizedSku]
+         SET stock_quantity = ?
+         WHERE tenant_id = ? AND sku = ?`,
+        [targetStockQuantity, tenantId, normalizedSku]
     );
     if (productUpdate.affectedRows !== 1) {
       throw new Error(`Product stock update failed: ${normalizedSku}`);
@@ -1051,7 +1056,7 @@ async function getTodayOrderInventory({ tenantId = CURRENT_TENANT_ID } = {}) {
   };
 }
 
-async function updateProductStockSettings(sku, data) {
+async function updateProductStockSettings(sku, data, { tenantId = CURRENT_TENANT_ID } = {}) {
   const normalizedSku = normalizeSku(sku);
   if (!normalizedSku) throw new Error('sku is required');
 
@@ -1072,11 +1077,11 @@ async function updateProductStockSettings(sku, data) {
 
   if (!updates.length) throw new Error('No stock fields provided');
 
-  params.push(normalizedSku);
+  params.push(tenantId, normalizedSku);
   const [result] = await db.query(
     `UPDATE products
      SET ${updates.join(', ')}, updated_at = NOW()
-     WHERE sku = ?`,
+     WHERE tenant_id = ? AND sku = ?`,
     params
   );
 

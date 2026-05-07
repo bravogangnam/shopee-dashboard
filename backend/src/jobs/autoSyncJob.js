@@ -14,8 +14,13 @@
  */
 
 const cron = require('node-cron');
-const { createJob }           = require('../services/jobManager');
-const { runSync }             = require('./syncWorker');
+const {
+  createJob,
+  getRunningJob,
+  markStaleJobsFailed,
+} = require('../services/jobManager');
+const { CURRENT_TENANT_ID }    = require('../config/tenant');
+const { runSync }              = require('./syncWorker');
 const {
   notifySyncFailed,
   notifyNewOrders,
@@ -43,11 +48,22 @@ async function runAutoSync() {
   console.log(`[AutoSync] ▶ 자동 동기화 시작  ${lastRunAt.toISOString()}`);
 
   try {
+    const tenantId = CURRENT_TENANT_ID;
+
+    // 서버 재시작/배포 직후에도 DB 기준 running sync가 있으면 새 sync 생성 방지
+    await markStaleJobsFailed({ tenantId });
+    const running = await getRunningJob('sync', { tenantId });
+    if (running) {
+      console.log(`[AutoSync] ⏭ DB상 sync 진행 중 — 스킵 jobId=${running.id}`);
+      lastResult = { success: true, skipped: true, running_job_id: running.id };
+      return;
+    }
+
     // jobManager를 통해 job 생성 (type: 'sync' — DB enum에 정의된 값 사용)
-    const jobId = await createJob('sync');
+    const jobId = await createJob('sync', { tenantId });
 
     // syncWorker 실행 → { new_orders, new_orders_by_region } 반환
-    const result = await runSync(jobId);
+    const result = await runSync(jobId, { tenantId });
 
       const newOrders   = result?.new_orders          || 0;
       const readyToShipNewOrders = result?.ready_to_ship_new_orders || 0;

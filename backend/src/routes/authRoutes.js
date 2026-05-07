@@ -22,7 +22,7 @@ const {
   autoRefreshToken,
 } = require('../services/shopeeAuth');
 const db = require('../config/database');
-const { CURRENT_TENANT_ID } = require('../config/tenant');
+const { CURRENT_TENANT_ID, getCurrentTenantId } = require('../config/tenant');
 require('dotenv').config();
 
 // ─── 비밀번호 로그인 ────────────────────────────────────────────
@@ -216,8 +216,9 @@ router.get('/shopee/callback', async (req, res) => {
 // ─── 토큰 수동 갱신 ──────────────────────────────────────────────
 router.post('/shopee/refresh', requireAuth, async (req, res) => {
   try {
-    const success = await autoRefreshToken({ tenantId: CURRENT_TENANT_ID });
-    const account = await getMainAccount({ tenantId: CURRENT_TENANT_ID });
+    const tenantId = getCurrentTenantId(req);
+    const success = await autoRefreshToken({ tenantId });
+    const account = await getMainAccount({ tenantId });
 
     return res.json({
       success: true,
@@ -232,7 +233,8 @@ router.post('/shopee/refresh', requireAuth, async (req, res) => {
 
 // ─── 토큰 상태 확인 ──────────────────────────────────────────────
 router.get('/status', requireAuth, async (req, res) => {
-  const account = await getMainAccount({ tenantId: CURRENT_TENANT_ID });
+  const tenantId = getCurrentTenantId(req);
+  const account = await getMainAccount({ tenantId });
 
   if (!account) {
     return res.json({

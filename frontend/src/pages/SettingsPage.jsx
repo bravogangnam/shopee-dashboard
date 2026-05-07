@@ -340,7 +340,7 @@ export default function SettingsPage() {
         <section className="settings-section member-shopee-guide">
           <h2>Shopee 연결</h2>
           <p>
-            승인된 회원은 이 화면에서 Shopee 계정을 연결합니다. Partner ID와 Partner Key는 플랫폼에서 관리합니다.
+            승인된 회원은 이 화면에서 Shopee 계정을 연결합니다. Partner ID와 Partner Key는 플랫폼에서 관리하고, Merchant ID와 환율은 계정별로 설정할 수 있습니다.
           </p>
           <ol>
             <li>Shopee 재인증 버튼을 누릅니다.</li>
@@ -380,7 +380,7 @@ export default function SettingsPage() {
               onChange={event => setAccount(current => ({ ...current, main_account_id: event.target.value }))}
             />
           </label>
-          <label className="settings-field platform-admin-only">
+          <label className="settings-field">
             <span>Merchant ID</span>
             <input
               value={account.merchant_id || ''}
@@ -399,11 +399,9 @@ export default function SettingsPage() {
           <button type="button" className="btn btn-purple" onClick={handleShopeeAuth}>
             Shopee 재인증
           </button>
-          <span className="platform-admin-only">
           <button type="button" className="btn btn-primary" onClick={handleSaveAccount} disabled={loading.account}>
             계정 저장
           </button>
-          </span>
         </div>
       </section>
 

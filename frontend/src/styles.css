@@ -2929,8 +2929,7 @@ label {
 /* Member Shopee settings UX */
 .member-settings .platform-admin-only,
 .member-settings .backfill-section,
-.member-settings .platform-admin-test-section,
-.member-settings .platform-admin-rates-section {
+.member-settings .platform-admin-test-section {
   display: none !important;
 }
 

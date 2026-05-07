@@ -16,6 +16,7 @@ import {
   updateShop,
 } from '../api/settings.js';
 import { formatDateTime } from '../utils/format.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 const DEFAULT_ACCOUNT = {
   partner_id: '',
@@ -49,6 +50,8 @@ function getJobPayload(result) {
 }
 
 export default function SettingsPage() {
+  const { user } = useAuth();
+  const isPlatformAdmin = user?.is_platform_admin === 1 || user?.is_platform_admin === true || user?.is_platform_admin === '1';
   const [account, setAccount] = useState(DEFAULT_ACCOUNT);
   const [tokenStatus, setTokenStatus] = useState(null);
   const [shops, setShops] = useState([]);
@@ -310,7 +313,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <section className="page settings-page">
+    <section className={`page settings-page ${isPlatformAdmin ? 'platform-admin-settings' : 'member-settings'}`}>
       <div className="page-header">
         <div>
           <h1>설정</h1>
@@ -333,17 +336,31 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {!isPlatformAdmin && (
+        <section className="settings-section member-shopee-guide">
+          <h2>Shopee 연결</h2>
+          <p>
+            승인된 회원은 이 화면에서 Shopee 계정을 연결합니다. Partner ID와 Partner Key는 플랫폼에서 관리합니다.
+          </p>
+          <ol>
+            <li>Shopee 재인증 버튼을 누릅니다.</li>
+            <li>Shopee 로그인 후 권한을 승인합니다.</li>
+            <li>연결된 샵 목록이 표시되면 연결 완료입니다.</li>
+          </ol>
+        </section>
+      )}
+
       <section className="settings-section">
         <h2>Shopee API 계정</h2>
         <div className="settings-grid">
-          <label className="settings-field">
+          <label className="settings-field platform-admin-only">
             <span>* Partner ID</span>
             <input
               value={account.partner_id || ''}
               onChange={event => setAccount(current => ({ ...current, partner_id: event.target.value }))}
             />
           </label>
-          <label className="settings-field">
+          <label className="settings-field platform-admin-only">
             <span>* Partner Key</span>
             <div className="password-field">
               <input
@@ -363,7 +380,7 @@ export default function SettingsPage() {
               onChange={event => setAccount(current => ({ ...current, main_account_id: event.target.value }))}
             />
           </label>
-          <label className="settings-field">
+          <label className="settings-field platform-admin-only">
             <span>Merchant ID</span>
             <input
               value={account.merchant_id || ''}
@@ -382,9 +399,11 @@ export default function SettingsPage() {
           <button type="button" className="btn btn-purple" onClick={handleShopeeAuth}>
             Shopee 재인증
           </button>
+          <span className="platform-admin-only">
           <button type="button" className="btn btn-primary" onClick={handleSaveAccount} disabled={loading.account}>
             계정 저장
           </button>
+          </span>
         </div>
       </section>
 
@@ -403,7 +422,7 @@ export default function SettingsPage() {
         )}
       </section>
 
-      <section className="settings-section">
+      <section className="settings-section platform-admin-test-section">
         <h2>Shopee API 연결 테스트</h2>
         <button type="button" className="btn btn-primary" onClick={handleConnectionTest} disabled={loading.connection}>
           {loading.connection ? '테스트 중...' : '연결 테스트'}
@@ -515,7 +534,7 @@ export default function SettingsPage() {
         </table>
       </section>
 
-      <section className="settings-section">
+      <section className="settings-section platform-admin-rates-section">
         <h2>환율 관리</h2>
         {rates.map(rate => (
           <div className="rate-row" key={rate.currency}>

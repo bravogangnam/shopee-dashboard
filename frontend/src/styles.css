@@ -2925,3 +2925,37 @@ label {
 .admin-actions button:disabled {
   color: #94a3b8;
 }
+
+/* Member Shopee settings UX */
+.member-settings .platform-admin-only,
+.member-settings .backfill-section,
+.member-settings .platform-admin-test-section,
+.member-settings .platform-admin-rates-section {
+  display: none !important;
+}
+
+.member-shopee-guide {
+  border-left: 4px solid #3b82f6;
+  background: #eff6ff;
+}
+
+.member-shopee-guide h2 {
+  margin-bottom: 8px;
+}
+
+.member-shopee-guide p {
+  color: #475569;
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+.member-shopee-guide ol {
+  margin: 0;
+  padding-left: 20px;
+  color: #334155;
+  line-height: 1.7;
+}
+
+.member-settings .settings-section:first-of-type {
+  margin-top: 0;
+}

@@ -2,6 +2,21 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { checkAuth, login as loginRequest, logout as logoutRequest } from '../api/auth.js';
 import { clearStoredToken, getStoredToken, storeToken } from '../api/client.js';
 
+function buildAuthUser(payload = {}) {
+  const source = payload.user && typeof payload.user === 'object'
+    ? payload.user
+    : {};
+
+  return {
+    ...source,
+    authenticated: payload.authenticated ?? true,
+    tenant_id: payload.tenant_id ?? source.tenant_id ?? source.tenantId ?? null,
+    approval_status: payload.approval_status ?? source.approval_status ?? null,
+    tenant_is_active: payload.tenant_is_active ?? source.tenant_is_active ?? null,
+    is_platform_admin: payload.is_platform_admin ?? source.is_platform_admin ?? 0,
+  };
+}
+
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
@@ -44,7 +59,7 @@ export function AuthProvider({ children }) {
     const result = await loginRequest(password);
     storeToken(result.token);
     setToken(result.token);
-    setUser({ authenticated: true });
+    setUser(buildAuthUser(result));
     return result;
   }
 

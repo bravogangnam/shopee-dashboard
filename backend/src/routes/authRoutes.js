@@ -19,8 +19,10 @@ const {
   saveToken,
   saveShopToken,
   refreshAllShopTokens,
+  autoRefreshToken,
 } = require('../services/shopeeAuth');
 const db = require('../config/database');
+const { CURRENT_TENANT_ID } = require('../config/tenant');
 require('dotenv').config();
 
 // ─── 비밀번호 로그인 ────────────────────────────────────────────
@@ -128,7 +130,7 @@ router.get('/shopee/callback', async (req, res) => {
 
     // ── main_account 토큰 저장 ──────────────────────────────────
     const callbackShopId = useShopId;
-    await saveToken(result, callbackShopId);
+    await saveToken(result, callbackShopId, { tenantId: CURRENT_TENANT_ID });
     console.log(`✅ Shopee OAuth completed, main_account token saved. auth_shop_id=${callbackShopId || 'none'}`);
 
     // ── 응답의 shop_id_list → shops 테이블에 동일 토큰 저장 ─────
@@ -142,7 +144,7 @@ router.get('/shopee/callback', async (req, res) => {
     const savedShopIds = [];
     for (const sid of shopIdList) {
       try {
-        const saved = await saveShopToken(sid, result);
+        const saved = await saveShopToken(sid, result, { tenantId: CURRENT_TENANT_ID });
         if (saved) savedShopIds.push(sid);
       } catch (e) {
         console.error(`[OAuth] shops 저장 실패 (shop_id=${sid}):`, e.message);
@@ -152,7 +154,8 @@ router.get('/shopee/callback', async (req, res) => {
 
     // 나머지 미인증 shop 확인
     const [allShops] = await db.query(
-      'SELECT shop_id, region, alias, token_status FROM shops WHERE is_active=1 ORDER BY id'
+      'SELECT shop_id, region, alias, token_status FROM shops WHERE tenant_id = ? AND is_active=1 ORDER BY id',
+      [CURRENT_TENANT_ID]
     );
     const pendingShops = allShops.filter(s => s.token_status !== 'active');
     const allAuthed    = pendingShops.length === 0;
@@ -213,8 +216,8 @@ router.get('/shopee/callback', async (req, res) => {
 // ─── 토큰 수동 갱신 ──────────────────────────────────────────────
 router.post('/shopee/refresh', requireAuth, async (req, res) => {
   try {
-    const success = await autoRefreshToken();
-    const account = await getMainAccount();
+    const success = await autoRefreshToken({ tenantId: CURRENT_TENANT_ID });
+    const account = await getMainAccount({ tenantId: CURRENT_TENANT_ID });
 
     return res.json({
       success: true,
@@ -229,7 +232,7 @@ router.post('/shopee/refresh', requireAuth, async (req, res) => {
 
 // ─── 토큰 상태 확인 ──────────────────────────────────────────────
 router.get('/status', requireAuth, async (req, res) => {
-  const account = await getMainAccount();
+  const account = await getMainAccount({ tenantId: CURRENT_TENANT_ID });
 
   if (!account) {
     return res.json({

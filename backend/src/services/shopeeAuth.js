@@ -8,6 +8,7 @@
 const { buildUrl, getAuthUrl, PARTNER_ID } = require('../utils/shopeeSignature');
 const { callWithRetry, shopeeAxios } = require('../utils/apiWrapper');
 const db = require('../config/database');
+const { CURRENT_TENANT_ID } = require('../config/tenant');
 require('dotenv').config();
 
 const REDIRECT_URL = process.env.SHOPEE_REDIRECT_URL || 'http://localhost:4000/api/auth/shopee/callback';
@@ -85,9 +86,10 @@ async function refreshAccessToken(refreshToken, shopId = null, merchantId = null
 /**
  * DB에서 main_account 토큰 정보 가져오기
  */
-async function getMainAccount() {
+async function getMainAccount({ tenantId = CURRENT_TENANT_ID } = {}) {
   const [rows] = await db.query(
-    'SELECT * FROM main_account ORDER BY id DESC LIMIT 1'
+    'SELECT * FROM main_account WHERE tenant_id = ? ORDER BY id DESC LIMIT 1',
+    [tenantId]
   );
   return rows[0] || null;
 }
@@ -97,7 +99,7 @@ async function getMainAccount() {
  * @param {object} tokenData  - Shopee API 응답 (access_token, refresh_token, expire_in, ...)
  * @param {number|null} authShopId - OAuth callback에서 받은 shop_id (없으면 null)
  */
-async function saveToken(tokenData, authShopId = null) {
+async function saveToken(tokenData, authShopId = null, { tenantId = CURRENT_TENANT_ID } = {}) {
   const {
     access_token,
     refresh_token,
@@ -113,7 +115,7 @@ async function saveToken(tokenData, authShopId = null) {
     : 30;
   const refreshExpiresAt = new Date(now.getTime() + refreshExpireDays * 86400 * 1000);
 
-  const [existing] = await db.query('SELECT id FROM main_account LIMIT 1');
+  const [existing] = await db.query('SELECT id FROM main_account WHERE tenant_id = ? LIMIT 1', [tenantId]);
 
   if (existing.length > 0) {
     if (authShopId) {
@@ -127,8 +129,8 @@ async function saveToken(tokenData, authShopId = null) {
           auth_shop_id = ?,
           token_status = 'active',
           updated_at = NOW()
-         WHERE id = ?`,
-        [access_token, refresh_token, tokenExpiresAt, refreshExpiresAt, authShopId, existing[0].id]
+         WHERE tenant_id = ? AND id = ?`,
+        [access_token, refresh_token, tokenExpiresAt, refreshExpiresAt, authShopId, tenantId, existing[0].id]
       );
       console.log(`✅ Token saved (auth_shop_id=${authShopId}). Expires: ${tokenExpiresAt.toISOString()}`);
     } else {
@@ -141,17 +143,17 @@ async function saveToken(tokenData, authShopId = null) {
           refresh_expires_at = ?,
           token_status = 'active',
           updated_at = NOW()
-         WHERE id = ?`,
-        [access_token, refresh_token, tokenExpiresAt, refreshExpiresAt, existing[0].id]
+         WHERE tenant_id = ? AND id = ?`,
+        [access_token, refresh_token, tokenExpiresAt, refreshExpiresAt, tenantId, existing[0].id]
       );
       console.log(`✅ Token saved. Expires: ${tokenExpiresAt.toISOString()}`);
     }
   } else {
     await db.query(
       `INSERT INTO main_account
-        (partner_id, partner_key, main_account_id, merchant_id, auth_shop_id, access_token, refresh_token, token_expires_at, refresh_expires_at, token_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
-      [PARTNER_ID, PARTNER_KEY, MAIN_ACCOUNT_ID, MERCHANT_ID, authShopId || null, access_token, refresh_token, tokenExpiresAt, refreshExpiresAt]
+        (tenant_id, partner_id, partner_key, main_account_id, merchant_id, auth_shop_id, access_token, refresh_token, token_expires_at, refresh_expires_at, token_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+      [tenantId, PARTNER_ID, PARTNER_KEY, MAIN_ACCOUNT_ID, MERCHANT_ID, authShopId || null, access_token, refresh_token, tokenExpiresAt, refreshExpiresAt]
     );
     console.log(`✅ Token saved (new row, auth_shop_id=${authShopId}). Expires: ${tokenExpiresAt.toISOString()}`);
   }
@@ -178,8 +180,8 @@ function isExpiringSoon(expiresAt, thresholdSeconds) {
  * - refresh_token도 만료 → token_status = 'expired', false 반환
  * @returns {Promise<boolean>}
  */
-async function forceRefreshToken() {
-  const account = await getMainAccount();
+async function forceRefreshToken({ tenantId = CURRENT_TENANT_ID } = {}) {
+  const account = await getMainAccount({ tenantId });
   if (!account) {
     console.error('[TokenRefresh] forceRefresh: No main account found.');
     return false;
@@ -191,8 +193,8 @@ async function forceRefreshToken() {
   if (isExpiringSoon(account.refresh_expires_at, REFRESH_THRESHOLD)) {
     console.error('[TokenRefresh] ⚠️ forceRefresh: Refresh token expired or expiring soon. Re-authentication required.');
     await db.query(
-      "UPDATE main_account SET token_status = 'expired' WHERE id = ?",
-      [account.id]
+      "UPDATE main_account SET token_status = 'expired' WHERE tenant_id = ? AND id = ?",
+      [tenantId, account.id]
     );
     return false;
   }
@@ -206,7 +208,7 @@ async function forceRefreshToken() {
   // 따라서: shop_id 우선 시도 → merchant_id fallback
 
   // DB에서 활성 shop_id 목록 조회
-  const [shopRows] = await db.query('SELECT shop_id FROM shops WHERE is_active = 1 ORDER BY shop_id LIMIT 3');
+  const [shopRows] = await db.query('SELECT shop_id FROM shops WHERE tenant_id = ? AND is_active = 1 ORDER BY shop_id LIMIT 3', [tenantId]);
   const activeShopIds = shopRows.map(r => r.shop_id);
 
   const merchantId = account.merchant_id || null;
@@ -253,7 +255,7 @@ async function forceRefreshToken() {
 
       if (isRefreshTokenDead) {
         console.error('[TokenRefresh] ❌ Refresh token is dead. Marking as expired.');
-        await db.query("UPDATE main_account SET token_status = 'expired' WHERE id = ?", [account.id]);
+        await db.query("UPDATE main_account SET token_status = 'expired' WHERE tenant_id = ? AND id = ?", [tenantId, account.id]);
         return false;
       }
       // 그 외 에러(error_param, merchant_no_linked 등)는 다음 candidate 시도
@@ -268,8 +270,8 @@ async function forceRefreshToken() {
  * 토큰 자동 갱신 (3회 재시도, 5분 간격)
  * - 만료 30분 전부터 무조건 갱신 (기존 1시간 → 30분으로 단축)
  */
-async function autoRefreshToken() {
-  const account = await getMainAccount();
+async function autoRefreshToken({ tenantId = CURRENT_TENANT_ID } = {}) {
+  const account = await getMainAccount({ tenantId });
   if (!account) {
     console.log('[TokenRefresh] No main account found, skipping...');
     return false;
@@ -282,8 +284,8 @@ async function autoRefreshToken() {
   if (isExpiringSoon(account.refresh_expires_at, REFRESH_THRESHOLD)) {
     console.warn('[TokenRefresh] ⚠️ Refresh token expiring within 5 days! Re-authentication required.');
     await db.query(
-      "UPDATE main_account SET token_status = 'expired' WHERE id = ?",
-      [account.id]
+      "UPDATE main_account SET token_status = 'expired' WHERE tenant_id = ? AND id = ?",
+      [tenantId, account.id]
     );
     return false;
   }
@@ -295,7 +297,7 @@ async function autoRefreshToken() {
 
     // ── shop_id 우선 시도, merchant_id fallback ─────────────────
     // Shopee access_token/get: shop_id 전달 시 shop-level 토큰 반환
-    const [shopRows] = await db.query('SELECT shop_id FROM shops WHERE is_active = 1 ORDER BY shop_id LIMIT 3');
+    const [shopRows] = await db.query('SELECT shop_id FROM shops WHERE tenant_id = ? AND is_active = 1 ORDER BY shop_id LIMIT 3', [tenantId]);
     const activeShopIds = shopRows.map(r => r.shop_id);
     const merchantId = account.merchant_id || null;
 
@@ -338,7 +340,7 @@ async function autoRefreshToken() {
            (shopeeMsg.toLowerCase().includes('expired') || shopeeMsg.toLowerCase().includes('invalid')));
 
         if (isRefreshTokenDead) {
-          await db.query("UPDATE main_account SET token_status = 'expired' WHERE id = ?", [account.id]);
+          await db.query("UPDATE main_account SET token_status = 'expired' WHERE tenant_id = ? AND id = ?", [tenantId, account.id]);
           console.error('❌ [TokenRefresh] Refresh token dead. Token marked as expired.');
           return false;
         }
@@ -347,7 +349,7 @@ async function autoRefreshToken() {
     }
 
     // 모든 candidate 실패
-    await db.query("UPDATE main_account SET token_status = 'expired' WHERE id = ?", [account.id]);
+    await db.query("UPDATE main_account SET token_status = 'expired' WHERE tenant_id = ? AND id = ?", [tenantId, account.id]);
     console.error('❌ [TokenRefresh] All candidates failed. Token marked as expired.');
     return false;
   }
@@ -368,10 +370,10 @@ async function autoRefreshToken() {
  * @param {number} shopId
  * @returns {string|null}
  */
-async function getShopToken(shopId) {
+async function getShopToken(shopId, { tenantId = CURRENT_TENANT_ID } = {}) {
   const [rows] = await db.query(
-    'SELECT access_token, token_expires_at, token_status FROM shops WHERE shop_id = ?',
-    [shopId]
+    'SELECT access_token, token_expires_at, token_status FROM shops WHERE tenant_id = ? AND shop_id = ?',
+    [tenantId, shopId]
   );
   if (!rows[0]) return null;
   return rows[0].access_token || null;
@@ -382,7 +384,7 @@ async function getShopToken(shopId) {
  * @param {number} shopId
  * @param {object} tokenData  - { access_token, refresh_token, expire_in }
  */
-async function saveShopToken(shopId, tokenData) {
+async function saveShopToken(shopId, tokenData, { tenantId = CURRENT_TENANT_ID } = {}) {
   const { access_token, refresh_token, expire_in } = tokenData;
   const tokenExpiresAt = new Date(Date.now() + (expire_in || 14400) * 1000);
 
@@ -393,8 +395,8 @@ async function saveShopToken(shopId, tokenData) {
        token_expires_at = ?,
        token_status     = 'active',
        updated_at       = NOW()
-     WHERE shop_id = ?`,
-    [access_token, refresh_token || null, tokenExpiresAt, shopId]
+     WHERE tenant_id = ? AND shop_id = ?`,
+    [access_token, refresh_token || null, tokenExpiresAt, tenantId, shopId]
   );
 
   if (result.affectedRows === 0) {
@@ -414,8 +416,8 @@ async function saveShopToken(shopId, tokenData) {
  * @param {number} shopId
  * @returns {Promise<boolean>}
  */
-async function refreshShopToken(shopId) {
-  const account = await getMainAccount();
+async function refreshShopToken(shopId, { tenantId = CURRENT_TENANT_ID } = {}) {
+  const account = await getMainAccount({ tenantId });
   if (!account) {
     console.error(`[ShopToken] refreshShopToken(${shopId}): main_account 없음`);
     return false;
@@ -423,8 +425,8 @@ async function refreshShopToken(shopId) {
 
   // shops 테이블에서 해당 shop의 refresh_token 조회
   const [shopRows] = await db.query(
-    'SELECT refresh_token, token_status FROM shops WHERE shop_id = ?',
-    [shopId]
+    'SELECT refresh_token, token_status FROM shops WHERE tenant_id = ? AND shop_id = ?',
+    [tenantId, shopId]
   );
   const shopRow = shopRows[0];
   const shopRefreshToken = shopRow?.refresh_token || null;
@@ -465,7 +467,7 @@ async function refreshShopToken(shopId) {
     );
 
     if (result?.access_token) {
-      await saveShopToken(shopId, result);
+      await saveShopToken(shopId, result, { tenantId });
       console.log(`✅ [ShopToken] shop_id=${shopId} 갱신 성공 (${refreshSource})`);
       return true;
     }
@@ -489,8 +491,8 @@ async function refreshShopToken(shopId) {
       console.error(`❌ [ShopToken] Refresh token dead for shop_id=${shopId}. 해당 shop 재인증 필요.`);
       // shop 상태만 none으로 변경 (main_account 전체는 건드리지 않음)
       await db.query(
-        "UPDATE shops SET token_status = 'none' WHERE shop_id = ?",
-        [shopId]
+        "UPDATE shops SET token_status = 'none' WHERE tenant_id = ? AND shop_id = ?",
+        [tenantId, shopId]
       );
     }
     return false;
@@ -502,15 +504,16 @@ async function refreshShopToken(shopId) {
  * - tokenRefreshJob에서 3시간마다 호출
  * @returns {Promise<{success: number, fail: number}>}
  */
-async function refreshAllShopTokens() {
+async function refreshAllShopTokens({ tenantId = CURRENT_TENANT_ID } = {}) {
   const [shops] = await db.query(
-    'SELECT shop_id, region FROM shops WHERE is_active = 1 ORDER BY id ASC'
+    'SELECT shop_id, region FROM shops WHERE tenant_id = ? AND is_active = 1 ORDER BY id ASC',
+    [tenantId]
   );
   let success = 0, fail = 0;
 
   for (const shop of shops) {
     console.log(`[ShopToken] 갱신 시도: shop_id=${shop.shop_id} (${shop.region})`);
-    const ok = await refreshShopToken(shop.shop_id);
+    const ok = await refreshShopToken(shop.shop_id, { tenantId });
     if (ok) success++;
     else     fail++;
     // Shopee rate-limit 방지 — shop 간 0.5초 간격
@@ -527,10 +530,10 @@ async function refreshAllShopTokens() {
  * @param {number} shopId
  * @returns {Promise<string|null>}
  */
-async function getOrRefreshShopToken(shopId) {
+async function getOrRefreshShopToken(shopId, { tenantId = CURRENT_TENANT_ID } = {}) {
   const [rows] = await db.query(
-    'SELECT access_token, token_expires_at, token_status FROM shops WHERE shop_id = ?',
-    [shopId]
+    'SELECT access_token, token_expires_at, token_status FROM shops WHERE tenant_id = ? AND shop_id = ?',
+    [tenantId, shopId]
   );
   const shop = rows[0];
 
@@ -538,10 +541,10 @@ async function getOrRefreshShopToken(shopId) {
   if (!shop?.access_token || shop.token_status !== 'active' ||
       isExpiringSoon(shop.token_expires_at, 5 * 60)) {
     console.log(`[ShopToken] shop_id=${shopId} 토큰 없음/만료 임박 — 갱신 중...`);
-    const ok = await refreshShopToken(shopId);
+    const ok = await refreshShopToken(shopId, { tenantId });
     if (!ok) return null;
     // 갱신 후 재조회
-    const [fresh] = await db.query('SELECT access_token FROM shops WHERE shop_id = ?', [shopId]);
+    const [fresh] = await db.query('SELECT access_token FROM shops WHERE tenant_id = ? AND shop_id = ?', [tenantId, shopId]);
     return fresh[0]?.access_token || null;
   }
 

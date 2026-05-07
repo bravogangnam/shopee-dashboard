@@ -7,6 +7,7 @@
  */
 
 const db = require('../config/database');
+const { CURRENT_TENANT_ID } = require('../config/tenant');
 const { getOrRefreshShopToken } = require('../services/shopeeAuth');
 const {
   getOrderList,
@@ -121,11 +122,12 @@ async function processWindow(shop, window, accessToken) {
  * 백필 메인 실행 함수
  * @param {string} jobId
  */
-async function runBackfill(jobId) {
+async function runBackfill(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
   try {
     // 활성 샵 목록
     const [shops] = await db.query(
-      'SELECT shop_id, alias, region FROM shops WHERE is_active = 1 ORDER BY id ASC'
+      'SELECT shop_id, alias, region FROM shops WHERE tenant_id = ? AND is_active = 1 ORDER BY id ASC',
+      [tenantId]
     );
     if (!shops.length) {
       await failJob(jobId, '활성화된 샵이 없습니다');

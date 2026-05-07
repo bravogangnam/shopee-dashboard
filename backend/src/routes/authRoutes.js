@@ -36,6 +36,49 @@ function setAuthCookie(res, token) {
   });
 }
 
+
+function normalizeRegisterPayload(body = {}) {
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+  const requestedMainAccountIdRaw = body.requested_main_account_id ?? body.requestedMainAccountId;
+  const requestedMainAccountIdText = String(requestedMainAccountIdRaw ?? '').trim();
+  const phone = typeof body.phone === 'string' ? body.phone.trim() : null;
+
+  return { email, password, requestedMainAccountIdText, phone };
+}
+
+function validateRegisterPayload(payload) {
+  const errors = [];
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  if (!payload.email) {
+    errors.push('email is required');
+  } else if (!emailRegex.test(payload.email)) {
+    errors.push('email format is invalid');
+  }
+
+  if (!payload.password) {
+    errors.push('password is required');
+  } else if (payload.password.length < 8) {
+    errors.push('password must be at least 8 characters');
+  }
+
+  if (!payload.requestedMainAccountIdText) {
+    errors.push('requested_main_account_id is required');
+  } else if (!/^\d+$/.test(payload.requestedMainAccountIdText)) {
+    errors.push('requested_main_account_id must be numeric');
+  } else if (Number.parseInt(payload.requestedMainAccountIdText, 10) <= 0) {
+    errors.push('requested_main_account_id must be greater than 0');
+  }
+
+  if (payload.phone && payload.phone.length > 50) {
+    errors.push('phone must be 50 characters or fewer');
+  }
+
+  return errors;
+}
+
+
 // ─── 로그인 ─────────────────────────────────────────────────────
 // 기존 APP_PASSWORD 로그인은 그대로 유지.
 // email이 같이 오면 users/tenant_users 기반 로그인도 지원.
@@ -128,6 +171,174 @@ router.post('/login', async (req, res) => {
     token,
   });
 });
+
+
+router.post('/register', async (req, res) => {
+  const payload = normalizeRegisterPayload(req.body || {});
+  const errors = validateRegisterPayload(payload);
+
+  if (errors.length > 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'Validation failed',
+      details: errors,
+    });
+  }
+
+  const requestedMainAccountId = Number.parseInt(payload.requestedMainAccountIdText, 10);
+  const tenantCode = `MAIN_${requestedMainAccountId}`;
+  const tenantName = `Main Account ${requestedMainAccountId}`;
+  const displayName = payload.email.includes('@') ? payload.email.split('@')[0] : payload.email;
+  const tenantIdLockName = 'shopee_dashboard:tenant_id_sequence';
+
+  const conn = await db.getConnection();
+  let lockAcquired = false;
+
+  try {
+    const [lockRows] = await conn.query('SELECT GET_LOCK(?, 10) AS gotLock', [tenantIdLockName]);
+    if (Number(lockRows[0]?.gotLock) !== 1) {
+      return res.status(503).json({
+        success: false,
+        error: 'Registration is temporarily busy. Please try again.',
+      });
+    }
+    lockAcquired = true;
+
+    await conn.beginTransaction();
+
+    const [dupUsers] = await conn.query(
+      'SELECT id FROM users WHERE email = ? LIMIT 1',
+      [payload.email]
+    );
+
+    if (dupUsers.length > 0) {
+      await conn.rollback();
+      return res.status(409).json({
+        success: false,
+        error: 'Email already exists',
+      });
+    }
+
+    const [dupTenantCode] = await conn.query(
+      'SELECT id FROM tenants WHERE code = ? LIMIT 1',
+      [tenantCode]
+    );
+
+    if (dupTenantCode.length > 0) {
+      await conn.rollback();
+      return res.status(409).json({
+        success: false,
+        error: 'Main account request already exists',
+      });
+    }
+
+    const [dupMainAccount] = await conn.query(
+      'SELECT id FROM tenants WHERE requested_main_account_id = ? LIMIT 1',
+      [requestedMainAccountId]
+    );
+
+    if (dupMainAccount.length > 0) {
+      await conn.rollback();
+      return res.status(409).json({
+        success: false,
+        error: 'Main account request already exists',
+      });
+    }
+
+    const [lastTenantRows] = await conn.query(
+      'SELECT id FROM tenants ORDER BY id DESC LIMIT 1 FOR UPDATE'
+    );
+    const tenantId = Number(lastTenantRows[0]?.id || 0) + 1;
+
+    await conn.query(
+      `INSERT INTO tenants
+        (
+          id,
+          code,
+          name,
+          requested_main_account_id,
+          approval_status,
+          is_active,
+          approved_at,
+          approved_by_user_id,
+          rejected_at,
+          rejection_reason
+        )
+       VALUES (?, ?, ?, ?, 'pending', 0, NULL, NULL, NULL, NULL)`,
+      [tenantId, tenantCode, tenantName, requestedMainAccountId]
+    );
+
+    const passwordHash = await bcrypt.hash(payload.password, 12);
+
+    const [userResult] = await conn.query(
+      `INSERT INTO users
+        (
+          email,
+          password_hash,
+          display_name,
+          phone,
+          is_active,
+          is_platform_admin,
+          last_login_at
+        )
+       VALUES (?, ?, ?, ?, 1, 0, NULL)`,
+      [payload.email, passwordHash, displayName || payload.email, payload.phone || null]
+    );
+
+    const userId = userResult.insertId;
+
+    await conn.query(
+      `INSERT INTO tenant_users
+        (tenant_id, user_id, role, is_active)
+       VALUES (?, ?, 'owner', 1)`,
+      [tenantId, userId]
+    );
+
+    await conn.commit();
+
+    return res.status(201).json({
+      success: true,
+      message: 'Registration submitted. Admin approval is required.',
+      tenant: {
+        id: tenantId,
+        code: tenantCode,
+        name: tenantName,
+        requested_main_account_id: requestedMainAccountId,
+        approval_status: 'pending',
+        is_active: 0,
+      },
+      user: {
+        id: userId,
+        email: payload.email,
+        display_name: displayName || payload.email,
+        phone: payload.phone || null,
+        is_platform_admin: 0,
+      },
+    });
+  } catch (err) {
+    try {
+      await conn.rollback();
+    } catch (_) {}
+
+    console.error('[Auth] register failed:', err.message);
+
+    return res.status(500).json({
+      success: false,
+      error: 'Registration failed',
+    });
+  } finally {
+    if (lockAcquired) {
+      try {
+        await conn.query('SELECT RELEASE_LOCK(?)', [tenantIdLockName]);
+      } catch (err) {
+        console.error('[Auth] register lock release failed:', err.message);
+      }
+    }
+
+    conn.release();
+  }
+});
+
 
 // ─── 로그아웃 ────────────────────────────────────────────────────
 router.post('/logout', (req, res) => {

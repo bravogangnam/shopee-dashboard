@@ -2790,3 +2790,47 @@ label {
   color: #64748b;
   padding: 24px;
 }
+
+/* Sidebar logout */
+.sidebar-footer {
+  margin-top: auto;
+  padding: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.sidebar-logout-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 12px;
+  padding: 11px 12px;
+  background: rgba(239, 68, 68, 0.08);
+  color: #b91c1c;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sidebar-logout-button:hover {
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.sidebar-logout-button .logout-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.sidebar.collapsed .sidebar-footer {
+  padding: 10px 8px;
+}
+
+.sidebar.collapsed .sidebar-logout-button {
+  justify-content: center;
+  padding: 10px;
+}
+
+.sidebar.collapsed .sidebar-logout-text {
+  display: none;
+}

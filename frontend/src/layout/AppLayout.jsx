@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 
 function ListIcon() {
@@ -63,10 +63,19 @@ const navItems = [
 ];
 
 export default function AppLayout() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const isPlatformAdmin = user?.is_platform_admin === 1 || user?.is_platform_admin === true || user?.is_platform_admin === '1';
   const [collapsed, setCollapsed] = useState(false);
   const visibleNavItems = navItems.filter((item) => !item.adminOnly || isPlatformAdmin);
+
+  async function handleLogout() {
+    try {
+      await logout();
+    } finally {
+      navigate('/login', { replace: true });
+    }
+  }
 
   return (
     <div className={`app-shell ${collapsed ? 'sidebar-collapsed' : ''}`}>
@@ -98,6 +107,18 @@ export default function AppLayout() {
             </NavLink>
           ))}
         </nav>
+
+        <div className="sidebar-footer">
+          <button
+            type="button"
+            className="sidebar-logout-button"
+            onClick={handleLogout}
+            title="로그아웃"
+          >
+            <span className="nav-icon logout-icon" aria-hidden="true">⎋</span>
+            <span className="nav-text sidebar-logout-text">로그아웃</span>
+          </button>
+        </div>
       </aside>
       <main className={`main content main-content ${collapsed ? 'collapsed' : ''}`}>
         <Outlet />

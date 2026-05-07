@@ -25,7 +25,7 @@ function generateToken({ tenantId = CURRENT_TENANT_ID, userId = null, role = 'ow
       createdAt: new Date().toISOString(),
     },
     JWT_SECRET,
-    { expiresIn: '7d' }
+    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
   );
 }
 
@@ -33,12 +33,27 @@ function generateToken({ tenantId = CURRENT_TENANT_ID, userId = null, role = 'ow
  * 인증 미들웨어 - 쿠키 우선, 헤더 폴백
  */
 function requireAuth(req, res, next) {
-  const token =
-    req.cookies?.auth_token ||
-    req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  let token = null;
+
+  // 1. 쿠키에서 토큰 추출
+  if (req.cookies && req.cookies.auth_token) {
+    token = req.cookies.auth_token;
+  }
+
+  // 2. Authorization 헤더에서 추출 (Bearer 토큰)
+  if (!token && req.headers.authorization) {
+    const parts = req.headers.authorization.split(' ');
+    if (parts.length === 2 && parts[0] === 'Bearer') {
+      token = parts[1];
+    }
+  }
 
   if (!token) {
-    return res.status(401).json({ success: false, error: 'Authentication required' });
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required',
+      code: 'NO_TOKEN',
+    });
   }
 
   try {
@@ -58,7 +73,19 @@ function requireAuth(req, res, next) {
 
     return next();
   } catch (err) {
-    return res.status(401).json({ success: false, error: 'Invalid or expired token' });
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        error: 'Token expired',
+        code: 'TOKEN_EXPIRED',
+      });
+    }
+
+    return res.status(401).json({
+      success: false,
+      error: 'Invalid token',
+      code: 'INVALID_TOKEN',
+    });
   }
 }
 

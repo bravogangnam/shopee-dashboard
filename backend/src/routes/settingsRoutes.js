@@ -13,6 +13,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const db = require('../config/database');
+const { CURRENT_TENANT_ID } = require('../config/tenant');
 require('dotenv').config();
 
 // 모든 설정 라우트에 인증 적용
@@ -62,8 +63,10 @@ router.put('/account', async (req, res) => {
 
 // ─── 샵 목록 조회 ───────────────────────────────────────────────
 router.get('/shops', async (req, res) => {
+  const tenantId = CURRENT_TENANT_ID;
   const [rows] = await db.query(
-    'SELECT * FROM shops ORDER BY is_active DESC, id ASC'
+    'SELECT * FROM shops WHERE tenant_id = ? ORDER BY is_active DESC, id ASC',
+    [tenantId]
   );
   return res.json({ success: true, data: rows });
 });
@@ -73,14 +76,18 @@ router.put('/shops/:shopId', async (req, res) => {
   const { shopId } = req.params;
   const { alias, region, is_active } = req.body;
 
-  const [existing] = await db.query('SELECT id FROM shops WHERE shop_id = ?', [shopId]);
+  const tenantId = CURRENT_TENANT_ID;
+  const [existing] = await db.query(
+    'SELECT id, is_active FROM shops WHERE tenant_id = ? AND shop_id = ?',
+    [tenantId, shopId]
+  );
   if (!existing.length) {
     return res.status(404).json({ success: false, error: 'Shop not found' });
   }
 
   await db.query(
-    'UPDATE shops SET alias = ?, region = ?, is_active = ?, updated_at = NOW() WHERE shop_id = ?',
-    [alias || null, region || null, is_active !== undefined ? (is_active ? 1 : 0) : existing[0].is_active, shopId]
+    'UPDATE shops SET alias = ?, region = ?, is_active = ?, updated_at = NOW() WHERE tenant_id = ? AND shop_id = ?',
+    [alias || null, region || null, is_active !== undefined ? (is_active ? 1 : 0) : existing[0].is_active, tenantId, shopId]
   );
 
   return res.json({ success: true, message: 'Shop updated' });

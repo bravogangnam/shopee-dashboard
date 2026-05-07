@@ -19,6 +19,7 @@ const {
 const { runBackfill } = require('../jobs/backfillWorker');
 const { runSync } = require('../jobs/syncWorker');
 const db = require('../config/database');
+const { CURRENT_TENANT_ID } = require('../config/tenant');
 
 router.use(requireAuth);
 
@@ -115,22 +116,29 @@ router.get('/:id/status', async (req, res) => {
 // ─── 진행 중인 Job 목록 ────────────────────────────────────────
 // 조회 전 5분 초과 job을 먼저 failed 처리 → 폴러가 즉시 완료 감지
 router.get('/active', async (req, res) => {
-  await markStaleJobsFailed();
+  const tenantId = CURRENT_TENANT_ID;
+  await markStaleJobsFailed({ tenantId });
   const [rows] = await db.query(
-    `SELECT id, job_type, status, progress_total, progress_current, progress_message, created_at, updated_at
-     FROM jobs WHERE status IN ('pending','running')
-     ORDER BY created_at DESC`
+    `SELECT id, tenant_id, job_type, status, progress_total, progress_current, progress_message, created_at, updated_at
+     FROM jobs
+     WHERE tenant_id = ?
+       AND status IN ('pending','running')
+     ORDER BY created_at DESC`,
+    [tenantId]
   );
   return res.json({ success: true, jobs: rows });
 });
 
 // ─── 최근 완료 Job 목록 ────────────────────────────────────────
 router.get('/recent', async (req, res) => {
+  const tenantId = CURRENT_TENANT_ID;
   const [rows] = await db.query(
-    `SELECT id, job_type, status, progress_total, progress_current,
+    `SELECT id, tenant_id, job_type, status, progress_total, progress_current,
             progress_message, result_data, error_message, created_at, updated_at
      FROM jobs
-     ORDER BY created_at DESC LIMIT 20`
+     WHERE tenant_id = ?
+     ORDER BY created_at DESC LIMIT 20`,
+    [tenantId]
   );
   return res.json({ success: true, jobs: rows });
 });

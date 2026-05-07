@@ -1,9 +1,16 @@
 import { apiRequest } from './client.js';
 
-export function login(password) {
+export function login(credentials) {
+  const payload = typeof credentials === 'string'
+    ? { password: credentials }
+    : credentials || {};
+
   return apiRequest('/api/auth/login', {
     method: 'POST',
-    body: { password },
+    body: {
+      email: payload.email,
+      password: payload.password,
+    },
   });
 }
 

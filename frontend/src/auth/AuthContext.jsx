@@ -55,8 +55,8 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  async function login(password) {
-    const result = await loginRequest(password);
+  async function login(credentials) {
+    const result = await loginRequest(credentials);
     storeToken(result.token);
     setToken(result.token);
 

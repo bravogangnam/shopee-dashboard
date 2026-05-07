@@ -4,6 +4,7 @@ import { useAuth } from '../auth/AuthContext.jsx';
 
 export default function LoginPage() {
   const { isAuthenticated, login } = useAuth();
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -18,9 +19,21 @@ export default function LoginPage() {
   async function handleSubmit(event) {
     event.preventDefault();
     setError('');
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail || !password) {
+      setError('이메일과 비밀번호를 입력하세요.');
+      return;
+    }
+
     setSubmitting(true);
+
     try {
-      await login(password);
+      await login({
+        email: normalizedEmail,
+        password,
+      });
       navigate(nextPath, { replace: true });
     } catch (err) {
       setError(err.message || '로그인에 실패했습니다.');
@@ -39,18 +52,33 @@ export default function LoginPage() {
             <small>Internal Operations</small>
           </div>
         </div>
+
         <label>
-          관리자 비밀번호
+          이메일
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            autoFocus
+            autoComplete="username"
+            placeholder="email@example.com"
+          />
+        </label>
+
+        <label>
+          비밀번호
           <input
             type="password"
             value={password}
-            onChange={event => setPassword(event.target.value)}
-            autoFocus
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
             placeholder="Password"
           />
         </label>
-        {error && <p className="error-text">{error}</p>}
-        <button type="submit" disabled={submitting || !password}>
+
+        {error ? <p className="error-text">{error}</p> : null}
+
+        <button type="submit" disabled={submitting || !email.trim() || !password}>
           {submitting ? '로그인 중...' : '로그인'}
         </button>
       </form>

@@ -3,8 +3,6 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 
 function ListIcon() {
-  const visibleNavItems = navItems.filter((item) => !item.adminOnly || isPlatformAdmin);
-
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" />
@@ -68,6 +66,7 @@ export default function AppLayout() {
   const { user } = useAuth();
   const isPlatformAdmin = user?.is_platform_admin === 1 || user?.is_platform_admin === true || user?.is_platform_admin === '1';
   const [collapsed, setCollapsed] = useState(false);
+  const visibleNavItems = navItems.filter((item) => !item.adminOnly || isPlatformAdmin);
 
   return (
     <div className={`app-shell ${collapsed ? 'sidebar-collapsed' : ''}`}>

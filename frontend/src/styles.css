@@ -2899,3 +2899,29 @@ label {
   font-weight: 700;
   word-break: break-all;
 }
+
+/* Admin action buttons */
+.admin-actions .approve-action {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 800;
+}
+
+.admin-actions .approve-action:hover:not(:disabled) {
+  background: #dbeafe;
+}
+
+.admin-actions .danger-outline {
+  background: #fff;
+  font-weight: 800;
+}
+
+.admin-actions button {
+  min-width: 54px;
+  color: #0f172a;
+}
+
+.admin-actions button:disabled {
+  color: #94a3b8;
+}

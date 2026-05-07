@@ -236,6 +236,7 @@ export default function AdminPage() {
                         <div className="admin-actions">
                           <button
                             type="button"
+                            className="approve-action"
                             onClick={() => runTenantAction('approve', tenant)}
                             disabled={approveLoading || tenant.approval_status === 'approved'}
                           >

@@ -24,20 +24,20 @@ export function fetchAdminUsers() {
 export function approveTenant(tenantId) {
   return apiRequest(`/api/admin/tenants/${encodeURIComponent(tenantId)}/approve`, {
     method: 'PATCH',
-    body: JSON.stringify({}),
+    body: {},
   });
 }
 
 export function rejectTenant(tenantId, reason = '') {
   return apiRequest(`/api/admin/tenants/${encodeURIComponent(tenantId)}/reject`, {
     method: 'PATCH',
-    body: JSON.stringify({ reason }),
+    body: { reason },
   });
 }
 
 export function suspendTenant(tenantId, reason = '') {
   return apiRequest(`/api/admin/tenants/${encodeURIComponent(tenantId)}/suspend`, {
     method: 'PATCH',
-    body: JSON.stringify({ reason }),
+    body: { reason },
   });
 }

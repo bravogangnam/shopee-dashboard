@@ -549,6 +549,11 @@ export default function SettingsPage() {
 
       <section className="settings-section">
         <h2>Shopee API 계정</h2>
+          {!isPlatformAdmin ? (
+            <p className="settings-help-text">
+              Main Account ID는 Shopee 인증 후 자동으로 표시됩니다. Merchant ID는 직접 입력하지 않습니다.
+            </p>
+          ) : null}
         <div className="settings-grid">
           <label className="settings-field platform-admin-only">
             <span>* Partner ID</span>
@@ -575,15 +580,19 @@ export default function SettingsPage() {
             <input
               value={account.main_account_id || ''}
               onChange={event => setAccount(current => ({ ...current, main_account_id: event.target.value }))}
+              readOnly={!isPlatformAdmin}
+              placeholder={isPlatformAdmin ? '' : 'Shopee 인증 후 자동 표시'}
             />
           </label>
-          <label className="settings-field">
+          {isPlatformAdmin ? (
+            <label className="settings-field">
             <span>Merchant ID</span>
             <input
               value={account.merchant_id || ''}
               onChange={event => setAccount(current => ({ ...current, merchant_id: event.target.value }))}
             />
           </label>
+          ) : null}
         </div>
         <div className="token-status">
           <span className={tokenBadgeClass(tokenStatus?.token_status)}>{tokenStatus?.token_status || 'none'}</span>
@@ -596,9 +605,11 @@ export default function SettingsPage() {
           <button type="button" className="btn btn-purple" onClick={handleShopeeAuth}>
             Shopee 재인증
           </button>
-          <button type="button" className="btn btn-primary" onClick={handleSaveAccount} disabled={loading.account}>
+          {isPlatformAdmin ? (
+            <button type="button" className="btn btn-primary" onClick={handleSaveAccount} disabled={loading.account}>
             계정 저장
           </button>
+          ) : null}
         </div>
       </section>
 

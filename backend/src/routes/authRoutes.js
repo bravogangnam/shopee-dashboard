@@ -441,6 +441,37 @@ router.get('/shopee/callback', async (req, res) => {
     // ── main_account 토큰 저장 ──────────────────────────────────
     const callbackShopId = useShopId;
     await saveToken(result, callbackShopId, { tenantId });
+
+    const oauthMainAccountId = main_account_id || result.main_account_id || null;
+    const oauthMerchantId = merchant_id || result.merchant_id || (
+      Array.isArray(result.merchant_id_list) && result.merchant_id_list.length
+        ? result.merchant_id_list[0]
+        : null
+    );
+
+    if (oauthMainAccountId || oauthMerchantId) {
+      await db.query(
+        `UPDATE main_account
+         SET
+           main_account_id = COALESCE(?, main_account_id),
+           merchant_id = COALESCE(?, merchant_id),
+           updated_at = NOW()
+         WHERE tenant_id = ?`,
+        [
+          oauthMainAccountId ? String(oauthMainAccountId) : null,
+          oauthMerchantId ? String(oauthMerchantId) : null,
+          tenantId,
+        ]
+      );
+    }
+
+    if (oauthMainAccountId) {
+      await db.query(
+        'UPDATE tenants SET requested_main_account_id = ? WHERE id = ?',
+        [String(oauthMainAccountId), tenantId]
+      );
+    }
+
     console.log(`✅ Shopee OAuth completed, main_account token saved. auth_shop_id=${callbackShopId || 'none'}`);
 
     // ── 응답의 shop_id_list → shops 테이블에 동일 토큰 저장 ─────

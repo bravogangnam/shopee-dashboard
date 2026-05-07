@@ -61,7 +61,7 @@ function buildDefaultAccountForRole(isPlatformAdmin, requestedMainAccountId = ''
     id: null,
     partner_id: '',
     partner_key: '',
-    main_account_id: requestedMainAccountId || '',
+    main_account_id: '',
     merchant_id: '',
     token_status: 'none',
     token_expires_at: null,
@@ -79,7 +79,7 @@ function sanitizeAccountForRole(account, isPlatformAdmin, requestedMainAccountId
     ...account,
     partner_id: '',
     partner_key: '',
-    main_account_id: account?.main_account_id ? String(account.main_account_id) : (requestedMainAccountId || ''),
+    main_account_id: account?.main_account_id ? String(account.main_account_id) : '',
     merchant_id: account?.merchant_id ? String(account.merchant_id) : '',
   };
 }
@@ -122,11 +122,11 @@ router.put('/account', async (req, res) => {
 
     let partnerId = normalizeOptionalValue(partner_id);
     let partnerKey = normalizeOptionalValue(partner_key);
-    const mainAccountId = normalizeOptionalValue(main_account_id);
-    const merchantId = normalizeOptionalValue(merchant_id);
+    let mainAccountId = normalizeOptionalValue(main_account_id);
+    let merchantId = normalizeOptionalValue(merchant_id);
 
     const [existing] = await db.query(
-      'SELECT id, partner_id, partner_key FROM main_account WHERE tenant_id = ? LIMIT 1',
+      'SELECT id, partner_id, partner_key, main_account_id, merchant_id FROM main_account WHERE tenant_id = ? LIMIT 1',
       [tenantId]
     );
 
@@ -144,6 +144,9 @@ router.put('/account', async (req, res) => {
           error: 'Platform Shopee partner configuration is missing',
         });
       }
+
+      mainAccountId = existing[0]?.main_account_id || null;
+      merchantId = existing[0]?.merchant_id || null;
     }
 
     if (existing.length) {

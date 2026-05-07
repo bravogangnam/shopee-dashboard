@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 function ListIcon() {
+  const visibleNavItems = navItems.filter((item) => !item.adminOnly || isPlatformAdmin);
+
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" />
@@ -27,6 +30,15 @@ function InventoryIcon() {
   );
 }
 
+function AdminIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3l7 3v5c0 4.5-2.8 8.6-7 10-4.2-1.4-7-5.5-7-10V6l7-3zm0 2.2L7 7.3V11c0 3.5 1.9 6.7 5 8 3.1-1.3 5-4.5 5-8V7.3l-5-2.1z" />
+      <path d="M11 8h2v4h-2V8zm0 6h2v2h-2v-2z" />
+    </svg>
+  );
+}
+
 function SettingsIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -48,10 +60,13 @@ const navItems = [
   { to: '/orders', label: '주문 관리', icon: <ListIcon /> },
   { to: '/ledger', label: '정산 관리', icon: <LedgerIcon /> },
   { to: '/inventory', label: '재고 관리', icon: <InventoryIcon /> },
+  { to: '/admin', label: '관리자', icon: <AdminIcon />, adminOnly: true },
   { to: '/settings', label: '설정', icon: <SettingsIcon /> },
 ];
 
 export default function AppLayout() {
+  const { user } = useAuth();
+  const isPlatformAdmin = user?.is_platform_admin === 1 || user?.is_platform_admin === true || user?.is_platform_admin === '1';
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -73,7 +88,7 @@ export default function AppLayout() {
           </button>
         </div>
         <nav className="sidebar-nav">
-          {navItems.map(item => (
+          {visibleNavItems.map(item => (
             <NavLink
               key={item.to}
               to={item.to}

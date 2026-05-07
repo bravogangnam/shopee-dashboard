@@ -36,7 +36,7 @@ export function AuthProvider({ children }) {
       try {
         const result = await checkAuth();
         if (!cancelled) {
-          setUser(result.user || { authenticated: true });
+          setUser(buildAuthUser(result));
         }
       } catch (_) {
         clearStoredToken();

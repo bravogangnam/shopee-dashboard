@@ -13,6 +13,7 @@
 
 const cron = require('node-cron');
 const { refreshAllShopTokens, getMainAccount } = require('../services/shopeeAuth');
+const { CURRENT_TENANT_ID } = require('../config/tenant');
 const {
   notifyTokenRefreshFailed,
   notifyTokenExpired,
@@ -38,8 +39,10 @@ async function runTokenRefresh() {
   console.log(`[TokenRefreshJob] Starting at ${new Date().toISOString()}`);
 
   try {
+    const tenantId = CURRENT_TENANT_ID;
+
     // refresh_token 만료 여부 먼저 확인
-    const account = await getMainAccount();
+    const account = await getMainAccount({ tenantId });
     if (!account) {
       console.warn('[TokenRefreshJob] main_account 없음 — 스킵');
       isRunning = false;
@@ -60,7 +63,7 @@ async function runTokenRefresh() {
     }
 
     // 전체 shop 토큰 갱신
-    const { success, fail } = await refreshAllShopTokens();
+    const { success, fail } = await refreshAllShopTokens({ tenantId });
     console.log(`[TokenRefreshJob] 완료: 성공=${success}, 실패=${fail}`);
 
     if (fail > 0 && success === 0) {

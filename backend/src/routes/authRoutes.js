@@ -66,7 +66,7 @@ function validateRegisterPayload(payload) {
     errors.push('requested_main_account_id is required');
   } else if (!/^\d+$/.test(payload.requestedMainAccountIdText)) {
     errors.push('requested_main_account_id must be numeric');
-  } else if (Number.parseInt(payload.requestedMainAccountIdText, 10) <= 0) {
+  } else if (BigInt(payload.requestedMainAccountIdText) <= 0n) {
     errors.push('requested_main_account_id must be greater than 0');
   }
 
@@ -109,7 +109,7 @@ router.post('/login', async (req, res) => {
          WHERE u.email = ?
            AND u.is_active = 1
            AND tu.is_active = 1
-           AND t.is_active = 1
+           /* pending-login: tenant active checked by approval gate */ 1=1
          ORDER BY
            CASE tu.role WHEN 'owner' THEN 1 WHEN 'admin' THEN 2 WHEN 'staff' THEN 3 ELSE 4 END,
            tu.tenant_id ASC
@@ -184,9 +184,9 @@ router.post('/register', async (req, res) => {
     });
   }
 
-  const requestedMainAccountId = Number.parseInt(payload.requestedMainAccountIdText, 10);
-  const tenantCode = `MAIN_${requestedMainAccountId}`;
-  const tenantName = `Main Account ${requestedMainAccountId}`;
+  const requestedMainAccountIdText = payload.requestedMainAccountIdText;
+  const tenantCode = `MAIN_${requestedMainAccountIdText}`;
+  const tenantName = `Main Account ${requestedMainAccountIdText}`;
   const displayName = payload.email.includes('@') ? payload.email.split('@')[0] : payload.email;
   const tenantIdLockName = 'shopee_dashboard:tenant_id_sequence';
 
@@ -233,7 +233,7 @@ router.post('/register', async (req, res) => {
 
     const [dupMainAccount] = await conn.query(
       'SELECT id FROM tenants WHERE requested_main_account_id = ? LIMIT 1',
-      [requestedMainAccountId]
+      [requestedMainAccountIdText]
     );
 
     if (dupMainAccount.length > 0) {
@@ -264,7 +264,7 @@ router.post('/register', async (req, res) => {
           rejection_reason
         )
        VALUES (?, ?, ?, ?, 'pending', 0, NULL, NULL, NULL, NULL)`,
-      [tenantId, tenantCode, tenantName, requestedMainAccountId]
+      [tenantId, tenantCode, tenantName, requestedMainAccountIdText]
     );
 
     const passwordHash = await bcrypt.hash(payload.password, 12);
@@ -302,7 +302,7 @@ router.post('/register', async (req, res) => {
         id: tenantId,
         code: tenantCode,
         name: tenantName,
-        requested_main_account_id: requestedMainAccountId,
+        requested_main_account_id: requestedMainAccountIdText,
         approval_status: 'pending',
         is_active: 0,
       },

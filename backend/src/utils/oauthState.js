@@ -4,8 +4,11 @@ const { CURRENT_TENANT_ID, normalizeTenantId } = require('../config/tenant');
 const STATE_TTL_SECONDS = 10 * 60;
 const STATE_SECRET =
   process.env.SHOPEE_OAUTH_STATE_SECRET ||
-  process.env.JWT_SECRET ||
-  'shopee_oauth_state_secret';
+  process.env.JWT_SECRET;
+
+if (!STATE_SECRET) {
+  throw new Error('Missing SHOPEE_OAUTH_STATE_SECRET or JWT_SECRET for OAuth state signing');
+}
 
 function base64UrlEncode(value) {
   return Buffer.from(value, 'utf8')

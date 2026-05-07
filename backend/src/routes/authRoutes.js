@@ -149,7 +149,27 @@ router.get('/shopee/callback', async (req, res) => {
   const tenantId = stateResult.tenantId;
 
   if (!stateResult.valid) {
-    console.warn(`[OAuth] state invalid or missing: ${stateResult.reason}; fallback tenant_id=${tenantId}`);
+    console.warn(`[OAuth] state invalid or missing: ${stateResult.reason}; rejecting callback`);
+    return res.status(400).send(`
+      <html>
+      <head><title>Auth Error</title></head>
+      <body style="font-family:Arial;text-align:center;padding:50px;">
+        <h2 style="color:red;">❌ 인증 실패</h2>
+        <p>OAuth state is invalid or expired. Please try Shopee authorization again.</p>
+        <script>
+          if (window.opener) {
+            window.opener.postMessage({
+              type: 'SHOPEE_AUTH_ERROR',
+              error: 'Invalid or expired OAuth state'
+            }, '*');
+            setTimeout(() => window.close(), 3000);
+          } else {
+            setTimeout(() => { window.location.href = '/settings?auth=error'; }, 3000);
+          }
+        </script>
+      </body>
+      </html>
+    `);
   }
 
   if (!code) {

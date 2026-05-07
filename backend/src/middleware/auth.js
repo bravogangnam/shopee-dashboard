@@ -212,4 +212,27 @@ async function requireApprovedTenant(req, res, next) {
 }
 
 
-module.exports = { requireAuth, requireApprovedTenant, loadTenantAccessContext, generateToken };
+
+async function requirePlatformAdmin(req, res, next) {
+  try {
+    const { isPlatformAdmin } = await loadTenantAccessContext(req);
+
+    if (Number(isPlatformAdmin || 0) !== 1) {
+      return res.status(403).json({
+        success: false,
+        error: 'Platform admin required',
+        code: 'PLATFORM_ADMIN_REQUIRED',
+      });
+    }
+
+    return next();
+  } catch (err) {
+    console.error('[Auth] platform admin check failed:', err.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Platform admin check failed',
+    });
+  }
+}
+
+module.exports = { requireAuth, requireApprovedTenant, requirePlatformAdmin, loadTenantAccessContext, generateToken };

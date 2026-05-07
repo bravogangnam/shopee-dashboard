@@ -47,6 +47,7 @@ app.use(cors(corsOptions));
 
 // ─── API 라우트 ──────────────────────────────────────────────────
 app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/admin', adminRoutes);
 app.use('/api/settings', require('./routes/settingsRoutes'));
 app.use('/api/test', require('./routes/testRoutes'));
 app.use('/api/jobs', require('./routes/jobRoutes'));
@@ -56,6 +57,7 @@ app.use('/api/products', require('./routes/productsRoutes'));
 // ─── 송장 라우트 (격리: 오류 시 기존 서비스 영향 없음) ──────────
 try {
   const invoiceRoutes = require('./routes/invoiceRoutes');
+const adminRoutes = require('./routes/adminRoutes');
   app.use('/api/invoice', invoiceRoutes);
   app.use('/api/invoices', invoiceRoutes);
   console.log('[App] invoiceRoutes registered');

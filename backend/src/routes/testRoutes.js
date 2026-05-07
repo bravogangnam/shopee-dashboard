@@ -11,7 +11,7 @@ const { buildUrl } = require('../utils/shopeeSignature');
 const { callWithRetry, shopeeAxios } = require('../utils/apiWrapper');
 const { getMainAccount } = require('../services/shopeeAuth');
 const db = require('../config/database');
-const { CURRENT_TENANT_ID } = require('../config/tenant');
+const { getCurrentTenantId } = require('../config/tenant');
 
 router.use(requireAuth);
 
@@ -100,7 +100,7 @@ async function testShopConnection(shopId, accessToken) {
 // 활성 3개 샵 전부 테스트
 router.get('/shopee-connection', async (req, res) => {
   // main_account 토큰 조회
-  const account = await getMainAccount({ tenantId: CURRENT_TENANT_ID });
+  const account = await getMainAccount({ tenantId: getCurrentTenantId(req) });
 
   if (!account || !account.access_token) {
     return res.json({
@@ -114,7 +114,7 @@ router.get('/shopee-connection', async (req, res) => {
   // 활성 샵 목록 조회 (is_active = 1)
   const [activeShops] = await db.query(
     'SELECT shop_id, alias, region FROM shops WHERE tenant_id = ? AND is_active = 1 ORDER BY id ASC',
-    [CURRENT_TENANT_ID]
+    [getCurrentTenantId(req)]
   );
 
   if (activeShops.length === 0) {
@@ -155,7 +155,7 @@ router.get('/shopee-connection', async (req, res) => {
 router.get('/shopee-connection/:shopId', async (req, res) => {
   const { shopId } = req.params;
 
-  const account = await getMainAccount({ tenantId: CURRENT_TENANT_ID });
+  const account = await getMainAccount({ tenantId: getCurrentTenantId(req) });
   if (!account || !account.access_token) {
     return res.json({
       success: false,
@@ -166,7 +166,7 @@ router.get('/shopee-connection/:shopId', async (req, res) => {
 
   const [shopRows] = await db.query(
     'SELECT shop_id, alias, region FROM shops WHERE tenant_id = ? AND shop_id = ?',
-    [CURRENT_TENANT_ID, shopId]
+    [getCurrentTenantId(req), shopId]
   );
 
   const result = await testShopConnection(shopId, account.access_token);
@@ -184,7 +184,7 @@ router.get('/shopee-connection/:shopId', async (req, res) => {
 router.get('/order-detail/:orderSn', async (req, res) => {
   const { orderSn } = req.params;
 
-  const account = await getMainAccount({ tenantId: CURRENT_TENANT_ID });
+  const account = await getMainAccount({ tenantId: getCurrentTenantId(req) });
   if (!account || !account.access_token) {
     return res.json({ success: false, error: 'NO_TOKEN', message: 'Shopee 인증이 필요합니다.' });
   }
@@ -194,7 +194,7 @@ router.get('/order-detail/:orderSn', async (req, res) => {
     `SELECT order_sn, shop_id, region, order_status, is_final_status,
             merchandise_subtotal, total_amount, update_time, synced_at
      FROM orders WHERE tenant_id = ? AND order_sn = ? LIMIT 1`,
-    [CURRENT_TENANT_ID, orderSn]
+    [getCurrentTenantId(req), orderSn]
   );
 
   if (!dbRows.length) {

@@ -13,7 +13,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const db = require('../config/database');
-const { CURRENT_TENANT_ID } = require('../config/tenant');
+const { getCurrentTenantId } = require('../config/tenant');
 require('dotenv').config();
 
 // 모든 설정 라우트에 인증 적용
@@ -21,7 +21,7 @@ router.use(requireAuth);
 
 // ─── 계정 정보 조회 ──────────────────────────────────────────────
 router.get('/account', async (req, res) => {
-  const tenantId = CURRENT_TENANT_ID;
+  const tenantId = getCurrentTenantId(req);
   const [rows] = await db.query(
     'SELECT id, partner_id, partner_key, main_account_id, merchant_id, token_status, token_expires_at, refresh_expires_at, updated_at FROM main_account WHERE tenant_id = ? LIMIT 1',
     [tenantId]
@@ -46,7 +46,7 @@ router.put('/account', async (req, res) => {
     return res.status(400).json({ success: false, error: 'partner_id and partner_key are required' });
   }
 
-  const tenantId = CURRENT_TENANT_ID;
+  const tenantId = getCurrentTenantId(req);
   const [existing] = await db.query('SELECT id FROM main_account WHERE tenant_id = ? LIMIT 1', [tenantId]);
 
   if (existing.length > 0) {
@@ -66,7 +66,7 @@ router.put('/account', async (req, res) => {
 
 // ─── 샵 목록 조회 ───────────────────────────────────────────────
 router.get('/shops', async (req, res) => {
-  const tenantId = CURRENT_TENANT_ID;
+  const tenantId = getCurrentTenantId(req);
   const [rows] = await db.query(
     'SELECT * FROM shops WHERE tenant_id = ? ORDER BY is_active DESC, id ASC',
     [tenantId]
@@ -79,7 +79,7 @@ router.put('/shops/:shopId', async (req, res) => {
   const { shopId } = req.params;
   const { alias, region, is_active } = req.body;
 
-  const tenantId = CURRENT_TENANT_ID;
+  const tenantId = getCurrentTenantId(req);
   const [existing] = await db.query(
     'SELECT id, is_active FROM shops WHERE tenant_id = ? AND shop_id = ?',
     [tenantId, shopId]

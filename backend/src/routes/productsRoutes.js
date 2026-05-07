@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireApprovedTenant } = require('../middleware/auth');
 const {
   getLowStockProducts,
   getInventoryProducts,
@@ -16,6 +16,7 @@ const { syncPendingInventoryReceipts } = require('../services/inventoryReceiptSy
 const { refreshSkuCompositionsFromSheet } = require('../services/skuCompositionService');
 
 router.use(requireAuth);
+router.use(requireApprovedTenant);
 
 function decodeSkuParam(value) {
   try {

@@ -5,6 +5,7 @@
 
 const jwt = require('jsonwebtoken');
 const { CURRENT_TENANT_ID, normalizeTenantId } = require('../config/tenant');
+const db = require('../config/database');
 require('dotenv').config();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'shopee_jwt_secret';
@@ -89,4 +90,126 @@ function requireAuth(req, res, next) {
   }
 }
 
-module.exports = { requireAuth, generateToken };
+
+async function loadTenantAccessContext(req) {
+  const tenantId = normalizeTenantId(
+    req?.tenantId ??
+    req?.user?.tenant_id ??
+    req?.user?.tenantId ??
+    CURRENT_TENANT_ID
+  );
+  const userId = req?.user?.user_id ?? req?.user?.id ?? null;
+
+  let isPlatformAdmin = 0;
+
+  if (userId) {
+    const [userRows] = await db.query(
+      'SELECT is_platform_admin FROM users WHERE id = ? LIMIT 1',
+      [userId]
+    );
+    isPlatformAdmin = Number(userRows[0]?.is_platform_admin || 0);
+  }
+
+  const [tenantRows] = await db.query(
+    'SELECT id, approval_status, is_active FROM tenants WHERE id = ? LIMIT 1',
+    [tenantId]
+  );
+
+  const tenant = tenantRows[0] || null;
+
+  req.tenantId = tenantId;
+  req.user = {
+    ...(req.user || {}),
+    tenant_id: tenantId,
+    tenantId,
+    is_platform_admin: isPlatformAdmin,
+  };
+  req.tenant = tenant;
+
+  return { tenantId, tenant, isPlatformAdmin };
+}
+
+async function requireApprovedTenant(req, res, next) {
+  try {
+    const { tenantId, tenant } = await loadTenantAccessContext(req);
+
+    if (!tenant) {
+      return res.status(403).json({
+        success: false,
+        error: 'Tenant not found',
+        code: 'TENANT_NOT_FOUND',
+        tenant: {
+          id: tenantId,
+          approval_status: null,
+          is_active: 0,
+        },
+      });
+    }
+
+    const approvalStatus = String(tenant.approval_status || '').toLowerCase();
+    const isActive = Number(tenant.is_active || 0);
+
+    if (approvalStatus === 'rejected') {
+      return res.status(403).json({
+        success: false,
+        error: 'Tenant is rejected',
+        code: 'TENANT_REJECTED',
+        tenant: {
+          id: tenant.id,
+          approval_status: approvalStatus,
+          is_active: isActive,
+        },
+      });
+    }
+
+    if (approvalStatus === 'suspended') {
+      return res.status(403).json({
+        success: false,
+        error: 'Tenant is suspended',
+        code: 'TENANT_SUSPENDED',
+        tenant: {
+          id: tenant.id,
+          approval_status: approvalStatus,
+          is_active: isActive,
+        },
+      });
+    }
+
+    if (approvalStatus !== 'approved') {
+      return res.status(403).json({
+        success: false,
+        error: 'Tenant approval required',
+        code: 'TENANT_APPROVAL_REQUIRED',
+        tenant: {
+          id: tenant.id,
+          approval_status: approvalStatus || 'pending',
+          is_active: isActive,
+        },
+      });
+    }
+
+    if (isActive !== 1) {
+      return res.status(403).json({
+        success: false,
+        error: 'Tenant is inactive',
+        code: 'TENANT_INACTIVE',
+        tenant: {
+          id: tenant.id,
+          approval_status: approvalStatus,
+          is_active: isActive,
+        },
+      });
+    }
+
+    return next();
+  } catch (err) {
+    console.error('[Auth] tenant approval check failed:', err.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Tenant approval check failed',
+    });
+  }
+}
+
+
+module.exports = { requireAuth, requireApprovedTenant, loadTenantAccessContext, generateToken };

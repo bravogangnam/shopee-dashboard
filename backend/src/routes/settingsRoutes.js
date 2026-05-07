@@ -11,13 +11,14 @@
 
 const express = require('express');
 const router = express.Router();
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireApprovedTenant } = require('../middleware/auth');
 const db = require('../config/database');
 const { getCurrentTenantId } = require('../config/tenant');
 require('dotenv').config();
 
 // 모든 설정 라우트에 인증 적용
 router.use(requireAuth);
+router.use(requireApprovedTenant);
 
 // ─── 계정 정보 조회 ──────────────────────────────────────────────
 router.get('/account', async (req, res) => {

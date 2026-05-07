@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getCurrentTenantId } = require('../config/tenant');
 const fs = require('fs');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireApprovedTenant } = require('../middleware/auth');
 const {
   createJob,
   getJob,
@@ -13,6 +13,7 @@ const { runInvoice } = require('../jobs/invoiceWorker');
 const labelStorage = require('../services/labelStorageService');
 
 router.use(requireAuth);
+router.use(requireApprovedTenant);
 
 function normalizeOrderSnList(body = {}) {
   const rawList = body.order_sns || body.order_sn_list || body.orderSnList || [];

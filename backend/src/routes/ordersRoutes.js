@@ -8,11 +8,12 @@
 
 const express = require('express');
 const router = express.Router();
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireApprovedTenant } = require('../middleware/auth');
 const db = require('../config/database');
 const { getCurrentTenantId } = require('../config/tenant');
 
 router.use(requireAuth);
+router.use(requireApprovedTenant);
 
 const FIFO_COST_JOIN = `
   LEFT JOIN (

@@ -9,7 +9,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireApprovedTenant } = require('../middleware/auth');
 const {
   createJob,
   getJob,
@@ -22,6 +22,7 @@ const db = require('../config/database');
 const { getCurrentTenantId } = require('../config/tenant');
 
 router.use(requireAuth);
+router.use(requireApprovedTenant);
 
 // ─── 백필 시작 ─────────────────────────────────────────────────
 router.post('/backfill', async (req, res) => {

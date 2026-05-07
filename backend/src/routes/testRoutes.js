@@ -6,7 +6,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireApprovedTenant } = require('../middleware/auth');
 const { buildUrl } = require('../utils/shopeeSignature');
 const { callWithRetry, shopeeAxios } = require('../utils/apiWrapper');
 const { getMainAccount } = require('../services/shopeeAuth');
@@ -14,6 +14,7 @@ const db = require('../config/database');
 const { getCurrentTenantId } = require('../config/tenant');
 
 router.use(requireAuth);
+router.use(requireApprovedTenant);
 
 // ─── 유틸: 오늘 0시 KST → UTC Unix ──────────────────────────────
 function getTodayRangeUnix() {

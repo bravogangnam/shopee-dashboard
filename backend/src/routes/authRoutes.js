@@ -11,8 +11,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const router = express.Router();
-const { generateToken } = require('../middleware/auth');
-const { requireAuth } = require('../middleware/auth');
+const { generateToken, requireAuth, requireApprovedTenant, loadTenantAccessContext } = require('../middleware/auth');
 const {
   getShopeeAuthUrl,
   exchangeCodeForToken,
@@ -347,7 +346,7 @@ router.post('/logout', (req, res) => {
 });
 
 // ─── Shopee OAuth URL 생성 ───────────────────────────────────────
-router.get('/shopee/url', requireAuth, (req, res) => {
+router.get('/shopee/url', requireAuth, requireApprovedTenant, (req, res) => {
   const tenantId = getCurrentTenantId(req);
   const url = getShopeeAuthUrl({ tenantId });
   return res.json({ success: true, url });
@@ -526,7 +525,7 @@ router.get('/shopee/callback', async (req, res) => {
 });
 
 // ─── 토큰 수동 갱신 ──────────────────────────────────────────────
-router.post('/shopee/refresh', requireAuth, async (req, res) => {
+router.post('/shopee/refresh', requireAuth, requireApprovedTenant, async (req, res) => {
   try {
     const tenantId = getCurrentTenantId(req);
     const success = await autoRefreshToken({ tenantId });
@@ -544,7 +543,7 @@ router.post('/shopee/refresh', requireAuth, async (req, res) => {
 });
 
 // ─── 토큰 상태 확인 ──────────────────────────────────────────────
-router.get('/status', requireAuth, async (req, res) => {
+router.get('/status', requireAuth, requireApprovedTenant, async (req, res) => {
   const tenantId = getCurrentTenantId(req);
   const account = await getMainAccount({ tenantId });
 
@@ -570,8 +569,25 @@ router.get('/status', requireAuth, async (req, res) => {
 });
 
 // ─── 인증 상태 확인 (세션 체크용) ──────────────────────────────
-router.get('/check', requireAuth, (req, res) => {
-  return res.json({ success: true, authenticated: true });
+router.get('/check', requireAuth, async (req, res) => {
+  try {
+    const { tenantId, tenant, isPlatformAdmin } = await loadTenantAccessContext(req);
+
+    return res.json({
+      success: true,
+      authenticated: true,
+      tenant_id: tenantId,
+      approval_status: tenant?.approval_status || null,
+      tenant_is_active: tenant ? Number(tenant.is_active || 0) : null,
+      is_platform_admin: Number(isPlatformAdmin || 0),
+    });
+  } catch (err) {
+    console.error('[Auth] check failed:', err.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Auth check failed',
+    });
+  }
 });
 
 module.exports = router;

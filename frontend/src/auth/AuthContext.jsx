@@ -59,7 +59,14 @@ export function AuthProvider({ children }) {
     const result = await loginRequest(password);
     storeToken(result.token);
     setToken(result.token);
-    setUser(buildAuthUser(result));
+
+    try {
+      const authResult = await checkAuth();
+      setUser(buildAuthUser(authResult));
+    } catch (_) {
+      setUser(buildAuthUser(result));
+    }
+
     return result;
   }
 

@@ -23,3 +23,15 @@ export function logout() {
 export function checkAuth() {
   return apiRequest('/api/auth/check');
 }
+
+export function register(payload) {
+  return apiRequest('/api/auth/register', {
+    method: 'POST',
+    body: {
+      email: payload.email,
+      password: payload.password,
+      requested_main_account_id: payload.requested_main_account_id,
+      phone: payload.phone,
+    },
+  });
+}

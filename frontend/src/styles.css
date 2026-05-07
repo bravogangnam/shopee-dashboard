@@ -2834,3 +2834,68 @@ label {
 .sidebar.collapsed .sidebar-logout-text {
   display: none;
 }
+
+/* Register page */
+.register-card {
+  max-width: 440px;
+}
+
+.register-card label {
+  gap: 6px;
+}
+
+.login-secondary-link {
+  display: block;
+  margin-top: 14px;
+  text-align: center;
+  color: #2563eb;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.login-secondary-link:hover {
+  text-decoration: underline;
+}
+
+.register-result-card {
+  max-width: 480px;
+}
+
+.register-success-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 16px;
+  margin-top: 12px;
+}
+
+.register-success-box h1 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  color: #0f172a;
+}
+
+.register-success-box p {
+  color: #475569;
+  line-height: 1.5;
+}
+
+.register-success-box dl {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 8px 12px;
+  margin: 14px 0 0;
+}
+
+.register-success-box dt {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.register-success-box dd {
+  margin: 0;
+  color: #0f172a;
+  font-weight: 700;
+  word-break: break-all;
+}

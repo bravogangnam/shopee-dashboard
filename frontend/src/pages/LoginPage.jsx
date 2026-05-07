@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 
 export default function LoginPage() {
@@ -81,6 +81,10 @@ export default function LoginPage() {
         <button type="submit" disabled={submitting || !email.trim() || !password}>
           {submitting ? '로그인 중...' : '로그인'}
         </button>
+
+        <Link className="login-secondary-link" to="/register">
+          계정이 없나요? 가입 신청
+        </Link>
       </form>
     </div>
   );

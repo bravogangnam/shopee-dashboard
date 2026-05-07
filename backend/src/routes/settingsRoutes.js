@@ -13,6 +13,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth, requireApprovedTenant, loadTenantAccessContext } = require('../middleware/auth');
 const db = require('../config/database');
+const { testMarginChartSheet, syncMarginChartSheet } = require('../services/tenantMarginChartSync');
 const { getCurrentTenantId } = require('../config/tenant');
 require('dotenv').config();
 
@@ -260,6 +261,44 @@ router.put('/google-sheet', async (req, res) => {
     return res.status(500).json({
       success: false,
       error: 'Failed to save Google Sheet settings',
+    });
+  }
+});
+
+
+
+router.post('/google-sheet/chart/test', async (req, res) => {
+  try {
+    const tenantId = getCurrentTenantId(req);
+    const result = await testMarginChartSheet({ tenantId });
+
+    return res.json({
+      success: true,
+      result,
+    });
+  } catch (err) {
+    console.error('[Settings] margin chart test failed:', err.message);
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to test margin chart sheet',
+    });
+  }
+});
+
+router.post('/google-sheet/chart/sync', async (req, res) => {
+  try {
+    const tenantId = getCurrentTenantId(req);
+    const result = await syncMarginChartSheet({ tenantId });
+
+    return res.json({
+      success: true,
+      result,
+    });
+  } catch (err) {
+    console.error('[Settings] margin chart sync failed:', err.message);
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to sync margin chart sheet',
     });
   }
 });

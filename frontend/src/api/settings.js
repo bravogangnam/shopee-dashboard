@@ -86,3 +86,17 @@ export function updateGoogleSheetSettings(payload) {
     },
   });
 }
+
+export function testMarginChartSheet() {
+  return apiRequest('/api/settings/google-sheet/chart/test', {
+    method: 'POST',
+    body: {},
+  });
+}
+
+export function syncMarginChartSheet() {
+  return apiRequest('/api/settings/google-sheet/chart/sync', {
+    method: 'POST',
+    body: {},
+  });
+}

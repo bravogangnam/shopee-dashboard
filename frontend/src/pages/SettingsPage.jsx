@@ -16,6 +16,8 @@ import {
   updateShop,
   fetchGoogleSheetSettings,
   updateGoogleSheetSettings,
+  testMarginChartSheet,
+  syncMarginChartSheet,
 } from '../api/settings.js';
 import { formatDateTime } from '../utils/format.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -62,6 +64,9 @@ function GoogleSheetSettingsSection() {
   const [timestamps, setTimestamps] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testingChart, setTestingChart] = useState(false);
+  const [syncingChart, setSyncingChart] = useState(false);
+  const [chartResult, setChartResult] = useState(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -122,6 +127,44 @@ function GoogleSheetSettingsSection() {
     }
   }
 
+  async function handleTestChartSheet() {
+    setTestingChart(true);
+    setMessage('');
+    setError('');
+    setChartResult(null);
+
+    try {
+      const response = await testMarginChartSheet();
+      setChartResult(response.result || null);
+      setMessage('차트 탭 읽기 테스트가 완료되었습니다.');
+    } catch (err) {
+      setError(err.message || '차트 탭 읽기 테스트에 실패했습니다.');
+    } finally {
+      setTestingChart(false);
+    }
+  }
+
+  async function handleSyncChartSheet() {
+    const confirmed = window.confirm('차트 탭 데이터를 현재 tenant의 마진차트 데이터로 동기화할까요?');
+    if (!confirmed) return;
+
+    setSyncingChart(true);
+    setMessage('');
+    setError('');
+    setChartResult(null);
+
+    try {
+      const response = await syncMarginChartSheet();
+      setChartResult(response.result || null);
+      setMessage('마진차트 동기화가 완료되었습니다.');
+    } catch (err) {
+      setError(err.message || '마진차트 동기화에 실패했습니다.');
+    } finally {
+      setSyncingChart(false);
+    }
+  }
+
+
   return (
     <section className="settings-section google-sheet-settings-section">
       <h2>Google Sheet 연결</h2>
@@ -165,6 +208,40 @@ function GoogleSheetSettingsSection() {
       >
         {saving ? '저장 중...' : 'Google Sheet ID 저장'}
       </button>
+
+      <div className="google-sheet-action-row">
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={handleTestChartSheet}
+          disabled={loading || testingChart || !googleSheetId.trim()}
+        >
+          {testingChart ? '테스트 중...' : '차트 읽기 테스트'}
+        </button>
+
+        <button
+          type="button"
+          className="btn btn-purple"
+          onClick={handleSyncChartSheet}
+          disabled={loading || syncingChart || !googleSheetId.trim()}
+        >
+          {syncingChart ? '동기화 중...' : '마진차트 동기화'}
+        </button>
+      </div>
+
+      {chartResult ? (
+        <div className="margin-chart-sync-result">
+          <strong>차트 결과</strong>
+          <span>전체 행: {chartResult.total_rows ?? '-'}</span>
+          <span>파싱 성공: {chartResult.parsed_count ?? chartResult.upserted ?? '-'}</span>
+          <span>스킵: {chartResult.skipped_count ?? '-'}</span>
+          {'upserted' in chartResult ? <span>저장/갱신: {chartResult.upserted}</span> : null}
+          {'deactivated' in chartResult ? <span>비활성: {chartResult.deactivated}</span> : null}
+          {chartResult.errors?.length ? (
+            <small>오류: {chartResult.errors.map((item) => `row ${item.row}: ${item.reason}`).join(' / ')}</small>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

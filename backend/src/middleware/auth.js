@@ -4,6 +4,7 @@
  */
 
 const jwt = require('jsonwebtoken');
+const { CURRENT_TENANT_ID, normalizeTenantId } = require('../config/tenant');
 require('dotenv').config();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'shopee_jwt_secret';
@@ -11,9 +12,18 @@ const JWT_SECRET = process.env.JWT_SECRET || 'shopee_jwt_secret';
 /**
  * JWT 토큰 생성
  */
-function generateToken() {
+function generateToken({ tenantId = CURRENT_TENANT_ID, userId = null, role = 'owner' } = {}) {
+  const normalizedTenantId = normalizeTenantId(tenantId);
+
   return jwt.sign(
-    { authenticated: true, createdAt: Date.now() },
+    {
+      authenticated: true,
+      tenant_id: normalizedTenantId,
+      tenantId: normalizedTenantId,
+      user_id: userId,
+      role,
+      createdAt: new Date().toISOString(),
+    },
     JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
   );
@@ -48,8 +58,20 @@ function requireAuth(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
+    const tenantId = normalizeTenantId(
+      decoded.tenant_id ??
+      decoded.tenantId ??
+      CURRENT_TENANT_ID
+    );
+
+    req.user = {
+      ...decoded,
+      tenant_id: tenantId,
+      tenantId,
+    };
+    req.tenantId = tenantId;
+
+    return next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
       return res.status(401).json({
@@ -58,6 +80,7 @@ function requireAuth(req, res, next) {
         code: 'TOKEN_EXPIRED',
       });
     }
+
     return res.status(401).json({
       success: false,
       error: 'Invalid token',

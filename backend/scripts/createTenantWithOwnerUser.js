@@ -73,13 +73,17 @@ async function main() {
   await db.query('START TRANSACTION');
 
   try {
-    const [tenantResult] = await db.query(
-      `INSERT INTO tenants (code, name, is_active)
-       VALUES (?, ?, 1)`,
-      [tenantCode, tenantName]
+    const [lastTenantRows] = await db.query(
+      'SELECT id FROM tenants ORDER BY id DESC LIMIT 1 FOR UPDATE'
     );
 
-    const tenantId = tenantResult.insertId;
+    const tenantId = Number(lastTenantRows[0]?.id || 0) + 1;
+
+    await db.query(
+      `INSERT INTO tenants (id, code, name, is_active)
+       VALUES (?, ?, ?, 1)`,
+      [tenantId, tenantCode, tenantName]
+    );
 
     const [userResult] = await db.query(
       `INSERT INTO users (email, password_hash, display_name, is_active)

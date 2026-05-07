@@ -9,6 +9,7 @@ const { buildUrl, getAuthUrl, PARTNER_ID } = require('../utils/shopeeSignature')
 const { callWithRetry, shopeeAxios } = require('../utils/apiWrapper');
 const db = require('../config/database');
 const { CURRENT_TENANT_ID } = require('../config/tenant');
+const { createOAuthState } = require('../utils/oauthState');
 require('dotenv').config();
 
 const REDIRECT_URL = process.env.SHOPEE_REDIRECT_URL || 'http://localhost:4000/api/auth/shopee/callback';
@@ -19,8 +20,9 @@ const PARTNER_KEY = process.env.SHOPEE_PARTNER_KEY;
 /**
  * OAuth 인증 URL 생성
  */
-function getShopeeAuthUrl() {
-  return getAuthUrl(REDIRECT_URL);
+function getShopeeAuthUrl({ tenantId = CURRENT_TENANT_ID } = {}) {
+  const state = createOAuthState({ tenantId });
+  return getAuthUrl(REDIRECT_URL, { state });
 }
 
 /**

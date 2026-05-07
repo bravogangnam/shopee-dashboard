@@ -114,15 +114,16 @@ function buildUrl(path, params = {}, type = 'public', accessToken = '', id = '')
  * Generate Shopee OAuth authorization URL
  * For main account (merchant) authorization
  */
-function getAuthUrl(redirectUrl) {
+function getAuthUrl(redirectUrl, extraParams = {}) {
   const path = '/api/v2/shop/auth_partner';
   const { timestamp, sign } = signPublic(path);
-  
+
   const params = new URLSearchParams({
     partner_id: String(PARTNER_ID),
     timestamp: String(timestamp),
     sign,
     redirect: redirectUrl,
+    ...extraParams,
   });
 
   return `${BASE_URL}${path}?${params.toString()}`;

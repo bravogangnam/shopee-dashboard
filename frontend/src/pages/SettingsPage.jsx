@@ -14,6 +14,8 @@ import {
   startBackfill,
   testConnection,
   updateShop,
+  fetchGoogleSheetSettings,
+  updateGoogleSheetSettings,
 } from '../api/settings.js';
 import { formatDateTime } from '../utils/format.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -48,6 +50,125 @@ function getConnectionRows(result) {
 function getJobPayload(result) {
   return result.job || result.data || result;
 }
+
+
+function GoogleSheetSettingsSection() {
+  const [googleSheetId, setGoogleSheetId] = useState('');
+  const [sheetNames, setSheetNames] = useState({
+    chart: '차트',
+    receipts: '입고관리',
+    skuCompositions: '상품구성표',
+  });
+  const [timestamps, setTimestamps] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadGoogleSheetSettings() {
+      setLoading(true);
+      setError('');
+
+      try {
+        const result = await fetchGoogleSheetSettings();
+        const settings = result.settings || {};
+        if (!cancelled) {
+          setGoogleSheetId(settings.google_sheet_id || '');
+          setSheetNames(settings.sheet_names || {
+            chart: '차트',
+            receipts: '입고관리',
+            skuCompositions: '상품구성표',
+          });
+          setTimestamps({
+            last_chart_synced_at: settings.last_chart_synced_at,
+            last_receipt_synced_at: settings.last_receipt_synced_at,
+            last_composition_synced_at: settings.last_composition_synced_at,
+          });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message || 'Google Sheet 설정을 불러오지 못했습니다.');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadGoogleSheetSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    setMessage('');
+    setError('');
+
+    try {
+      const result = await updateGoogleSheetSettings({
+        google_sheet_id: googleSheetId.trim(),
+      });
+      setGoogleSheetId(result.settings?.google_sheet_id || googleSheetId.trim());
+      setMessage('Google Sheet ID가 저장되었습니다.');
+    } catch (err) {
+      setError(err.message || 'Google Sheet ID 저장에 실패했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="settings-section google-sheet-settings-section">
+      <h2>Google Sheet 연결</h2>
+      <p className="settings-help-text">
+        제공된 템플릿을 복사해서 사용하세요. 시트명과 컬럼 위치는 변경하면 안 됩니다.
+      </p>
+
+      <div className="settings-grid">
+        <label className="settings-field google-sheet-id-field">
+          <span>Google Sheet ID</span>
+          <input
+            value={googleSheetId}
+            onChange={(event) => setGoogleSheetId(event.target.value)}
+            placeholder="Google Sheet URL 또는 ID"
+            disabled={loading}
+          />
+        </label>
+      </div>
+
+      <div className="fixed-sheet-names">
+        <strong>고정 시트명</strong>
+        <span>차트: {sheetNames.chart}</span>
+        <span>입고관리: {sheetNames.receipts}</span>
+        <span>상품구성표: {sheetNames.skuCompositions}</span>
+      </div>
+
+      <div className="google-sheet-sync-status">
+        <span>차트 동기화: {timestamps.last_chart_synced_at || '-'}</span>
+        <span>입고관리 동기화: {timestamps.last_receipt_synced_at || '-'}</span>
+        <span>상품구성표 동기화: {timestamps.last_composition_synced_at || '-'}</span>
+      </div>
+
+      {error ? <p className="error-text">{error}</p> : null}
+      {message ? <p className="success-text">{message}</p> : null}
+
+      <button
+        type="button"
+        className="btn btn-primary"
+        onClick={handleSave}
+        disabled={loading || saving}
+      >
+        {saving ? '저장 중...' : 'Google Sheet ID 저장'}
+      </button>
+    </section>
+  );
+}
+
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -346,6 +467,8 @@ export default function SettingsPage() {
           </ol>
         </section>
       )}
+
+      <GoogleSheetSettingsSection />
 
       <section className="settings-section">
         <h2>Shopee API 계정</h2>

@@ -73,3 +73,16 @@ export function startBackfill() {
 export function getJobStatus(jobId) {
   return apiRequest(`/api/jobs/${encodeURIComponent(jobId)}/status`);
 }
+
+export function fetchGoogleSheetSettings() {
+  return apiRequest('/api/settings/google-sheet');
+}
+
+export function updateGoogleSheetSettings(payload) {
+  return apiRequest('/api/settings/google-sheet', {
+    method: 'PUT',
+    body: {
+      google_sheet_id: payload.google_sheet_id,
+    },
+  });
+}

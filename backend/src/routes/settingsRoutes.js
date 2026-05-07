@@ -164,6 +164,107 @@ router.put('/account', async (req, res) => {
   }
 });
 
+
+const FIXED_GOOGLE_SHEET_NAMES = {
+  chart: '차트',
+  receipts: '입고관리',
+  skuCompositions: '상품구성표',
+};
+
+function normalizeGoogleSheetId(value) {
+  if (value === undefined || value === null) return '';
+
+  const text = String(value).trim();
+  if (!text) return '';
+
+  const match = text.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  return match ? match[1] : text;
+}
+
+router.get('/google-sheet', async (req, res) => {
+  try {
+    const tenantId = getCurrentTenantId(req);
+
+    const [rows] = await db.query(
+      `SELECT
+         tenant_id,
+         google_sheet_id,
+         last_chart_synced_at,
+         last_receipt_synced_at,
+         last_composition_synced_at,
+         updated_at
+       FROM tenant_google_sheet_settings
+       WHERE tenant_id = ?
+       LIMIT 1`,
+      [tenantId]
+    );
+
+    const settings = rows[0] || {
+      tenant_id: tenantId,
+      google_sheet_id: '',
+      last_chart_synced_at: null,
+      last_receipt_synced_at: null,
+      last_composition_synced_at: null,
+      updated_at: null,
+    };
+
+    return res.json({
+      success: true,
+      settings: {
+        ...settings,
+        google_sheet_id: settings.google_sheet_id || '',
+        sheet_names: FIXED_GOOGLE_SHEET_NAMES,
+      },
+    });
+  } catch (err) {
+    console.error('[Settings] Google Sheet settings load failed:', err.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to load Google Sheet settings',
+    });
+  }
+});
+
+router.put('/google-sheet', async (req, res) => {
+  try {
+    const tenantId = getCurrentTenantId(req);
+    const googleSheetId = normalizeGoogleSheetId(req.body?.google_sheet_id);
+
+    if (googleSheetId && googleSheetId.length > 255) {
+      return res.status(400).json({
+        success: false,
+        error: 'Google Sheet ID is too long',
+      });
+    }
+
+    await db.query(
+      `INSERT INTO tenant_google_sheet_settings
+         (tenant_id, google_sheet_id)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE
+         google_sheet_id = VALUES(google_sheet_id),
+         updated_at = NOW()`,
+      [tenantId, googleSheetId || null]
+    );
+
+    return res.json({
+      success: true,
+      settings: {
+        tenant_id: tenantId,
+        google_sheet_id: googleSheetId,
+        sheet_names: FIXED_GOOGLE_SHEET_NAMES,
+      },
+    });
+  } catch (err) {
+    console.error('[Settings] Google Sheet settings save failed:', err.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to save Google Sheet settings',
+    });
+  }
+});
+
+
 router.get('/shops', async (req, res) => {
   const tenantId = getCurrentTenantId(req);
   const [rows] = await db.query(

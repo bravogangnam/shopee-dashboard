@@ -2958,3 +2958,39 @@ label {
 .member-settings .settings-section:first-of-type {
   margin-top: 0;
 }
+
+/* Google Sheet settings */
+.google-sheet-settings-section .settings-help-text {
+  color: #475569;
+  line-height: 1.6;
+  margin: 0 0 14px;
+}
+
+.google-sheet-id-field {
+  grid-column: 1 / -1;
+}
+
+.fixed-sheet-names,
+.google-sheet-sync-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.fixed-sheet-names span,
+.fixed-sheet-names strong,
+.google-sheet-sync-status span {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #334155;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.fixed-sheet-names strong {
+  background: #dbeafe;
+  color: #1d4ed8;
+}

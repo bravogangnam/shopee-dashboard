@@ -109,7 +109,6 @@ router.post('/login', async (req, res) => {
          WHERE u.email = ?
            AND u.is_active = 1
            AND tu.is_active = 1
-           /* pending-login: tenant active checked by approval gate */ 1=1
          ORDER BY
            CASE tu.role WHEN 'owner' THEN 1 WHEN 'admin' THEN 2 WHEN 'staff' THEN 3 ELSE 4 END,
            tu.tenant_id ASC

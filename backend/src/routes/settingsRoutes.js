@@ -21,8 +21,10 @@ router.use(requireAuth);
 
 // ─── 계정 정보 조회 ──────────────────────────────────────────────
 router.get('/account', async (req, res) => {
+  const tenantId = CURRENT_TENANT_ID;
   const [rows] = await db.query(
-    'SELECT id, partner_id, partner_key, main_account_id, merchant_id, token_status, token_expires_at, refresh_expires_at, updated_at FROM main_account LIMIT 1'
+    'SELECT id, partner_id, partner_key, main_account_id, merchant_id, token_status, token_expires_at, refresh_expires_at, updated_at FROM main_account WHERE tenant_id = ? LIMIT 1',
+    [tenantId]
   );
 
   const account = rows[0] || {
@@ -44,17 +46,18 @@ router.put('/account', async (req, res) => {
     return res.status(400).json({ success: false, error: 'partner_id and partner_key are required' });
   }
 
-  const [existing] = await db.query('SELECT id FROM main_account LIMIT 1');
+  const tenantId = CURRENT_TENANT_ID;
+  const [existing] = await db.query('SELECT id FROM main_account WHERE tenant_id = ? LIMIT 1', [tenantId]);
 
   if (existing.length > 0) {
     await db.query(
-      'UPDATE main_account SET partner_id = ?, partner_key = ?, main_account_id = ?, merchant_id = ?, updated_at = NOW() WHERE id = ?',
-      [partner_id, partner_key, main_account_id || null, merchant_id || null, existing[0].id]
+      'UPDATE main_account SET partner_id = ?, partner_key = ?, main_account_id = ?, merchant_id = ?, updated_at = NOW() WHERE tenant_id = ? AND id = ?',
+      [partner_id, partner_key, main_account_id || null, merchant_id || null, tenantId, existing[0].id]
     );
   } else {
     await db.query(
-      'INSERT INTO main_account (partner_id, partner_key, main_account_id, merchant_id) VALUES (?, ?, ?, ?)',
-      [partner_id, partner_key, main_account_id || null, merchant_id || null]
+      'INSERT INTO main_account (tenant_id, partner_id, partner_key, main_account_id, merchant_id) VALUES (?, ?, ?, ?, ?)',
+      [tenantId, partner_id, partner_key, main_account_id || null, merchant_id || null]
     );
   }
 

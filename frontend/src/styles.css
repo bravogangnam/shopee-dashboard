@@ -2716,7 +2716,7 @@ label {
   font-size: 12px;
 }
 
-.status-pill {
+.admin-page .status-pill {
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
@@ -2727,18 +2727,18 @@ label {
   color: #334155;
 }
 
-.status-pill.pending {
+.admin-page .status-pill.pending {
   background: #fef3c7;
   color: #92400e;
 }
 
-.status-pill.approved {
+.admin-page .status-pill.approved {
   background: #dcfce7;
   color: #166534;
 }
 
-.status-pill.rejected,
-.status-pill.suspended {
+.admin-page .status-pill.rejected,
+.admin-page .status-pill.suspended {
   background: #fee2e2;
   color: #991b1b;
 }

@@ -22,7 +22,8 @@ const {
   autoRefreshToken,
 } = require('../services/shopeeAuth');
 const db = require('../config/database');
-const { CURRENT_TENANT_ID, getCurrentTenantId } = require('../config/tenant');
+const { verifyOAuthState } = require('../utils/oauthState');
+const { getCurrentTenantId } = require('../config/tenant');
 require('dotenv').config();
 
 // ─── 비밀번호 로그인 ────────────────────────────────────────────
@@ -63,13 +64,20 @@ router.post('/logout', (req, res) => {
 
 // ─── Shopee OAuth URL 생성 ───────────────────────────────────────
 router.get('/shopee/url', requireAuth, (req, res) => {
-  const url = getShopeeAuthUrl();
+  const tenantId = getCurrentTenantId(req);
+  const url = getShopeeAuthUrl({ tenantId });
   return res.json({ success: true, url });
 });
 
 // ─── Shopee OAuth Callback ──────────────────────────────────────
 router.get('/shopee/callback', async (req, res) => {
-  const { code, shop_id, main_account_id, merchant_id } = req.query;
+  const { code, shop_id, main_account_id, merchant_id, state } = req.query;
+  const stateResult = verifyOAuthState(state);
+  const tenantId = stateResult.tenantId;
+
+  if (!stateResult.valid) {
+    console.warn(`[OAuth] state invalid or missing: ${stateResult.reason}; fallback tenant_id=${tenantId}`);
+  }
 
   if (!code) {
     return res.status(400).send(`
@@ -130,7 +138,7 @@ router.get('/shopee/callback', async (req, res) => {
 
     // ── main_account 토큰 저장 ──────────────────────────────────
     const callbackShopId = useShopId;
-    await saveToken(result, callbackShopId, { tenantId: CURRENT_TENANT_ID });
+    await saveToken(result, callbackShopId, { tenantId });
     console.log(`✅ Shopee OAuth completed, main_account token saved. auth_shop_id=${callbackShopId || 'none'}`);
 
     // ── 응답의 shop_id_list → shops 테이블에 동일 토큰 저장 ─────
@@ -144,7 +152,7 @@ router.get('/shopee/callback', async (req, res) => {
     const savedShopIds = [];
     for (const sid of shopIdList) {
       try {
-        const saved = await saveShopToken(sid, result, { tenantId: CURRENT_TENANT_ID });
+        const saved = await saveShopToken(sid, result, { tenantId });
         if (saved) savedShopIds.push(sid);
       } catch (e) {
         console.error(`[OAuth] shops 저장 실패 (shop_id=${sid}):`, e.message);
@@ -155,7 +163,7 @@ router.get('/shopee/callback', async (req, res) => {
     // 나머지 미인증 shop 확인
     const [allShops] = await db.query(
       'SELECT shop_id, region, alias, token_status FROM shops WHERE tenant_id = ? AND is_active=1 ORDER BY id',
-      [CURRENT_TENANT_ID]
+      [tenantId]
     );
     const pendingShops = allShops.filter(s => s.token_status !== 'active');
     const allAuthed    = pendingShops.length === 0;

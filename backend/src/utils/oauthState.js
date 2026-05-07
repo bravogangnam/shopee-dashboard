@@ -1,4 +1,10 @@
 const crypto = require('crypto');
+const path = require('path');
+
+require('dotenv').config({
+  path: path.resolve(__dirname, '../../.env'),
+});
+
 const { CURRENT_TENANT_ID, normalizeTenantId } = require('../config/tenant');
 
 const STATE_TTL_SECONDS = 10 * 60;

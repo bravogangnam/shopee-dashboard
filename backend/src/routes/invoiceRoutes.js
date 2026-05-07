@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { getCurrentTenantId } = require('../config/tenant');
 const fs = require('fs');
 const { requireAuth } = require('../middleware/auth');
 const {
@@ -133,6 +134,7 @@ function extractCurrentOrderSn(message) {
 }
 
 async function startInvoiceJob(req, res, { legacy = false } = {}) {
+  const tenantId = getCurrentTenantId(req);
   const orderSnList = normalizeOrderSnList(req.body);
 
   if (orderSnList.length === 0) {
@@ -143,9 +145,9 @@ async function startInvoiceJob(req, res, { legacy = false } = {}) {
     return res.status(400).json({ success: false, error: '한 번에 최대 50건까지 가능합니다.' });
   }
 
-  await recoverStaleInvoiceJobs({ staleMinutes: 10 });
+  await recoverStaleInvoiceJobs({ staleMinutes: 10, tenantId });
 
-  const running = await getRunningJob('invoice');
+  const running = await getRunningJob('invoice', { tenantId });
   if (running) {
     const runningJob = formatInvoiceJob(running);
     return res.status(409).json({
@@ -159,9 +161,9 @@ async function startInvoiceJob(req, res, { legacy = false } = {}) {
     });
   }
 
-  const jobId = await createJob('invoice');
+  const jobId = await createJob('invoice', { tenantId });
 
-  runInvoice(jobId, orderSnList).catch(err => {
+  runInvoice(jobId, orderSnList, { tenantId }).catch(err => {
     console.error('[InvoiceRoute] Unhandled error:', err.message);
   });
 
@@ -176,7 +178,8 @@ async function startInvoiceJob(req, res, { legacy = false } = {}) {
 }
 
 async function sendInvoiceJobDownload(req, res, jobId) {
-  const job = await getJob(jobId);
+  const tenantId = getCurrentTenantId(req);
+  const job = await getJob(jobId, { tenantId });
 
   if (!job) {
     return res.status(404).json({ success: false, error: 'Job not found' });
@@ -205,7 +208,8 @@ router.post('/jobs', async (req, res) => {
 });
 
 router.get('/jobs/:jobId', async (req, res) => {
-  const job = await getJob(req.params.jobId);
+  const tenantId = getCurrentTenantId(req);
+  const job = await getJob(req.params.jobId, { tenantId });
   if (!job) {
     return res.status(404).json({ success: false, error: 'Job not found' });
   }

@@ -19,14 +19,16 @@ const {
 const { runBackfill } = require('../jobs/backfillWorker');
 const { runSync } = require('../jobs/syncWorker');
 const db = require('../config/database');
-const { CURRENT_TENANT_ID } = require('../config/tenant');
+const { getCurrentTenantId } = require('../config/tenant');
 
 router.use(requireAuth);
 
 // ─── 백필 시작 ─────────────────────────────────────────────────
 router.post('/backfill', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+
   // 중복 실행 방지
-  const running = await getRunningJob('backfill');
+  const running = await getRunningJob('backfill', { tenantId });
   if (running) {
     return res.status(409).json({
       success: false,
@@ -36,10 +38,10 @@ router.post('/backfill', async (req, res) => {
     });
   }
 
-  const jobId = await createJob('backfill');
+  const jobId = await createJob('backfill', { tenantId });
 
   // 백그라운드 실행 (await 없이)
-  runBackfill(jobId).catch(err => {
+  runBackfill(jobId, { tenantId }).catch(err => {
     console.error('[BackfillRoute] Unhandled error:', err.message);
   });
 
@@ -52,8 +54,10 @@ router.post('/backfill', async (req, res) => {
 
 // ─── 수동 동기화 시작 ───────────────────────────────────────────
 router.post('/sync', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+
   // 중복 실행 방지 (sync, backfill 둘 다 체크)
-  const runningSync = await getRunningJob('sync');
+  const runningSync = await getRunningJob('sync', { tenantId });
   if (runningSync) {
     return res.status(409).json({
       success: false,
@@ -62,7 +66,7 @@ router.post('/sync', async (req, res) => {
       job_id: runningSync.id,
     });
   }
-  const runningBackfill = await getRunningJob('backfill');
+  const runningBackfill = await getRunningJob('backfill', { tenantId });
   if (runningBackfill) {
     return res.status(409).json({
       success: false,
@@ -72,9 +76,9 @@ router.post('/sync', async (req, res) => {
     });
   }
 
-  const jobId = await createJob('sync');
+  const jobId = await createJob('sync', { tenantId });
 
-  runSync(jobId).catch(err => {
+  runSync(jobId, { tenantId }).catch(err => {
     console.error('[SyncRoute] Unhandled error:', err.message);
   });
 
@@ -87,7 +91,8 @@ router.post('/sync', async (req, res) => {
 
 // ─── Job 상태 조회 (폴링) ──────────────────────────────────────
 router.get('/:id/status', async (req, res) => {
-  const job = await getJob(req.params.id);
+  const tenantId = getCurrentTenantId(req);
+  const job = await getJob(req.params.id, { tenantId });
   if (!job) {
     return res.status(404).json({ success: false, error: 'Job not found' });
   }
@@ -116,7 +121,7 @@ router.get('/:id/status', async (req, res) => {
 // ─── 진행 중인 Job 목록 ────────────────────────────────────────
 // 조회 전 5분 초과 job을 먼저 failed 처리 → 폴러가 즉시 완료 감지
 router.get('/active', async (req, res) => {
-  const tenantId = CURRENT_TENANT_ID;
+  const tenantId = getCurrentTenantId(req);
   await markStaleJobsFailed({ tenantId });
   const [rows] = await db.query(
     `SELECT id, tenant_id, job_type, status, progress_total, progress_current, progress_message, created_at, updated_at
@@ -131,7 +136,7 @@ router.get('/active', async (req, res) => {
 
 // ─── 최근 완료 Job 목록 ────────────────────────────────────────
 router.get('/recent', async (req, res) => {
-  const tenantId = CURRENT_TENANT_ID;
+  const tenantId = getCurrentTenantId(req);
   const [rows] = await db.query(
     `SELECT id, tenant_id, job_type, status, progress_total, progress_current,
             progress_message, result_data, error_message, created_at, updated_at

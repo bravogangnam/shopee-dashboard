@@ -9,6 +9,7 @@
  */
 
 const express = require('express');
+const bcrypt = require('bcryptjs');
 const router = express.Router();
 const { generateToken } = require('../middleware/auth');
 const { requireAuth } = require('../middleware/auth');
@@ -26,33 +27,105 @@ const { verifyOAuthState } = require('../utils/oauthState');
 const { getCurrentTenantId } = require('../config/tenant');
 require('dotenv').config();
 
-// ─── 비밀번호 로그인 ────────────────────────────────────────────
-router.post('/login', (req, res) => {
-  const { password } = req.body;
+function setAuthCookie(res, token) {
+  res.cookie('auth_token', token, {
+    httpOnly: true,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+  });
+}
+
+// ─── 로그인 ─────────────────────────────────────────────────────
+// 기존 APP_PASSWORD 로그인은 그대로 유지.
+// email이 같이 오면 users/tenant_users 기반 로그인도 지원.
+router.post('/login', async (req, res) => {
+  const { email, password } = req.body;
   const APP_PASSWORD = process.env.APP_PASSWORD || '976431';
 
   if (!password) {
     return res.status(400).json({ success: false, error: 'Password required' });
   }
 
+  const normalizedEmail = typeof email === 'string'
+    ? email.trim().toLowerCase()
+    : '';
+
+  if (normalizedEmail) {
+    try {
+      const [rows] = await db.query(
+        `SELECT
+           u.id AS user_id,
+           u.email,
+           u.password_hash,
+           u.display_name,
+           tu.tenant_id,
+           tu.role
+         FROM users u
+         JOIN tenant_users tu ON tu.user_id = u.id
+         JOIN tenants t ON t.id = tu.tenant_id
+         WHERE u.email = ?
+           AND u.is_active = 1
+           AND tu.is_active = 1
+           AND t.is_active = 1
+         ORDER BY
+           CASE tu.role WHEN 'owner' THEN 1 WHEN 'admin' THEN 2 WHEN 'staff' THEN 3 ELSE 4 END,
+           tu.tenant_id ASC
+         LIMIT 1`,
+        [normalizedEmail]
+      );
+
+      const user = rows[0];
+
+      if (!user || !user.password_hash) {
+        return res.status(401).json({ success: false, error: 'Invalid email or password' });
+      }
+
+      const passwordMatches = await bcrypt.compare(password, user.password_hash);
+      if (!passwordMatches) {
+        return res.status(401).json({ success: false, error: 'Invalid email or password' });
+      }
+
+      await db.query('UPDATE users SET last_login_at = NOW() WHERE id = ?', [user.user_id]);
+
+      const token = generateToken({
+        tenantId: user.tenant_id,
+        userId: user.user_id,
+        role: user.role || 'owner',
+      });
+
+      setAuthCookie(res, token);
+
+      return res.json({
+        success: true,
+        message: 'Login successful',
+        token,
+        user: {
+          id: user.user_id,
+          email: user.email,
+          display_name: user.display_name,
+          tenant_id: user.tenant_id,
+          role: user.role,
+        },
+      });
+    } catch (err) {
+      console.error('[Auth] email login failed:', err.message);
+      return res.status(500).json({ success: false, error: 'Login failed' });
+    }
+  }
+
+  // 기존 단일 비밀번호 로그인 fallback
   if (password !== APP_PASSWORD) {
     return res.status(401).json({ success: false, error: 'Invalid password' });
   }
 
   const token = generateToken();
-
-  // 쿠키에 JWT 저장 (7일, httpOnly, sameSite)
-  res.cookie('auth_token', token, {
-    httpOnly: true,
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7일
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-  });
+  setAuthCookie(res, token);
 
   return res.json({
     success: true,
     message: 'Login successful',
-    token, // 프론트가 localStorage에도 저장할 수 있게
+    token,
   });
 });
 

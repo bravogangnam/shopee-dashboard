@@ -115,7 +115,8 @@ router.get('/tenants', async (req, res) => {
          owner.owner_user_id,
          u.email AS owner_email,
          u.display_name AS owner_display_name,
-         u.phone AS owner_phone
+         u.phone AS owner_phone,
+         u.last_login_at AS owner_last_login_at
        FROM tenants t
        LEFT JOIN (
          SELECT tenant_id, MIN(user_id) AS owner_user_id
@@ -154,6 +155,7 @@ router.get('/tenants', async (req, res) => {
         owner_email: row.owner_email,
         owner_display_name: row.owner_display_name,
         owner_phone: row.owner_phone,
+        owner_last_login_at: row.owner_last_login_at,
       })),
     });
   } catch (err) {
@@ -173,6 +175,7 @@ router.get('/users', async (req, res) => {
          u.email,
          u.display_name,
          u.phone,
+         u.last_login_at,
          u.is_active,
          u.is_platform_admin,
          tu.tenant_id,
@@ -194,6 +197,7 @@ router.get('/users', async (req, res) => {
         email: row.email,
         display_name: row.display_name,
         phone: row.phone,
+        last_login_at: row.last_login_at,
         is_active: Number(row.is_active || 0),
         is_platform_admin: Number(row.is_platform_admin || 0),
         tenant_id: row.tenant_id,

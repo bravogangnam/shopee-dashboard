@@ -218,7 +218,9 @@ export default function AdminPage() {
                       </td>
                       <td>{tenant.requested_main_account_id || '-'}</td>
                       <td>
-                        <strong>{tenant.owner_email || '-'}</strong>
+                        <strong>{tenant.owner_email || '-'}
+                          <br />
+                          <small>최근 로그인: {formatDate(tenant.owner_last_login_at)}</small></strong>
                         <small>{tenant.owner_phone || tenant.owner_display_name || '-'}</small>
                       </td>
                       <td>
@@ -300,7 +302,9 @@ export default function AdminPage() {
                   <tr key={`${user.id}-${user.tenant_id || 'none'}-${index}`}>
                     <td>{user.id}</td>
                     <td>
-                      <strong>{user.email}</strong>
+                      <strong>{user.email}
+                          <br />
+                          <small>최근 로그인: {formatDate(user.last_login_at)}</small></strong>
                       <small>{user.phone || user.display_name || '-'}</small>
                     </td>
                     <td>

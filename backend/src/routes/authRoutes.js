@@ -355,30 +355,77 @@ router.get('/shopee/url', requireAuth, requireApprovedTenant, (req, res) => {
 router.get('/shopee/callback', async (req, res) => {
   const { code, shop_id, main_account_id, merchant_id, state } = req.query;
   const stateResult = verifyOAuthState(state);
-  const tenantId = stateResult.tenantId;
+  let tenantId = stateResult.tenantId;
 
   if (!stateResult.valid) {
-    console.warn(`[OAuth] state invalid or missing: ${stateResult.reason}; rejecting callback`);
-    return res.status(400).send(`
-      <html>
-      <head><title>Auth Error</title></head>
-      <body style="font-family:Arial;text-align:center;padding:50px;">
-        <h2 style="color:red;">❌ 인증 실패</h2>
-        <p>OAuth state is invalid or expired. Please try Shopee authorization again.</p>
-        <script>
-          if (window.opener) {
-            window.opener.postMessage({
-              type: 'SHOPEE_AUTH_ERROR',
-              error: 'Invalid or expired OAuth state'
-            }, '*');
-            setTimeout(() => window.close(), 3000);
-          } else {
-            setTimeout(() => { window.location.href = '/settings?auth=error'; }, 3000);
-          }
-        </script>
-      </body>
-      </html>
-    `);
+    // Shopee가 일부 main_account OAuth callback에서 state를 되돌려주지 않는 경우가 있다.
+    // 이 경우 무조건 허용하지 않고, callback의 main_account_id가 DB의 tenant와 정확히 매칭될 때만 fallback 허용한다.
+    if (stateResult.reason === 'missing_state' && main_account_id) {
+      const mainAccountText = String(main_account_id);
+
+      const [tenantRows] = await db.query(
+        `SELECT t.id
+         FROM tenants t
+         LEFT JOIN main_account ma ON ma.tenant_id = t.id
+         WHERE t.approval_status = 'approved'
+           AND (
+             CAST(t.requested_main_account_id AS CHAR) = ?
+             OR CAST(ma.main_account_id AS CHAR) = ?
+           )
+         GROUP BY t.id
+         LIMIT 2`,
+        [mainAccountText, mainAccountText]
+      );
+
+      if (tenantRows.length === 1) {
+        tenantId = tenantRows[0].id;
+        console.warn(`[OAuth] state missing; resolved tenant_id=${tenantId} by main_account_id=${mainAccountText}`);
+      } else {
+        console.warn(`[OAuth] state missing and main_account_id fallback failed; matches=${tenantRows.length}`);
+        return res.status(400).send(`
+          <html>
+          <head><title>Auth Error</title></head>
+          <body style="font-family:Arial;text-align:center;padding:50px;">
+            <h2 style="color:red;">❌ 인증 실패</h2>
+            <p>OAuth state is missing and the main account could not be matched safely.</p>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({
+                  type: 'SHOPEE_AUTH_ERROR',
+                  error: 'OAuth state missing and tenant match failed'
+                }, '*');
+                setTimeout(() => window.close(), 3000);
+              } else {
+                setTimeout(() => { window.location.href = '/settings?auth=error'; }, 3000);
+              }
+            </script>
+          </body>
+          </html>
+        `);
+      }
+    } else {
+      console.warn(`[OAuth] state invalid or missing: ${stateResult.reason}; rejecting callback`);
+      return res.status(400).send(`
+        <html>
+        <head><title>Auth Error</title></head>
+        <body style="font-family:Arial;text-align:center;padding:50px;">
+          <h2 style="color:red;">❌ 인증 실패</h2>
+          <p>OAuth state is invalid or expired. Please try Shopee authorization again.</p>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({
+                type: 'SHOPEE_AUTH_ERROR',
+                error: 'Invalid or expired OAuth state'
+              }, '*');
+              setTimeout(() => window.close(), 3000);
+            } else {
+              setTimeout(() => { window.location.href = '/settings?auth=error'; }, 3000);
+            }
+          </script>
+        </body>
+        </html>
+      `);
+    }
   }
 
   if (!code) {
@@ -401,41 +448,39 @@ router.get('/shopee/callback', async (req, res) => {
   try {
     // ── 콜백 파라미터 전체 상세 로깅 ───────────────────────────
     console.log('[OAuth] ===== CALLBACK PARAMS =====');
-    console.log(`[OAuth]   code          : ${code?.slice(0, 15)}...`);
+    console.log(`[OAuth]   has_code      : ${code ? 'yes' : 'no'}`);
     console.log(`[OAuth]   shop_id       : ${shop_id ?? '(없음)'}`);
     console.log(`[OAuth]   merchant_id   : ${merchant_id ?? '(없음)'}`);
     console.log(`[OAuth]   main_account_id: ${main_account_id ?? '(없음)'}`);
-    console.log(`[OAuth]   raw query     : ${JSON.stringify(req.query)}`);
+    console.log(`[OAuth]   query_keys    : ${Object.keys(req.query || {}).join(',')}`);
     console.log('[OAuth] ==================================');
 
-    // shop_id, main_account_id, merchant_id 중 실제로 온 값으로 토큰 교환
-    const useShopId      = shop_id      ? parseInt(shop_id)      : null;
-    const useMerchantId  = merchant_id  ? parseInt(merchant_id)  : null;
-    // main_account_id는 Shopee가 merchant_id 대신 보내는 경우 있음
-    const useMainAcctId  = (!useMerchantId && main_account_id)
-      ? parseInt(main_account_id)
-      : null;
+      // shop_id, main_account_id, merchant_id 중 실제로 온 값으로 토큰 교환
+      const useShopId      = shop_id      ? parseInt(shop_id)      : null;
+      const useMerchantId  = merchant_id  ? parseInt(merchant_id)  : null;
+      const useMainAcctId  = main_account_id ? parseInt(main_account_id) : null;
 
-    console.log(`[OAuth] exchangeCodeForToken → shop_id=${useShopId}, merchantId=${useMerchantId ?? useMainAcctId}`);
+      console.log(`[OAuth] exchangeCodeForToken → shop_id=${useShopId}, mainAccountId=${useMainAcctId}, merchantId=${useMerchantId}`);
 
-    const result = await exchangeCodeForToken(
-      code,
-      useShopId,
-      useMerchantId ?? useMainAcctId  // merchant_id 없으면 main_account_id 시도
-    );
+      const result = await exchangeCodeForToken(
+        code,
+        useShopId,
+        useMainAcctId,
+        useMerchantId
+      );
 
     // ── 응답 전체 로깅 (토큰 타입 확인용) ──────────────────────
     console.log('[OAuth] ===== TOKEN RESPONSE =====');
-    console.log(`[OAuth]   access_token  : ${result.access_token?.slice(0, 20)}...`);
+    console.log(`[OAuth]   has_access_token  : ${result.access_token ? 'yes' : 'no'}`);
     console.log(`[OAuth]   expire_in     : ${result.expire_in}`);
     console.log(`[OAuth]   refresh_expire: ${result.refresh_token_expire_in}`);
     console.log(`[OAuth]   merchant_id_r : ${result.merchant_id_list ?? result.merchant_id ?? '(없음)'}`);
     console.log(`[OAuth]   shop_id_list  : ${JSON.stringify(result.shop_id_list ?? '(없음)')}`);
-    console.log(`[OAuth]   full response : ${JSON.stringify(result)}`);
+    console.log(`[OAuth]   has_refresh_token : ${result.refresh_token ? 'yes' : 'no'}`);
     console.log('[OAuth] ==================================');
 
     if (!result.access_token) {
-      throw new Error(`No access_token in response: ${JSON.stringify(result)}`);
+      throw new Error('No access_token in Shopee token response');
     }
 
     // ── main_account 토큰 저장 ──────────────────────────────────
@@ -483,15 +528,39 @@ router.get('/shopee/callback', async (req, res) => {
     }
 
     const savedShopIds = [];
+    const skippedShopIds = [];
     for (const sid of shopIdList) {
       try {
+        const [existingShopRows] = await db.query(
+          `SELECT access_token, refresh_token, token_status, token_expires_at
+           FROM shops
+           WHERE tenant_id = ? AND shop_id = ?
+           LIMIT 1`,
+          [tenantId, sid]
+        );
+
+        const existingShop = existingShopRows[0];
+        const hasValidShopToken =
+          existingShop &&
+          existingShop.token_status === 'active' &&
+          existingShop.access_token &&
+          existingShop.refresh_token &&
+          existingShop.token_expires_at &&
+          new Date(existingShop.token_expires_at).getTime() > Date.now() + 5 * 60 * 1000;
+
+        if (hasValidShopToken) {
+          skippedShopIds.push(sid);
+          console.log(`[OAuth] shop_id=${sid} 기존 active shop token 유지`);
+          continue;
+        }
+
         const saved = await saveShopToken(sid, result, { tenantId });
         if (saved) savedShopIds.push(sid);
       } catch (e) {
         console.error(`[OAuth] shops 저장 실패 (shop_id=${sid}):`, e.message);
       }
     }
-    console.log(`[OAuth] shop_id_list=${JSON.stringify(shopIdList)}, shops 테이블 저장 완료=${JSON.stringify(savedShopIds)}`);
+    console.log(`[OAuth] shop_id_list=${JSON.stringify(shopIdList)}, shops 저장=${JSON.stringify(savedShopIds)}, 기존유지=${JSON.stringify(skippedShopIds)}`);
 
     // 나머지 미인증 shop 확인
     const [allShops] = await db.query(

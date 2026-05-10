@@ -28,7 +28,7 @@ function getShopeeAuthUrl({ tenantId = CURRENT_TENANT_ID } = {}) {
 /**
  * Authorization Code → Access Token 교환
  */
-async function exchangeCodeForToken(code, shopId = null, merchantId = null) {
+async function exchangeCodeForToken(code, shopId = null, mainAccountId = null, merchantId = null) {
   const path = '/api/v2/auth/token/get';
   const url = buildUrl(path, {}, 'public');
 
@@ -37,8 +37,17 @@ async function exchangeCodeForToken(code, shopId = null, merchantId = null) {
     partner_id: PARTNER_ID,
   };
 
-  if (shopId)    body.shop_id     = parseInt(shopId);
+  if (shopId) body.shop_id = parseInt(shopId);
+  if (mainAccountId) body.main_account_id = parseInt(mainAccountId);
   if (merchantId) body.merchant_id = parseInt(merchantId);
+
+  console.log('[OAuth] exchangeCodeForToken body summary:', JSON.stringify({
+    has_code: !!code,
+    partner_id: PARTNER_ID,
+    shop_id: body.shop_id || null,
+    main_account_id: body.main_account_id || null,
+    merchant_id: body.merchant_id || null,
+  }));
 
   const response = await callWithRetry(
     () => shopeeAxios.post(url, body),
@@ -75,11 +84,13 @@ async function refreshAccessToken(refreshToken, shopId = null, merchantId = null
     { context: `refreshAccessToken(${label})` }
   );
 
-  // 응답 전체 로깅 (access_token 일부만)
+  // 응답 요약 로깅: access_token/refresh_token 원문 또는 일부 출력 금지
   console.log(`[TokenRefresh] refreshAccessToken 응답 (${label}):`, JSON.stringify({
-    ...response,
-    access_token:  response.access_token  ? response.access_token.slice(0, 20)  + '...' : null,
-    refresh_token: response.refresh_token ? response.refresh_token.slice(0, 20) + '...' : null,
+    has_access_token: !!response.access_token,
+    has_refresh_token: !!response.refresh_token,
+    expire_in: response.expire_in || null,
+    refresh_token_expire_in: response.refresh_token_expire_in || null,
+    shop_id_list: response.shop_id_list || null,
   }));
 
   return response;

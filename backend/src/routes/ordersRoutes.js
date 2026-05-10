@@ -60,6 +60,100 @@ const FIFO_COST_SELECT = `
           END AS product_profit
   `;
 
+const ORDER_SEARCH_STOP_WORDS = new Set([
+  'and', 'or', 'of', 'the', 'a', 'an', 'in', 'on', 'for', 'to', 'with',
+  '&', '-', '/', '+'
+]);
+
+function buildOrderSearchTerms(rawSearch) {
+  const source = String(rawSearch || '').trim();
+  if (!source) return [];
+
+  return Array.from(
+    new Set(
+      source
+        .split(/\s+/)
+        .map(term => term.trim())
+        .filter(Boolean)
+        .map(term => term.toLowerCase().replace(/[^a-z0-9가-힣_]/g, ''))
+        .filter(Boolean)
+        .filter(term => !ORDER_SEARCH_STOP_WORDS.has(term))
+        .filter(term => {
+          // SKU/숫자는 짧아도 허용. 일반 영문 1~2글자는 너무 넓게 잡혀 제외.
+          if (/^[a-z]{1,2}$/i.test(term)) return false;
+          return true;
+        })
+    )
+  ).slice(0, 10);
+}
+
+function buildUnifiedOrderSearchClause(searchTerms, orderAlias = 'o') {
+  if (!searchTerms.length) {
+    return { clause: '', params: [] };
+  }
+
+  const termClauses = searchTerms.map(() => `
+    (
+      ${orderAlias}.order_sn COLLATE utf8mb4_unicode_ci LIKE ?
+      OR REPLACE(LOWER(${orderAlias}.order_sn COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
+      OR EXISTS (
+        SELECT 1
+        FROM order_items oi
+        LEFT JOIN products p
+          ON p.tenant_id = oi.tenant_id
+         AND (
+           p.sku COLLATE utf8mb4_unicode_ci = oi.item_sku COLLATE utf8mb4_unicode_ci
+           OR p.sku COLLATE utf8mb4_unicode_ci = oi.model_sku COLLATE utf8mb4_unicode_ci
+         )
+        WHERE oi.tenant_id = ${orderAlias}.tenant_id
+          AND oi.order_sn = ${orderAlias}.order_sn
+          AND (
+            oi.item_sku COLLATE utf8mb4_unicode_ci LIKE ?
+            OR REPLACE(LOWER(oi.item_sku COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
+            OR oi.model_sku COLLATE utf8mb4_unicode_ci LIKE ?
+            OR REPLACE(LOWER(oi.model_sku COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
+            OR oi.item_name COLLATE utf8mb4_unicode_ci LIKE ?
+            OR REPLACE(LOWER(oi.item_name COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
+            OR oi.model_name COLLATE utf8mb4_unicode_ci LIKE ?
+            OR REPLACE(LOWER(oi.model_name COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
+            OR p.sku COLLATE utf8mb4_unicode_ci LIKE ?
+            OR REPLACE(LOWER(p.sku COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
+            OR p.product_name_en COLLATE utf8mb4_unicode_ci LIKE ?
+            OR REPLACE(LOWER(p.product_name_en COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
+            OR p.product_name_kr COLLATE utf8mb4_unicode_ci LIKE ?
+            OR REPLACE(LOWER(p.product_name_kr COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
+            OR p.option_name COLLATE utf8mb4_unicode_ci LIKE ?
+            OR REPLACE(LOWER(p.option_name COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
+          )
+      )
+    )
+  `);
+
+  const params = [];
+  for (const term of searchTerms) {
+    const likeTerm = `%${term}%`;
+    const normalizedLikeTerm = `%${term.replace(/\s+/g, '').toLowerCase()}%`;
+
+    params.push(
+      likeTerm, normalizedLikeTerm,
+      likeTerm, normalizedLikeTerm,
+      likeTerm, normalizedLikeTerm,
+      likeTerm, normalizedLikeTerm,
+      likeTerm, normalizedLikeTerm,
+      likeTerm, normalizedLikeTerm,
+      likeTerm, normalizedLikeTerm,
+      likeTerm, normalizedLikeTerm,
+      likeTerm, normalizedLikeTerm
+    );
+  }
+
+  return {
+    // 여러 단어는 모두 매칭되어야 함. 각 단어는 주문번호/SKU/상품명/옵션명 중 어디든 매칭 가능.
+    clause: ` AND (${termClauses.join(' AND ')})`,
+    params,
+  };
+}
+
 /**
  * GET /api/orders
  * Query params:
@@ -88,29 +182,7 @@ router.get('/', async (req, res) => {
   const pageSize = Math.min(100, Math.max(1, parseInt(page_size)));
   const offset = (pageNum - 1) * pageSize;
   const search = String(searchQuery || orderSnSearch || '').trim();
-  const SEARCH_STOP_WORDS = new Set([
-    'and', 'or', 'of', 'the', 'a', 'an', 'in', 'on', 'for', 'to', 'with',
-    '&', '-', '/', '+'
-  ]);
-
-  const searchTerms = Array.from(
-    new Set(
-      search
-        .split(/\s+/)
-        .map(term => term.trim())
-        .filter(Boolean)
-        .filter(term => {
-          const normalized = term.toLowerCase().replace(/[^a-z0-9가-힣_]/g, '');
-          if (!normalized) return false;
-          if (SEARCH_STOP_WORDS.has(normalized)) return false;
-
-          // SKU나 숫자 검색은 짧아도 허용. 일반 영문 1~2글자는 너무 넓게 잡혀 제외.
-          if (/^[a-z]{1,2}$/i.test(normalized)) return false;
-
-          return true;
-        })
-    )
-  ).slice(0, 10);
+  const searchTerms = buildOrderSearchTerms(search);
 
   // ── 요청 파라미터 로그 ────────────────────────────────────────
   console.log(`[Orders] REQ page=${pageNum} pageSize=${pageSize} offset=${offset} | filters: region=${region||'-'} status=${order_status||'-'} date=${date_from||'-'}~${date_to||'-'} search=${search||'-'}`);
@@ -183,63 +255,9 @@ router.get('/', async (req, res) => {
   }
 
   if (searchTerms.length > 0) {
-    const searchTermClauses = searchTerms.map(() => `
-      (
-        o.order_sn COLLATE utf8mb4_unicode_ci LIKE ?
-        OR REPLACE(LOWER(o.order_sn COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
-        OR EXISTS (
-          SELECT 1
-          FROM order_items oi
-          LEFT JOIN products p
-            ON p.tenant_id = oi.tenant_id
-           AND (
-             p.sku COLLATE utf8mb4_unicode_ci = oi.item_sku COLLATE utf8mb4_unicode_ci
-             OR p.sku COLLATE utf8mb4_unicode_ci = oi.model_sku COLLATE utf8mb4_unicode_ci
-           )
-          WHERE oi.tenant_id = o.tenant_id
-            AND oi.order_sn = o.order_sn
-            AND (
-              oi.item_sku COLLATE utf8mb4_unicode_ci LIKE ?
-              OR REPLACE(LOWER(oi.item_sku COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
-              OR oi.model_sku COLLATE utf8mb4_unicode_ci LIKE ?
-              OR REPLACE(LOWER(oi.model_sku COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
-              OR oi.item_name COLLATE utf8mb4_unicode_ci LIKE ?
-              OR REPLACE(LOWER(oi.item_name COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
-              OR oi.model_name COLLATE utf8mb4_unicode_ci LIKE ?
-              OR REPLACE(LOWER(oi.model_name COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
-              OR p.sku COLLATE utf8mb4_unicode_ci LIKE ?
-              OR REPLACE(LOWER(p.sku COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
-              OR p.product_name_en COLLATE utf8mb4_unicode_ci LIKE ?
-              OR REPLACE(LOWER(p.product_name_en COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
-              OR p.product_name_kr COLLATE utf8mb4_unicode_ci LIKE ?
-              OR REPLACE(LOWER(p.product_name_kr COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
-              OR p.option_name COLLATE utf8mb4_unicode_ci LIKE ?
-              OR REPLACE(LOWER(p.option_name COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
-            )
-        )
-      )
-    `);
-
-    // 여러 단어 검색 시 너무 넓게 잡히지 않도록 의미 있는 단어는 모두 매칭되어야 한다.
-    // 단, 각 단어는 주문번호/SKU/상품명/옵션명 중 어디에서든 매칭되면 된다.
-    whereClause += ` AND (${searchTermClauses.join(' AND ')})`;
-
-    for (const term of searchTerms) {
-      const likeTerm = `%${term}%`;
-      const normalizedLikeTerm = `%${term.replace(/\s+/g, '').toLowerCase()}%`;
-
-      params.push(
-        likeTerm, normalizedLikeTerm,
-        likeTerm, normalizedLikeTerm,
-        likeTerm, normalizedLikeTerm,
-        likeTerm, normalizedLikeTerm,
-        likeTerm, normalizedLikeTerm,
-        likeTerm, normalizedLikeTerm,
-        likeTerm, normalizedLikeTerm,
-        likeTerm, normalizedLikeTerm,
-        likeTerm, normalizedLikeTerm
-      );
-    }
+    const unifiedSearch = buildUnifiedOrderSearchClause(searchTerms, 'o');
+    whereClause += unifiedSearch.clause;
+    params.push(...unifiedSearch.params);
   }
 
   try {
@@ -586,12 +604,13 @@ router.get('/stats', async (req, res) => {
  * Settlement list summary.
  */
 router.get('/summary', async (req, res) => {
-  const { date_from, date_to, region, order_status, order_sn } = req.query;
+  const { date_from, date_to, region, order_status, order_sn, search: searchQuery } = req.query;
   const dateFrom = date_from || null;
   const dateTo = date_to || null;
   const regionFilter = region || null;
   const statusFilter = order_status || null;
-  const orderSnFilter = order_sn || null;
+  const search = String(searchQuery || order_sn || '').trim();
+  const searchTerms = buildOrderSearchTerms(search);
   const tenantId = getCurrentTenantId(req);
 
   try {
@@ -621,8 +640,7 @@ router.get('/summary', async (req, res) => {
          AND (? IS NULL OR o.order_created_at >= ?)
          AND (? IS NULL OR o.order_created_at < DATE_ADD(?, INTERVAL 1 DAY))
          AND (? IS NULL OR o.region = ?)
-         AND (? IS NULL OR o.order_status = ?)
-         AND (? IS NULL OR o.order_sn LIKE CONCAT('%', ?, '%'))`;
+         AND (? IS NULL OR o.order_status = ?)`;
 
     const buildSummaryParams = (from, to) => [
         tenantId,
@@ -630,7 +648,6 @@ router.get('/summary', async (req, res) => {
       to, to,
       regionFilter, regionFilter,
       statusFilter, statusFilter,
-      orderSnFilter, orderSnFilter,
     ];
 
     const round2 = value => Math.round(Number(value || 0) * 100) / 100;
@@ -646,9 +663,11 @@ router.get('/summary', async (req, res) => {
       return Math.round(((Number(current) - Number(previous)) / Number(previous)) * 10000) / 100;
     };
 
+    const currentParams = buildSummaryParams(dateFrom, dateTo);
+    const currentSearchSql = buildUnifiedOrderSearchClause(searchTerms, 'o');
     const [rows] = await db.query(
-      summarySql,
-      buildSummaryParams(dateFrom, dateTo)
+      `${summarySql}${currentSearchSql.clause}`,
+      [...currentParams, ...currentSearchSql.params]
     );
 
     const currentSummary = parseSummary(rows[0] || {});
@@ -692,9 +711,11 @@ router.get('/summary', async (req, res) => {
         const prevDateTo = shiftToPreviousMonthSameDay(dateTo);
 
         if (prevDateFrom && prevDateTo) {
+          const prevParams = buildSummaryParams(prevDateFrom, prevDateTo);
+          const prevSearchSql = buildUnifiedOrderSearchClause(searchTerms, 'o');
           const [prevRows] = await db.query(
-            summarySql,
-            buildSummaryParams(prevDateFrom, prevDateTo)
+            `${summarySql}${prevSearchSql.clause}`,
+            [...prevParams, ...prevSearchSql.params]
           );
           prevSummary = parseSummary(prevRows[0] || {});
         }

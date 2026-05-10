@@ -88,6 +88,9 @@ router.get('/', async (req, res) => {
   const pageSize = Math.min(100, Math.max(1, parseInt(page_size)));
   const offset = (pageNum - 1) * pageSize;
   const search = String(searchQuery || orderSnSearch || '').trim();
+  const searchTerms = Array.from(
+    new Set(search.split(/\s+/).map(term => term.trim()).filter(Boolean))
+  ).slice(0, 10);
 
   // ── 요청 파라미터 로그 ────────────────────────────────────────
   console.log(`[Orders] REQ page=${pageNum} pageSize=${pageSize} offset=${offset} | filters: region=${region||'-'} status=${order_status||'-'} date=${date_from||'-'}~${date_to||'-'} search=${search||'-'}`);
@@ -159,43 +162,62 @@ router.get('/', async (req, res) => {
     }
   }
 
-  if (search) {
-    whereClause += `
-      AND (
-        o.order_sn LIKE ?
+  if (searchTerms.length > 0) {
+    const searchTermClauses = searchTerms.map(() => `
+      (
+        o.order_sn COLLATE utf8mb4_unicode_ci LIKE ?
+        OR REPLACE(LOWER(o.order_sn COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
         OR EXISTS (
           SELECT 1
           FROM order_items oi
           LEFT JOIN products p
             ON p.tenant_id = oi.tenant_id
-           AND p.sku IN (oi.item_sku, oi.model_sku)
+           AND (
+             p.sku COLLATE utf8mb4_unicode_ci = oi.item_sku COLLATE utf8mb4_unicode_ci
+             OR p.sku COLLATE utf8mb4_unicode_ci = oi.model_sku COLLATE utf8mb4_unicode_ci
+           )
           WHERE oi.tenant_id = o.tenant_id
             AND oi.order_sn = o.order_sn
             AND (
-              oi.item_sku LIKE ?
-              OR oi.model_sku LIKE ?
-              OR oi.item_name LIKE ?
-              OR oi.model_name LIKE ?
-              OR p.sku LIKE ?
-              OR p.product_name_en LIKE ?
-              OR p.product_name_kr LIKE ?
-              OR p.option_name LIKE ?
+              oi.item_sku COLLATE utf8mb4_unicode_ci LIKE ?
+              OR REPLACE(LOWER(oi.item_sku COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
+              OR oi.model_sku COLLATE utf8mb4_unicode_ci LIKE ?
+              OR REPLACE(LOWER(oi.model_sku COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
+              OR oi.item_name COLLATE utf8mb4_unicode_ci LIKE ?
+              OR REPLACE(LOWER(oi.item_name COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
+              OR oi.model_name COLLATE utf8mb4_unicode_ci LIKE ?
+              OR REPLACE(LOWER(oi.model_name COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
+              OR p.sku COLLATE utf8mb4_unicode_ci LIKE ?
+              OR REPLACE(LOWER(p.sku COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
+              OR p.product_name_en COLLATE utf8mb4_unicode_ci LIKE ?
+              OR REPLACE(LOWER(p.product_name_en COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
+              OR p.product_name_kr COLLATE utf8mb4_unicode_ci LIKE ?
+              OR REPLACE(LOWER(p.product_name_kr COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
+              OR p.option_name COLLATE utf8mb4_unicode_ci LIKE ?
+              OR REPLACE(LOWER(p.option_name COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
             )
         )
       )
-    `;
-    const likeSearch = `%${search}%`;
-    params.push(
-      likeSearch,
-      likeSearch,
-      likeSearch,
-      likeSearch,
-      likeSearch,
-      likeSearch,
-      likeSearch,
-      likeSearch,
-      likeSearch
-    );
+    `);
+
+    whereClause += ` AND (${searchTermClauses.join(' OR ')})`;
+
+    for (const term of searchTerms) {
+      const likeTerm = `%${term}%`;
+      const normalizedLikeTerm = `%${term.replace(/\s+/g, '').toLowerCase()}%`;
+
+      params.push(
+        likeTerm, normalizedLikeTerm,
+        likeTerm, normalizedLikeTerm,
+        likeTerm, normalizedLikeTerm,
+        likeTerm, normalizedLikeTerm,
+        likeTerm, normalizedLikeTerm,
+        likeTerm, normalizedLikeTerm,
+        likeTerm, normalizedLikeTerm,
+        likeTerm, normalizedLikeTerm,
+        likeTerm, normalizedLikeTerm
+      );
+    }
   }
 
   try {

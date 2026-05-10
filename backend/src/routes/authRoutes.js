@@ -558,14 +558,43 @@ router.get('/shopee/callback', async (req, res) => {
 router.post('/shopee/refresh', requireAuth, requireApprovedTenant, async (req, res) => {
   try {
     const tenantId = getCurrentTenantId(req);
-    const success = await autoRefreshToken({ tenantId });
-    const account = await getMainAccount({ tenantId });
+
+    // 운영 API는 main_account가 아니라 shops 테이블의 shop별 토큰을 사용한다.
+    // 따라서 설정 화면의 수동 토큰 갱신도 shop별 refresh_token + shop_id 기준으로 수행한다.
+    const result = await refreshAllShopTokens({ tenantId });
+
+    const [shopRows] = await db.query(
+      `SELECT
+         COUNT(*) AS active_shop_count,
+         SUM(CASE WHEN token_status = 'active'
+                   AND access_token IS NOT NULL
+                   AND access_token <> ''
+                   AND token_expires_at > NOW()
+                  THEN 1 ELSE 0 END) AS active_token_shop_count,
+         MIN(CASE WHEN token_status = 'active'
+                   AND access_token IS NOT NULL
+                   AND access_token <> ''
+                  THEN token_expires_at ELSE NULL END) AS nearest_shop_token_expires_at
+       FROM shops
+       WHERE tenant_id = ?
+         AND is_active = 1`,
+      [tenantId]
+    );
+
+    const shopStatus = shopRows[0] || {};
+    const activeShopCount = Number(shopStatus.active_shop_count || 0);
+    const activeTokenShopCount = Number(shopStatus.active_token_shop_count || 0);
 
     return res.json({
       success: true,
-      refreshed: success,
-      status: account?.token_status,
-      expires_at: account?.token_expires_at,
+      refreshed: result.fail === 0 && result.success > 0,
+      shop_refresh_success: result.success,
+      shop_refresh_fail: result.fail,
+      status: activeTokenShopCount > 0 ? 'active' : 'expired',
+      token_status: activeTokenShopCount > 0 ? 'active' : 'expired',
+      active_shop_count: activeShopCount,
+      active_token_shop_count: activeTokenShopCount,
+      expires_at: shopStatus.nearest_shop_token_expires_at || null,
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
@@ -577,20 +606,52 @@ router.get('/status', requireAuth, requireApprovedTenant, async (req, res) => {
   const tenantId = getCurrentTenantId(req);
   const account = await getMainAccount({ tenantId });
 
+  const [shopRows] = await db.query(
+    `SELECT
+       COUNT(*) AS active_shop_count,
+       SUM(CASE WHEN token_status = 'active'
+                 AND access_token IS NOT NULL
+                 AND access_token <> ''
+                 AND token_expires_at > NOW()
+                THEN 1 ELSE 0 END) AS active_token_shop_count,
+       MIN(CASE WHEN token_status = 'active'
+                 AND access_token IS NOT NULL
+                 AND access_token <> ''
+                THEN token_expires_at ELSE NULL END) AS nearest_shop_token_expires_at
+     FROM shops
+     WHERE tenant_id = ?
+       AND is_active = 1`,
+    [tenantId]
+  );
+
+  const shopStatus = shopRows[0] || {};
+  const activeShopCount = Number(shopStatus.active_shop_count || 0);
+  const activeTokenShopCount = Number(shopStatus.active_token_shop_count || 0);
+  const effectiveTokenStatus = activeTokenShopCount > 0 ? 'active' : (account?.token_status || null);
+
   if (!account) {
     return res.json({
       success: true,
-      authenticated: false,
-      token_status: null,
-      message: 'No account configured',
+      authenticated: activeTokenShopCount > 0,
+      token_status: effectiveTokenStatus,
+      main_account_token_status: null,
+      active_shop_count: activeShopCount,
+      active_token_shop_count: activeTokenShopCount,
+      token_expires_at: shopStatus.nearest_shop_token_expires_at || null,
+      message: activeTokenShopCount > 0 ? 'Shop tokens are active' : 'No account configured',
     });
   }
 
   return res.json({
     success: true,
-    authenticated: !!account.access_token,
-    token_status: account.token_status,
-    token_expires_at: account.token_expires_at,
+    authenticated: !!account.access_token || activeTokenShopCount > 0,
+    token_status: effectiveTokenStatus,
+    main_account_token_status: account.token_status,
+    main_account_token_expires_at: account.token_expires_at,
+    main_account_refresh_expires_at: account.refresh_expires_at,
+    active_shop_count: activeShopCount,
+    active_token_shop_count: activeTokenShopCount,
+    token_expires_at: shopStatus.nearest_shop_token_expires_at || account.token_expires_at,
     refresh_expires_at: account.refresh_expires_at,
     partner_id: account.partner_id,
     main_account_id: account.main_account_id,

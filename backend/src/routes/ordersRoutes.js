@@ -66,7 +66,7 @@ const FIFO_COST_SELECT = `
  *   page (default 1), page_size (default 20, max 100)
  *   shop_id, region, order_status
  *   date_from, date_to  (KST YYYY-MM-DD)
- *   order_sn  (부분 검색)
+ *   order_sn/search  (통합 부분 검색: 주문번호/SKU/상품명)
  */
 router.get('/', async (req, res) => {
   const {
@@ -77,6 +77,7 @@ router.get('/', async (req, res) => {
     order_status,
     date_from,
     date_to,
+    search: searchQuery,
     order_sn: orderSnSearch,
     include_open_backlog,
   } = req.query;
@@ -86,9 +87,10 @@ router.get('/', async (req, res) => {
   const pageNum = Math.max(1, parseInt(page));
   const pageSize = Math.min(100, Math.max(1, parseInt(page_size)));
   const offset = (pageNum - 1) * pageSize;
+  const search = String(searchQuery || orderSnSearch || '').trim();
 
   // ── 요청 파라미터 로그 ────────────────────────────────────────
-  console.log(`[Orders] REQ page=${pageNum} pageSize=${pageSize} offset=${offset} | filters: region=${region||'-'} status=${order_status||'-'} date=${date_from||'-'}~${date_to||'-'} sn=${orderSnSearch||'-'}`);
+  console.log(`[Orders] REQ page=${pageNum} pageSize=${pageSize} offset=${offset} | filters: region=${region||'-'} status=${order_status||'-'} date=${date_from||'-'}~${date_to||'-'} search=${search||'-'}`);
   if (date_from || date_to) {
     console.log(`[Orders] DATE filter → WHERE order_created_at >= '${date_from||''}  00:00:00' AND <= '${date_to||''} 23:59:59' (KST 기준)`);
   }
@@ -140,7 +142,7 @@ router.get('/', async (req, res) => {
 
   const shouldIncludeOpenBacklog = includeOpenBacklog &&
     dateConditions.length > 0 &&
-    !orderSnSearch &&
+    !search &&
     (
       statusFilters.length === 0 ||
       statusFilters.some(status => openBacklogStatuses.includes(status))
@@ -157,9 +159,43 @@ router.get('/', async (req, res) => {
     }
   }
 
-  if (orderSnSearch) {
-    whereClause += ` AND o.order_sn LIKE ?`;
-    params.push(`%${orderSnSearch}%`);
+  if (search) {
+    whereClause += `
+      AND (
+        o.order_sn LIKE ?
+        OR EXISTS (
+          SELECT 1
+          FROM order_items oi
+          LEFT JOIN products p
+            ON p.tenant_id = oi.tenant_id
+           AND p.sku IN (oi.item_sku, oi.model_sku)
+          WHERE oi.tenant_id = o.tenant_id
+            AND oi.order_sn = o.order_sn
+            AND (
+              oi.item_sku LIKE ?
+              OR oi.model_sku LIKE ?
+              OR oi.item_name LIKE ?
+              OR oi.model_name LIKE ?
+              OR p.sku LIKE ?
+              OR p.product_name_en LIKE ?
+              OR p.product_name_kr LIKE ?
+              OR p.option_name LIKE ?
+            )
+        )
+      )
+    `;
+    const likeSearch = `%${search}%`;
+    params.push(
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch
+    );
   }
 
   try {

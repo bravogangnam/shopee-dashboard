@@ -54,7 +54,7 @@ export default function OrderFilters({
         <input
           value={filters.order_sn}
           onChange={event => setField('order_sn', event.target.value)}
-          placeholder="Order SN"
+          placeholder="Order SN / SKU / 상품명"
         />
       </label>
       <label className="filter-field">

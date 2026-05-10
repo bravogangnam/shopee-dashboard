@@ -88,8 +88,28 @@ router.get('/', async (req, res) => {
   const pageSize = Math.min(100, Math.max(1, parseInt(page_size)));
   const offset = (pageNum - 1) * pageSize;
   const search = String(searchQuery || orderSnSearch || '').trim();
+  const SEARCH_STOP_WORDS = new Set([
+    'and', 'or', 'of', 'the', 'a', 'an', 'in', 'on', 'for', 'to', 'with',
+    '&', '-', '/', '+'
+  ]);
+
   const searchTerms = Array.from(
-    new Set(search.split(/\s+/).map(term => term.trim()).filter(Boolean))
+    new Set(
+      search
+        .split(/\s+/)
+        .map(term => term.trim())
+        .filter(Boolean)
+        .filter(term => {
+          const normalized = term.toLowerCase().replace(/[^a-z0-9가-힣_]/g, '');
+          if (!normalized) return false;
+          if (SEARCH_STOP_WORDS.has(normalized)) return false;
+
+          // SKU나 숫자 검색은 짧아도 허용. 일반 영문 1~2글자는 너무 넓게 잡혀 제외.
+          if (/^[a-z]{1,2}$/i.test(normalized)) return false;
+
+          return true;
+        })
+    )
   ).slice(0, 10);
 
   // ── 요청 파라미터 로그 ────────────────────────────────────────
@@ -200,7 +220,9 @@ router.get('/', async (req, res) => {
       )
     `);
 
-    whereClause += ` AND (${searchTermClauses.join(' OR ')})`;
+    // 여러 단어 검색 시 너무 넓게 잡히지 않도록 의미 있는 단어는 모두 매칭되어야 한다.
+    // 단, 각 단어는 주문번호/SKU/상품명/옵션명 중 어디에서든 매칭되면 된다.
+    whereClause += ` AND (${searchTermClauses.join(' AND ')})`;
 
     for (const term of searchTerms) {
       const likeTerm = `%${term}%`;

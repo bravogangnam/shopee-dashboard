@@ -79,7 +79,6 @@ function buildOrderSearchTerms(rawSearch) {
         .filter(Boolean)
         .filter(term => !ORDER_SEARCH_STOP_WORDS.has(term))
         .filter(term => {
-          // SKU/숫자는 짧아도 허용. 일반 영문 1~2글자는 너무 넓게 잡혀 제외.
           if (/^[a-z]{1,2}$/i.test(term)) return false;
           return true;
         })
@@ -95,35 +94,16 @@ function buildUnifiedOrderSearchClause(searchTerms, orderAlias = 'o') {
   const termClauses = searchTerms.map(() => `
     (
       ${orderAlias}.order_sn COLLATE utf8mb4_unicode_ci LIKE ?
-      OR REPLACE(LOWER(${orderAlias}.order_sn COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
       OR EXISTS (
         SELECT 1
         FROM order_items oi
-        LEFT JOIN products p
-          ON p.tenant_id = oi.tenant_id
-         AND (
-           p.sku COLLATE utf8mb4_unicode_ci = oi.item_sku COLLATE utf8mb4_unicode_ci
-           OR p.sku COLLATE utf8mb4_unicode_ci = oi.model_sku COLLATE utf8mb4_unicode_ci
-         )
         WHERE oi.tenant_id = ${orderAlias}.tenant_id
-          AND oi.order_sn = ${orderAlias}.order_sn
+          AND oi.order_sn COLLATE utf8mb4_unicode_ci = ${orderAlias}.order_sn COLLATE utf8mb4_unicode_ci
           AND (
             oi.item_sku COLLATE utf8mb4_unicode_ci LIKE ?
-            OR REPLACE(LOWER(oi.item_sku COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
             OR oi.model_sku COLLATE utf8mb4_unicode_ci LIKE ?
-            OR REPLACE(LOWER(oi.model_sku COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
             OR oi.item_name COLLATE utf8mb4_unicode_ci LIKE ?
-            OR REPLACE(LOWER(oi.item_name COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
             OR oi.model_name COLLATE utf8mb4_unicode_ci LIKE ?
-            OR REPLACE(LOWER(oi.model_name COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
-            OR p.sku COLLATE utf8mb4_unicode_ci LIKE ?
-            OR REPLACE(LOWER(p.sku COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
-            OR p.product_name_en COLLATE utf8mb4_unicode_ci LIKE ?
-            OR REPLACE(LOWER(p.product_name_en COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
-            OR p.product_name_kr COLLATE utf8mb4_unicode_ci LIKE ?
-            OR REPLACE(LOWER(p.product_name_kr COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
-            OR p.option_name COLLATE utf8mb4_unicode_ci LIKE ?
-            OR REPLACE(LOWER(p.option_name COLLATE utf8mb4_unicode_ci), ' ', '') LIKE ?
           )
       )
     )
@@ -132,23 +112,16 @@ function buildUnifiedOrderSearchClause(searchTerms, orderAlias = 'o') {
   const params = [];
   for (const term of searchTerms) {
     const likeTerm = `%${term}%`;
-    const normalizedLikeTerm = `%${term.replace(/\s+/g, '').toLowerCase()}%`;
-
     params.push(
-      likeTerm, normalizedLikeTerm,
-      likeTerm, normalizedLikeTerm,
-      likeTerm, normalizedLikeTerm,
-      likeTerm, normalizedLikeTerm,
-      likeTerm, normalizedLikeTerm,
-      likeTerm, normalizedLikeTerm,
-      likeTerm, normalizedLikeTerm,
-      likeTerm, normalizedLikeTerm,
-      likeTerm, normalizedLikeTerm
+      likeTerm,
+      likeTerm,
+      likeTerm,
+      likeTerm,
+      likeTerm
     );
   }
 
   return {
-    // 여러 단어는 모두 매칭되어야 함. 각 단어는 주문번호/SKU/상품명/옵션명 중 어디든 매칭 가능.
     clause: ` AND (${termClauses.join(' AND ')})`,
     params,
   };

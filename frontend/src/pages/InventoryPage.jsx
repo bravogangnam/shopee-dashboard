@@ -727,9 +727,12 @@ const inventoryPageCache = {
   todayPurchaseOnly: true,
   search: '',
   statusFilter: 'ALL',
+  allSkuPage: 1,
   refreshedAt: null,
   loaded: false,
 };
+
+const ALL_SKU_PAGE_SIZE = 20;
 
 export default function InventoryPage() {
   const [products, setProducts] = useState(() => inventoryPageCache.products || []);
@@ -740,6 +743,7 @@ export default function InventoryPage() {
   const [todayPurchaseOnly, setTodayPurchaseOnly] = useState(() => inventoryPageCache.todayPurchaseOnly ?? true);
   const [search, setSearch] = useState(() => inventoryPageCache.search || '');
   const [statusFilter, setStatusFilter] = useState(() => inventoryPageCache.statusFilter || 'ALL');
+  const [allSkuPage, setAllSkuPage] = useState(() => inventoryPageCache.allSkuPage || 1);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -767,11 +771,27 @@ export default function InventoryPage() {
         (statusFilter === 'in_stock' && stockQty > 0) ||
         (statusFilter === 'low_stock' && stockQty > 0 && stockQty <= threshold) ||
         (statusFilter === 'out_of_stock' && stockQty === 0);
-      const haystack = `${product.sku || ''} ${getProductName(product)} ${product.product_name_en || ''}`.toLowerCase();
+      const haystack = [
+        product.sku || '',
+        getProductName(product),
+        product.product_name_en || '',
+        product.product_name_kr || '',
+        product.option_name || '',
+        (product.order_sns || []).join(' '),
+        product.order_sn || '',
+      ].join(' ').toLowerCase();
       const matchesKeyword = !keyword || haystack.includes(keyword);
       return matchesStatus && matchesKeyword;
     });
   }, [products, search, statusFilter]);
+
+  const allSkuTotalPages = Math.max(1, Math.ceil(filteredProducts.length / ALL_SKU_PAGE_SIZE));
+
+  const paginatedProducts = useMemo(() => {
+    const safePage = Math.min(Math.max(1, allSkuPage), allSkuTotalPages);
+    const startIndex = (safePage - 1) * ALL_SKU_PAGE_SIZE;
+    return filteredProducts.slice(startIndex, startIndex + ALL_SKU_PAGE_SIZE);
+  }, [filteredProducts, allSkuPage, allSkuTotalPages]);
 
   const filteredTodayOrderItems = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -849,6 +869,20 @@ export default function InventoryPage() {
   useEffect(() => {
     inventoryPageCache.statusFilter = statusFilter;
   }, [statusFilter]);
+
+  useEffect(() => {
+    inventoryPageCache.allSkuPage = allSkuPage;
+  }, [allSkuPage]);
+
+  useEffect(() => {
+    setAllSkuPage(1);
+  }, [search, activeInventoryTab, statusFilter]);
+
+  useEffect(() => {
+    if (allSkuPage > allSkuTotalPages) {
+      setAllSkuPage(allSkuTotalPages);
+    }
+  }, [allSkuPage, allSkuTotalPages]);
 
 
 
@@ -1014,11 +1048,11 @@ export default function InventoryPage() {
 
       <div className="inventory-filters">
         <label className="filter-field order-search-field">
-          SKU 또는 상품명
+          SKU / 상품명 / 주문번호
           <input
             value={search}
             onChange={event => setSearch(event.target.value)}
-            placeholder="SKU / 상품명 검색"
+            placeholder="SKU / 상품명 / Order SN"
           />
         </label>
         {activeInventoryTab === 'all' && (
@@ -1061,7 +1095,7 @@ export default function InventoryPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredProducts.map(product => {
+              {paginatedProducts.map(product => {
                 const status = getStockStatus(product);
                 return (
                   <tr key={product.sku}>
@@ -1099,6 +1133,27 @@ export default function InventoryPage() {
               })}
             </tbody>
           </table>
+          <div className="pagination-wrap">
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={allSkuPage <= 1}
+              onClick={() => setAllSkuPage(current => Math.max(1, current - 1))}
+            >
+              이전
+            </button>
+            <span>
+              {allSkuPage} / {allSkuTotalPages} 페이지
+            </span>
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={allSkuPage >= allSkuTotalPages}
+              onClick={() => setAllSkuPage(current => Math.min(allSkuTotalPages, current + 1))}
+            >
+              다음
+            </button>
+          </div>
         </div>
       ) : (
         <div className="table-state">재고 부족 상품이 없습니다.</div>

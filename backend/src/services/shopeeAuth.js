@@ -20,8 +20,8 @@ const PARTNER_KEY = process.env.SHOPEE_PARTNER_KEY;
 /**
  * OAuth 인증 URL 생성
  */
-function getShopeeAuthUrl({ tenantId = CURRENT_TENANT_ID } = {}) {
-  const state = createOAuthState({ tenantId });
+function getShopeeAuthUrl({ tenantId = CURRENT_TENANT_ID, purpose = 'reauth' } = {}) {
+  const state = createOAuthState({ tenantId, purpose });
   return getAuthUrl(REDIRECT_URL, { state });
 }
 

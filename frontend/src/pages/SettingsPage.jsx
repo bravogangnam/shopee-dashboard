@@ -375,7 +375,7 @@ export default function SettingsPage() {
 
   async function handleShopeeAuth() {
     try {
-      const result = await getShopeeAuthUrl();
+      const result = await getShopeeAuthUrl({ purpose: 'connect_main_account' });
       const url = result.url || result.auth_url || result.data?.url;
       if (!url) throw new Error('Shopee 인증 URL이 없습니다.');
       window.open(url, 'shopee-auth', 'width=720,height=720');

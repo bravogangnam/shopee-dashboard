@@ -347,7 +347,9 @@ router.post('/logout', (req, res) => {
 // ─── Shopee OAuth URL 생성 ───────────────────────────────────────
 router.get('/shopee/url', requireAuth, requireApprovedTenant, (req, res) => {
   const tenantId = getCurrentTenantId(req);
-  const url = getShopeeAuthUrl({ tenantId });
+  const requestedPurpose = String(req.query?.purpose || 'reauth').trim();
+  const purpose = requestedPurpose === 'connect_main_account' ? 'connect_main_account' : 'reauth';
+  const url = getShopeeAuthUrl({ tenantId, purpose });
   return res.json({ success: true, url });
 });
 
@@ -366,15 +368,13 @@ router.get('/shopee/callback', async (req, res) => {
       const [tenantRows] = await db.query(
         `SELECT t.id
          FROM tenants t
-         LEFT JOIN main_account ma ON ma.tenant_id = t.id
+         JOIN main_account ma
+           ON ma.tenant_id = t.id
+          AND CAST(ma.main_account_id AS CHAR) = ?
          WHERE t.approval_status = 'approved'
-           AND (
-             CAST(t.requested_main_account_id AS CHAR) = ?
-             OR CAST(ma.main_account_id AS CHAR) = ?
-           )
          GROUP BY t.id
          LIMIT 2`,
-        [mainAccountText, mainAccountText]
+        [mainAccountText]
       );
 
       if (tenantRows.length === 1) {

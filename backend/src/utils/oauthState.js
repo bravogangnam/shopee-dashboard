@@ -46,13 +46,14 @@ function safeEqual(a, b) {
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
-function createOAuthState({ tenantId = CURRENT_TENANT_ID } = {}) {
+function createOAuthState({ tenantId = CURRENT_TENANT_ID, purpose = 'reauth' } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const payload = {
     tenant_id: normalizeTenantId(tenantId),
     iat: now,
     exp: now + STATE_TTL_SECONDS,
     nonce: crypto.randomBytes(12).toString('hex'),
+    purpose: purpose === 'connect_main_account' ? 'connect_main_account' : 'reauth',
   };
 
   const encodedPayload = base64UrlEncode(JSON.stringify(payload));

@@ -56,8 +56,9 @@ export function refreshToken() {
   });
 }
 
-export function getShopeeAuthUrl() {
-  return apiRequest('/api/auth/shopee/url');
+export function getShopeeAuthUrl({ purpose = 'connect_main_account' } = {}) {
+  const query = new URLSearchParams({ purpose }).toString();
+  return apiRequest(`/api/auth/shopee/url?${query}`);
 }
 
 export function testConnection() {

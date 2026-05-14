@@ -182,7 +182,9 @@ async function saveToken(
     );
   }
 
+  let mainAccountRowId = null;
   if (existing.length > 0) {
+    mainAccountRowId = existing[0].id;
     if (authShopId) {
       // callback에서 shop_id가 넘어온 경우: auth_shop_id도 함께 업데이트
       await db.query(
@@ -216,7 +218,7 @@ async function saveToken(
       console.log(`✅ Token saved. Expires: ${tokenExpiresAt.toISOString()}`);
     }
   } else {
-    await db.query(
+    const [insertResult] = await db.query(
       `INSERT INTO main_account
         (tenant_id, partner_id, partner_key, main_account_id, merchant_id, auth_shop_id, access_token, refresh_token, token_expires_at, refresh_expires_at, token_status)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
@@ -233,10 +235,85 @@ async function saveToken(
         refreshExpiresAt,
       ]
     );
+    mainAccountRowId = insertResult.insertId;
     console.log(`✅ Token saved (new row, auth_shop_id=${authShopId}). Expires: ${tokenExpiresAt.toISOString()}`);
   }
 
-  return { tokenExpiresAt, refreshExpiresAt };
+  return {
+    tokenExpiresAt,
+    refreshExpiresAt,
+    mainAccountRowId,
+    mainAccountId: normalizedMainAccountId || MAIN_ACCOUNT_ID,
+  };
+}
+
+async function syncOAuthShopList({
+  tenantId = CURRENT_TENANT_ID,
+  shopIdList = [],
+  mainAccountRowId = null,
+  mainAccountId = null,
+  tokenData = {},
+  tokenExpiresAt = null,
+} = {}) {
+  const summary = { created: 0, updated: 0, linked: 0, skipped: 0, conflicts: 0 };
+  if (!Array.isArray(shopIdList) || shopIdList.length === 0) return summary;
+  if (!mainAccountRowId) return summary;
+
+  for (const rawShopId of shopIdList) {
+    const shopIdText = String(rawShopId ?? '').trim();
+    if (!shopIdText) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    const [rows] = await db.query(
+      `SELECT id, shop_id, main_account_id, is_active, token_status
+       FROM shops
+       WHERE tenant_id = ? AND shop_id = ?
+       LIMIT 1`,
+      [tenantId, shopIdText]
+    );
+    const existing = rows[0];
+
+    if (!existing) {
+      await db.query(
+        `INSERT INTO shops
+          (tenant_id, shop_id, main_account_id, access_token, refresh_token, token_expires_at, token_status, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'active', 1, NOW(), NOW())`,
+        [tenantId, shopIdText, mainAccountRowId, tokenData.access_token || null, tokenData.refresh_token || null, tokenExpiresAt]
+      );
+      summary.created += 1;
+      continue;
+    }
+
+    const existingMainAccountId = existing.main_account_id === null || existing.main_account_id === undefined
+      ? ''
+      : String(existing.main_account_id).trim();
+    const isLinkedEmpty = existingMainAccountId === '' || existingMainAccountId === '0';
+    const isSameMainAccount =
+      existingMainAccountId === String(mainAccountRowId) ||
+      (mainAccountId !== null && mainAccountId !== undefined && existingMainAccountId === String(mainAccountId));
+
+    if (isLinkedEmpty || isSameMainAccount) {
+      await db.query(
+        `UPDATE shops
+         SET main_account_id = COALESCE(main_account_id, ?),
+             access_token = ?,
+             refresh_token = ?,
+             token_expires_at = ?,
+             token_status = 'active',
+             updated_at = NOW()
+         WHERE tenant_id = ? AND shop_id = ?`,
+        [mainAccountRowId, tokenData.access_token || null, tokenData.refresh_token || null, tokenExpiresAt, tenantId, shopIdText]
+      );
+      if (isLinkedEmpty) summary.linked += 1;
+      else summary.updated += 1;
+    } else {
+      summary.conflicts += 1;
+      console.warn(`[OAuthShopSync] conflict tenant_id=${tenantId}, shop_id=${shopIdText}, existing_main_account_id=${existingMainAccountId}, oauth_main_account_row_id=${mainAccountRowId}, oauth_main_account_id=${mainAccountId ?? 'null'}`);
+    }
+  }
+  return summary;
 }
 
 /**
@@ -644,4 +721,5 @@ module.exports = {
   refreshShopToken,
   refreshAllShopTokens,
   getOrRefreshShopToken,
+  syncOAuthShopList,
 };

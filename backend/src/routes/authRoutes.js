@@ -17,7 +17,7 @@ const {
   exchangeCodeForToken,
   getMainAccount,
   saveToken,
-  saveShopToken,
+  syncOAuthShopList,
   refreshAllShopTokens,
   autoRefreshToken,
 } = require('../services/shopeeAuth');
@@ -492,11 +492,12 @@ router.get('/shopee/callback', async (req, res) => {
 
     // ── main_account 토큰 저장 ──────────────────────────────────
     const callbackShopId = useShopId;
-    await saveToken(result, callbackShopId, {
+    const saveTokenResult = await saveToken(result, callbackShopId, {
       tenantId,
       mainAccountId: oauthMainAccountId,
       merchantId: oauthMerchantId,
     });
+    const mainAccountRowId = saveTokenResult?.mainAccountRowId || null;
 
     if (oauthMainAccountId) {
       await db.query(
@@ -515,40 +516,25 @@ router.get('/shopee/callback', async (req, res) => {
       shopIdList.push(callbackShopId); // 콜백에 shop_id가 직접 온 경우도 포함
     }
 
-    const savedShopIds = [];
-    const skippedShopIds = [];
-    for (const sid of shopIdList) {
-      try {
-        const [existingShopRows] = await db.query(
-          `SELECT access_token, refresh_token, token_status, token_expires_at
-           FROM shops
-           WHERE tenant_id = ? AND shop_id = ?
-           LIMIT 1`,
-          [tenantId, sid]
-        );
-
-        const existingShop = existingShopRows[0];
-        const hasValidShopToken =
-          existingShop &&
-          existingShop.token_status === 'active' &&
-          existingShop.access_token &&
-          existingShop.refresh_token &&
-          existingShop.token_expires_at &&
-          new Date(existingShop.token_expires_at).getTime() > Date.now() + 5 * 60 * 1000;
-
-        if (hasValidShopToken) {
-          skippedShopIds.push(sid);
-          console.log(`[OAuth] shop_id=${sid} 기존 active shop token 유지`);
-          continue;
-        }
-
-        const saved = await saveShopToken(sid, result, { tenantId });
-        if (saved) savedShopIds.push(sid);
-      } catch (e) {
-        console.error(`[OAuth] shops 저장 실패 (shop_id=${sid}):`, e.message);
+    let shopSyncSummary = { created: 0, updated: 0, linked: 0, skipped: 0, conflicts: 0 };
+    if (shopIdList.length > 0) {
+      if (mainAccountRowId) {
+        shopSyncSummary = await syncOAuthShopList({
+          tenantId,
+          shopIdList,
+          mainAccountRowId,
+          mainAccountId: oauthMainAccountId,
+          tokenData: {
+            access_token: result.access_token,
+            refresh_token: result.refresh_token,
+          },
+          tokenExpiresAt: saveTokenResult?.tokenExpiresAt || null,
+        });
+      } else {
+        console.warn('[OAuth] mainAccountRowId missing; skipping shop_id_list sync');
       }
     }
-    console.log(`[OAuth] shop_id_list=${JSON.stringify(shopIdList)}, shops 저장=${JSON.stringify(savedShopIds)}, 기존유지=${JSON.stringify(skippedShopIds)}`);
+    console.log(`[OAuth] shop_id_list=${JSON.stringify(shopIdList)}, shop_sync_summary=${JSON.stringify(shopSyncSummary)}`);
 
     // 나머지 미인증 shop 확인
     const [allShops] = await db.query(
@@ -567,8 +553,8 @@ router.get('/shopee/callback', async (req, res) => {
       <body style="font-family:Arial;text-align:center;padding:50px;">
         <h2 style="color:#1677FF;">✅ 인증 완료!</h2>
         <p>Shopee 계정 연결이 완료되었습니다.</p>
-        ${savedShopIds.length > 0
-          ? `<p style="color:#52c41a;">✅ Shop 토큰 저장: ${savedShopIds.join(', ')}</p>`
+        ${shopSyncSummary.created > 0 || shopSyncSummary.updated > 0 || shopSyncSummary.linked > 0
+          ? `<p style="color:#52c41a;">✅ Shop 동기화: created=${shopSyncSummary.created}, updated=${shopSyncSummary.updated}, linked=${shopSyncSummary.linked}</p>`
           : ''}
         ${!allAuthed ? `
         <div style="background:#fff3cd;border:1px solid #ffc107;padding:15px;border-radius:8px;margin:20px auto;max-width:400px;text-align:left;">
@@ -579,7 +565,7 @@ router.get('/shopee/callback', async (req, res) => {
         <p style="color:#888;">이 창은 자동으로 닫힙니다...</p>
         <script>
           if (window.opener) {
-            window.opener.postMessage({ type: 'SHOPEE_AUTH_SUCCESS', shopIds: ${JSON.stringify(savedShopIds)} }, '*');
+            window.opener.postMessage({ type: 'SHOPEE_AUTH_SUCCESS', shopIds: ${JSON.stringify(shopIdList)} }, '*');
             setTimeout(() => window.close(), 3000);
           } else {
             setTimeout(() => { window.location.href = '/settings?auth=success'; }, 3000);

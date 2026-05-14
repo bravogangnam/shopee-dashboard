@@ -119,11 +119,13 @@ export default function OrderManagementPage() {
   const [previewItem, setPreviewItem] = useState(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [invoiceFallbackVisible, setInvoiceFallbackVisible] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const skipStatsOnceRef = useRef(false);
   const invoicePrintWindowRef = useRef(null);
   const autoPrintedInvoiceJobRef = useRef('');
   const invoiceCompleteNotifiedRef = useRef('');
+  const skipHideInvoiceFallbackOnceRef = useRef(false);
 
   const queryKey = useMemo(() => JSON.stringify(query), [query]);
 
@@ -153,6 +155,11 @@ export default function OrderManagementPage() {
       setPagination(ordersResult.pagination || null);
       if (statsResult) setStats(statsResult);
       setSelectedOrders([]);
+      if (skipHideInvoiceFallbackOnceRef.current) {
+        skipHideInvoiceFallbackOnceRef.current = false;
+      } else {
+        setInvoiceFallbackVisible(false);
+      }
     } catch (err) {
       setError(err.message || '주문 정보를 불러오지 못했습니다.');
       setOrders([]);
@@ -351,6 +358,8 @@ export default function OrderManagementPage() {
     setError('');
     setMessage('');
     setInvoicePollingError('');
+    setInvoiceFallbackVisible(false);
+    skipHideInvoiceFallbackOnceRef.current = false;
     setInvoiceJob(null);
     setInvoiceLoading(true);
     invoicePrintWindowRef.current = openInvoicePrintWindow();
@@ -428,6 +437,8 @@ export default function OrderManagementPage() {
 
       invoiceCompleteNotifiedRef.current = invoiceJob?.jobId || 'done';
       setMessage(`송장 출력이 완료되었습니다. 성공 ${event.data.successCount || 0}건, 실패 ${event.data.failedCount || 0}건`);
+      setInvoiceFallbackVisible(true);
+      skipHideInvoiceFallbackOnceRef.current = true;
       setReloadKey(value => value + 1);
       setSelectedOrders([]);
     };
@@ -464,7 +475,7 @@ export default function OrderManagementPage() {
       {message && <div className="notice">{message}</div>}
       {error && <div className="alert">{error}</div>}
       {invoicePollingError && <div className="notice">{invoicePollingError}</div>}
-      {isInvoiceJobDone(invoiceJob) && invoiceJob?.download_url && (!invoicePrintWindowRef.current || invoicePrintWindowRef.current.closed) && (
+      {invoiceFallbackVisible && isInvoiceJobDone(invoiceJob) && invoiceJob?.download_url && (!invoicePrintWindowRef.current || invoicePrintWindowRef.current.closed) && (
         <div className="notice">
           <span>송장 생성이 완료되었습니다. 새 창이 닫혀 있으면 다운로드 버튼으로 출력하세요.</span>
           <button

@@ -123,6 +123,7 @@ export default function OrderManagementPage() {
   const skipStatsOnceRef = useRef(false);
   const invoicePrintWindowRef = useRef(null);
   const autoPrintedInvoiceJobRef = useRef('');
+  const invoiceCompleteNotifiedRef = useRef('');
 
   const queryKey = useMemo(() => JSON.stringify(query), [query]);
 
@@ -219,6 +220,28 @@ export default function OrderManagementPage() {
     autoOpenInvoicePrintWindow(invoiceJob);
   }, [invoiceJob?.jobId, invoiceJob?.status, invoiceJob?.download_url]);
 
+  useEffect(() => {
+    const printWindow = invoicePrintWindowRef.current;
+    if (!printWindow || printWindow.closed || !invoiceJob) return;
+    if (isInvoiceJobDone(invoiceJob) || invoiceJob.download_url) return;
+
+    const percent = Math.min(Number(invoiceJob.percent || 0), 100);
+    printWindow.document.open();
+    printWindow.document.write(`
+      <html>
+        <head><title>송장 출력 진행</title></head>
+        <body style="font-family: sans-serif; padding: 24px;">
+          <h2>${invoiceStatusLabel(invoiceJob.status)}</h2>
+          <p>${invoiceJob.message || ''}</p>
+          <p>진행 ${invoiceJob.completed || 0}/${invoiceJob.total || 0} (${percent}%)</p>
+          <p>실패 ${invoiceJob.failed || 0}건</p>
+          ${invoicePollingError ? `<p style="color:#b42318;">${invoicePollingError}</p>` : ''}
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  }, [invoiceJob, invoicePollingError]);
+
   function handleSubmit(event) {
     event.preventDefault();
     setMessage('');
@@ -295,6 +318,15 @@ export default function OrderManagementPage() {
                     } catch (error) {
                       try { window.print(); } catch (_) {}
                     }
+                      try {
+                        if (window.opener) {
+                          window.opener.postMessage({
+                            type: 'INVOICE_PRINT_COMPLETE',
+                            successCount: ${Number(job.completed || 0)},
+                            failedCount: ${Number(job.failed || 0)}
+                          }, '*');
+                        }
+                      } catch (_) {}
                   }, 700);
                 };
               </script>
@@ -335,7 +367,7 @@ export default function OrderManagementPage() {
         message: '송장 생성 작업을 시작했습니다.',
         errors: [],
       });
-      setMessage('송장 생성 작업을 시작했습니다.');
+      setMessage('송장 생성 중입니다. 새 창에서 진행 상황을 확인하세요.');
     } catch (err) {
       if (err.code === 'ALREADY_RUNNING' && (err.job || err.jobId)) {
         setInvoiceJob(err.job || {
@@ -389,6 +421,21 @@ export default function OrderManagementPage() {
     }
   }
 
+  useEffect(() => {
+    const onMessage = event => {
+      if (event?.data?.type !== 'INVOICE_PRINT_COMPLETE') return;
+      if (invoiceCompleteNotifiedRef.current === invoiceJob?.jobId) return;
+
+      invoiceCompleteNotifiedRef.current = invoiceJob?.jobId || 'done';
+      setMessage(`송장 출력이 완료되었습니다. 성공 ${event.data.successCount || 0}건, 실패 ${event.data.failedCount || 0}건`);
+      setReloadKey(value => value + 1);
+      setSelectedOrders([]);
+    };
+
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [invoiceJob?.jobId]);
+
   return (
     <section className="page order-management-page">
       <div className="page-header">
@@ -416,63 +463,19 @@ export default function OrderManagementPage() {
 
       {message && <div className="notice">{message}</div>}
       {error && <div className="alert">{error}</div>}
-      {invoiceJob && (
-        <div className="invoice-job-panel">
-          <div className="invoice-job-header">
-            <div>
-              <strong>{invoiceStatusLabel(invoiceJob.status)}</strong>
-              <span>{invoiceJob.message || `송장 생성 중 ${invoiceJob.completed || 0}/${invoiceJob.total || 0}`}</span>
-            </div>
-            {isInvoiceJobDone(invoiceJob) && invoiceJob.download_url && (
-              <button
-                type="button"
-                className="action-btn primary"
-                onClick={handleInvoiceDownload}
-                disabled={invoiceLoading}
-              >
-                다운로드
-              </button>
-            )}
-          </div>
-          <div className="invoice-progress-track" aria-label="송장 생성 진행률">
-            <div
-              className="invoice-progress-bar"
-              style={{ width: `${Math.min(Number(invoiceJob.percent || 0), 100)}%` }}
-            />
-          </div>
-          <div className="invoice-job-meta">
-            <span>진행 {invoiceJob.completed || 0}/{invoiceJob.total || 0}</span>
-            <span>실패 {invoiceJob.failed || 0}건</span>
-          </div>
-          {invoicePollingError && <p className="invoice-job-warning">{invoicePollingError}</p>}
-          {Array.isArray(invoiceJob.waiting_items) && invoiceJob.waiting_items.length > 0 && (
-            <div className="invoice-job-warning">
-              송장 생성 대기 중입니다. 잠시 후 다시 송장출력을 눌러 다운로드하세요.
-            </div>
-          )}
-          {Array.isArray(invoiceJob.errors) && invoiceJob.errors.length > 0 && (
-            <div className="invoice-errors">
-              <strong>실패 주문</strong>
-              <table>
-                <thead>
-                  <tr>
-                    <th>주문번호</th>
-                    <th>쇼핑몰</th>
-                    <th>오류 메시지</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {invoiceJob.errors.map((item, index) => (
-                    <tr key={`${item.order_sn || 'error'}-${index}`}>
-                      <td>{item.order_sn || '-'}</td>
-                      <td>{item.shop_id || '-'}</td>
-                      <td>{item.message || item.detail || '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+      {invoicePollingError && <div className="notice">{invoicePollingError}</div>}
+      {isInvoiceJobDone(invoiceJob) && invoiceJob?.download_url && (!invoicePrintWindowRef.current || invoicePrintWindowRef.current.closed) && (
+        <div className="notice">
+          <span>송장 생성이 완료되었습니다. 새 창이 닫혀 있으면 다운로드 버튼으로 출력하세요.</span>
+          <button
+            type="button"
+            className="action-btn primary"
+            onClick={handleInvoiceDownload}
+            disabled={invoiceLoading}
+            style={{ marginLeft: 12 }}
+          >
+            다운로드
+          </button>
         </div>
       )}
 

@@ -329,12 +329,6 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } =
         continue;
       }
 
-      if (order_status !== 'READY_TO_SHIP' && !trackingNumber) {
-        results.push({ order_sn, status: 'skipped', reason: 'tracking_number 없음 - 동기화 후 다시 시도' });
-        await markOrderProcessed(order_sn);
-        continue;
-      }
-
       const useCache = order_status !== 'READY_TO_SHIP';
       if (useCache && labelStorage.exists(shop_id, order_sn)) {
         const cached = labelStorage.load(shop_id, order_sn);
@@ -350,6 +344,12 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } =
           await markOrderProcessed(order_sn);
           continue;
         }
+      }
+
+      if (order_status !== 'READY_TO_SHIP' && !trackingNumber) {
+        results.push({ order_sn, status: 'skipped', reason: 'tracking_number 없음 - 동기화 후 다시 시도' });
+        await markOrderProcessed(order_sn);
+        continue;
       }
 
       let accessToken;

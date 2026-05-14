@@ -137,7 +137,11 @@ async function getMainAccount({ tenantId = CURRENT_TENANT_ID, shopId = null } = 
  * @param {object} tokenData  - Shopee API 응답 (access_token, refresh_token, expire_in, ...)
  * @param {number|null} authShopId - OAuth callback에서 받은 shop_id (없으면 null)
  */
-async function saveToken(tokenData, authShopId = null, { tenantId = CURRENT_TENANT_ID } = {}) {
+async function saveToken(
+  tokenData,
+  authShopId = null,
+  { tenantId = CURRENT_TENANT_ID, mainAccountId = null, merchantId = null } = {}
+) {
   const {
     access_token,
     refresh_token,
@@ -153,7 +157,30 @@ async function saveToken(tokenData, authShopId = null, { tenantId = CURRENT_TENA
     : 30;
   const refreshExpiresAt = new Date(now.getTime() + refreshExpireDays * 86400 * 1000);
 
-  const [existing] = await db.query('SELECT id FROM main_account WHERE tenant_id = ? LIMIT 1', [tenantId]);
+  const normalizedMainAccountId = (mainAccountId !== null && mainAccountId !== undefined && String(mainAccountId).trim() !== '')
+    ? String(mainAccountId).trim()
+    : null;
+  const normalizedMerchantId = (merchantId !== null && merchantId !== undefined && String(merchantId).trim() !== '')
+    ? String(merchantId).trim()
+    : null;
+
+  let existing;
+  if (normalizedMainAccountId) {
+    [existing] = await db.query(
+      `SELECT id
+       FROM main_account
+       WHERE tenant_id = ?
+         AND CAST(main_account_id AS CHAR) = ?
+       ORDER BY id DESC
+       LIMIT 1`,
+      [tenantId, normalizedMainAccountId]
+    );
+  } else {
+    [existing] = await db.query(
+      'SELECT id FROM main_account WHERE tenant_id = ? ORDER BY id DESC LIMIT 1',
+      [tenantId]
+    );
+  }
 
   if (existing.length > 0) {
     if (authShopId) {
@@ -165,10 +192,11 @@ async function saveToken(tokenData, authShopId = null, { tenantId = CURRENT_TENA
           token_expires_at = ?,
           refresh_expires_at = ?,
           auth_shop_id = ?,
+          merchant_id = COALESCE(?, merchant_id),
           token_status = 'active',
           updated_at = NOW()
          WHERE tenant_id = ? AND id = ?`,
-        [access_token, refresh_token, tokenExpiresAt, refreshExpiresAt, authShopId, tenantId, existing[0].id]
+        [access_token, refresh_token, tokenExpiresAt, refreshExpiresAt, authShopId, normalizedMerchantId, tenantId, existing[0].id]
       );
       console.log(`✅ Token saved (auth_shop_id=${authShopId}). Expires: ${tokenExpiresAt.toISOString()}`);
     } else {
@@ -179,10 +207,11 @@ async function saveToken(tokenData, authShopId = null, { tenantId = CURRENT_TENA
           refresh_token = ?,
           token_expires_at = ?,
           refresh_expires_at = ?,
+          merchant_id = COALESCE(?, merchant_id),
           token_status = 'active',
           updated_at = NOW()
          WHERE tenant_id = ? AND id = ?`,
-        [access_token, refresh_token, tokenExpiresAt, refreshExpiresAt, tenantId, existing[0].id]
+        [access_token, refresh_token, tokenExpiresAt, refreshExpiresAt, normalizedMerchantId, tenantId, existing[0].id]
       );
       console.log(`✅ Token saved. Expires: ${tokenExpiresAt.toISOString()}`);
     }
@@ -191,7 +220,18 @@ async function saveToken(tokenData, authShopId = null, { tenantId = CURRENT_TENA
       `INSERT INTO main_account
         (tenant_id, partner_id, partner_key, main_account_id, merchant_id, auth_shop_id, access_token, refresh_token, token_expires_at, refresh_expires_at, token_status)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
-      [tenantId, PARTNER_ID, PARTNER_KEY, MAIN_ACCOUNT_ID, MERCHANT_ID, authShopId || null, access_token, refresh_token, tokenExpiresAt, refreshExpiresAt]
+      [
+        tenantId,
+        PARTNER_ID,
+        PARTNER_KEY,
+        normalizedMainAccountId || MAIN_ACCOUNT_ID,
+        normalizedMerchantId || MERCHANT_ID,
+        authShopId || null,
+        access_token,
+        refresh_token,
+        tokenExpiresAt,
+        refreshExpiresAt,
+      ]
     );
     console.log(`✅ Token saved (new row, auth_shop_id=${authShopId}). Expires: ${tokenExpiresAt.toISOString()}`);
   }

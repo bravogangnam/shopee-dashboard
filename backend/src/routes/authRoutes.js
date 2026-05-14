@@ -483,10 +483,6 @@ router.get('/shopee/callback', async (req, res) => {
       throw new Error('No access_token in Shopee token response');
     }
 
-    // ── main_account 토큰 저장 ──────────────────────────────────
-    const callbackShopId = useShopId;
-    await saveToken(result, callbackShopId, { tenantId });
-
     const oauthMainAccountId = main_account_id || result.main_account_id || null;
     const oauthMerchantId = merchant_id || result.merchant_id || (
       Array.isArray(result.merchant_id_list) && result.merchant_id_list.length
@@ -494,21 +490,13 @@ router.get('/shopee/callback', async (req, res) => {
         : null
     );
 
-    if (oauthMainAccountId || oauthMerchantId) {
-      await db.query(
-        `UPDATE main_account
-         SET
-           main_account_id = COALESCE(?, main_account_id),
-           merchant_id = COALESCE(?, merchant_id),
-           updated_at = NOW()
-         WHERE tenant_id = ?`,
-        [
-          oauthMainAccountId ? String(oauthMainAccountId) : null,
-          oauthMerchantId ? String(oauthMerchantId) : null,
-          tenantId,
-        ]
-      );
-    }
+    // ── main_account 토큰 저장 ──────────────────────────────────
+    const callbackShopId = useShopId;
+    await saveToken(result, callbackShopId, {
+      tenantId,
+      mainAccountId: oauthMainAccountId,
+      merchantId: oauthMerchantId,
+    });
 
     if (oauthMainAccountId) {
       await db.query(

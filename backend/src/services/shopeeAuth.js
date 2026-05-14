@@ -99,11 +99,36 @@ async function refreshAccessToken(refreshToken, shopId = null, merchantId = null
 /**
  * DB에서 main_account 토큰 정보 가져오기
  */
-async function getMainAccount({ tenantId = CURRENT_TENANT_ID } = {}) {
+async function getMainAccount({ tenantId = CURRENT_TENANT_ID, shopId = null } = {}) {
+  if (shopId !== null && shopId !== undefined && shopId !== '') {
+    const [rows] = await db.query(
+      `SELECT ma.*
+       FROM shops s
+       JOIN main_account ma
+         ON ma.tenant_id = s.tenant_id
+        AND (
+          CAST(s.main_account_id AS CHAR) = CAST(ma.id AS CHAR)
+          OR CAST(s.main_account_id AS CHAR) = CAST(ma.main_account_id AS CHAR)
+        )
+       WHERE s.tenant_id = ?
+         AND s.shop_id = ?
+       ORDER BY ma.id DESC
+       LIMIT 1`,
+      [tenantId, shopId]
+    );
+
+    if (rows[0]) return rows[0];
+
+    console.warn(
+      `[MainAccount] shop_id=${shopId} linked main_account not found; falling back to tenant default main_account`
+    );
+  }
+
   const [rows] = await db.query(
     'SELECT * FROM main_account WHERE tenant_id = ? ORDER BY id DESC LIMIT 1',
     [tenantId]
   );
+
   return rows[0] || null;
 }
 
@@ -430,7 +455,7 @@ async function saveShopToken(shopId, tokenData, { tenantId = CURRENT_TENANT_ID }
  * @returns {Promise<boolean>}
  */
 async function refreshShopToken(shopId, { tenantId = CURRENT_TENANT_ID } = {}) {
-  const account = await getMainAccount({ tenantId });
+  const account = await getMainAccount({ tenantId, shopId });
   if (!account) {
     console.error(`[ShopToken] refreshShopToken(${shopId}): main_account 없음`);
     return false;

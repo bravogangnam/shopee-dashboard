@@ -58,6 +58,7 @@ const navItems = [
   { to: '/orders', label: '주문 관리', icon: <ListIcon /> },
   { to: '/ledger', label: '정산 관리', icon: <LedgerIcon /> },
   { to: '/inventory', label: '재고 관리', icon: <InventoryIcon /> },
+  { to: '/product-capture', label: '상품 수집', icon: <ListIcon /> },
   { to: '/admin', label: '관리자', icon: <AdminIcon />, adminOnly: true },
   { to: '/settings', label: '설정', icon: <SettingsIcon /> },
 ];

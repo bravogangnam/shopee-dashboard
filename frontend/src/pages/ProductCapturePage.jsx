@@ -81,6 +81,10 @@ export default function ProductCapturePage() {
     }
 
     setConfirm({
+      productId: selected.id,
+      productName: selected.name,
+      baseRowCount: selected.rows.length,
+      capturedRowCount: preview.rows.length,
       country,
       rowMismatch: selected.rows.length !== preview.rows.length,
       overwrite: selected.rows.some((row) => row.prices[country]),
@@ -89,11 +93,26 @@ export default function ProductCapturePage() {
   }
 
   function applyConnect() {
+    if (!confirm) return;
+
+    if (!preview) {
+      setError('수집 상품 미리보기가 없습니다. 다시 붙여넣기 후 연결하세요.');
+      setConfirm(null);
+      return;
+    }
+
+    const targetProduct = state.products.find((product) => product.id === confirm.productId);
+    if (!targetProduct) {
+      setError('연결 대상 기준 상품을 찾지 못했습니다. 다시 선택 후 연결하세요.');
+      setConfirm(null);
+      return;
+    }
+
     const { country, rowMismatch } = confirm;
     const next = {
       ...state,
       products: state.products.map((product) => {
-        if (product.id !== selected.id) return product;
+        if (product.id !== confirm.productId) return product;
         return {
           ...product,
           rows: product.rows.map((row, idx) => ({
@@ -176,10 +195,11 @@ export default function ProductCapturePage() {
       {confirm && (
         <div className="card">
           <h3>연결 확인 패널</h3>
+          <div className="notice">연결 대상: {confirm.productId} / {confirm.productName}</div>
           {confirm.rowMismatch ? (
-            <div className="alert">기준 상품은 {selected.rows.length}행, 수집 상품은 {preview.rows.length}행입니다. 가격이 다른 옵션에 들어갈 수 있으니 확인 후 연결하세요.</div>
+            <div className="alert">기준 상품은 {confirm.baseRowCount}행, 수집 상품은 {confirm.capturedRowCount}행입니다. 가격이 다른 옵션에 들어갈 수 있으니 확인 후 연결하세요.</div>
           ) : (
-            <div className="notice">기준 상품 행 수: {selected.rows.length}행 / 수집 상품 행 수: {preview.rows.length}행 (일치)</div>
+            <div className="notice">기준 상품 행 수: {confirm.baseRowCount}행 / 수집 상품 행 수: {confirm.capturedRowCount}행 (일치)</div>
           )}
           {confirm.overwrite && <div className="alert">{confirm.country} 가격이 이미 입력되어 있습니다. 연결 시 덮어씁니다.</div>}
           <div className="table-wrap">
@@ -227,6 +247,10 @@ export default function ProductCapturePage() {
             if (window.confirm('누적된 상품 수집 데이터를 전부 삭제할까요? 이 작업은 되돌릴 수 없습니다.')) {
               persist({ products: [], next: 1 });
               setSelectedId('');
+              setConfirm(null);
+              setPreview(null);
+              setPasteText('');
+              setError('');
             }
           }}
         >

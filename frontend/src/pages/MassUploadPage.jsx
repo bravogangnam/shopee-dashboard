@@ -98,6 +98,7 @@ function parseWorkbook(buffer) {
 
 function analyzeRows(rows) {
   const products = new Map();
+
   rows.forEach((row) => {
     const key = String(row.productName || '').trim() || '상품명 없음';
     if (!products.has(key)) products.set(key, []);
@@ -107,37 +108,66 @@ function analyzeRows(rows) {
   const rowStates = rows.map((row) => {
     const errors = [];
     const reviews = [];
+
     if (!row.productName.trim()) errors.push('상품명 필수');
     if (!row.sku.trim()) errors.push('SKU 필수');
+
     if (!row.price.trim()) errors.push('가격 필수');
     else if (!isNumberLike(row.price)) errors.push('가격 숫자 오류');
+
     if (!row.stock.trim()) errors.push('재고 필수');
     else if (!isNumberLike(row.stock)) errors.push('재고 숫자 오류');
+
     if (!row.weight.trim()) errors.push('무게 필수');
     else if (!isNumberLike(row.weight)) errors.push('무게 숫자 오류');
+
     [['length', '가로'], ['width', '세로'], ['height', '높이']].forEach(([field, label]) => {
       if (row[field].trim() && !isNumberLike(row[field])) errors.push(`${label} 숫자 오류`);
     });
-    if (!row.description.trim()) reviews.push('상품설명 확인 필요');
-    if (!splitImages(row.representativeImages).length) reviews.push('대표이미지 확인 필요');
-    return errors.length ? { status: 'Error', messages: errors } : reviews.length ? { status: 'Review Required', messages: reviews } : { status: 'Ready', messages: ['준비 완료'] };
+
+    return errors.length
+      ? { status: 'Error', messages: errors }
+      : reviews.length
+      ? { status: 'Review Required', messages: reviews }
+      : { status: 'Ready', messages: ['준비 완료'] };
   });
 
   products.forEach((groupRows) => {
+    const groupDescriptionExists = groupRows.some((row) => String(row.description || '').trim());
+    const groupImages = groupRows.flatMap((row) => splitImages(row.representativeImages));
+    const uniqueImageCount = new Set(groupImages).size;
+
     const optionImageCount = groupRows.filter((row) => row.optionImage.trim()).length;
+    const groupMessages = [];
+    const groupErrors = [];
+
+    if (!groupDescriptionExists) groupMessages.push('상품설명 확인 필요');
+    if (uniqueImageCount === 0) groupMessages.push('대표이미지 확인 필요');
+    if (uniqueImageCount > 9) groupErrors.push('대표이미지는 최대 9장');
+
     if (optionImageCount > 0 && optionImageCount !== groupRows.length) {
-      groupRows.forEach((row) => {
-        const index = rows.indexOf(row);
-        rowStates[index] = { status: 'Error', messages: [...rowStates[index].messages, '옵션이미지는 모든 옵션에 필요'] };
-      });
+      groupErrors.push('옵션이미지는 모든 옵션에 필요');
     }
-    const mainImages = groupRows.flatMap((row) => splitImages(row.representativeImages));
-    if (new Set(mainImages).size > 9) {
-      groupRows.forEach((row) => {
-        const index = rows.indexOf(row);
-        rowStates[index] = { status: 'Error', messages: [...rowStates[index].messages, '대표이미지는 최대 9장'] };
-      });
-    }
+
+    if (!groupMessages.length && !groupErrors.length) return;
+
+    groupRows.forEach((row) => {
+      const index = rows.indexOf(row);
+      const current = rowStates[index];
+
+      if (groupErrors.length || current.status === 'Error') {
+        rowStates[index] = {
+          status: 'Error',
+          messages: [...current.messages, ...groupErrors],
+        };
+        return;
+      }
+
+      rowStates[index] = {
+        status: 'Review Required',
+        messages: [...current.messages.filter((message) => message !== '준비 완료'), ...groupMessages],
+      };
+    });
   });
 
   const summary = rowStates.reduce((acc, item) => {

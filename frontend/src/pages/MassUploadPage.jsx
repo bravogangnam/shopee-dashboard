@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import * as XLSX from 'xlsx';
 
 const OPTION_FIELDS = [
   ['optionName', '옵션명', 150],
@@ -62,35 +63,32 @@ function splitRow(line, delimiter) {
   return String(line || '').split(delimiter).map((cell) => cell.trim());
 }
 
-function parseUploadText(text) {
-  const lines = String(text || '').split(/\r?\n/).filter((line) => line.trim());
-  if (lines.length < 2) return { products: [], message: '헤더와 데이터 행이 필요합니다.' };
-
-  const delimiter = lines[0].includes('\t') ? '\t' : ',';
-  const headers = splitRow(lines[0], delimiter);
+function parseUploadRows(headers, dataRows) {
   const fields = headers.map(fieldForHeader);
   if (!fields.some(Boolean)) return { products: [], message: '인식 가능한 헤더가 없습니다.' };
 
   const groups = new Map();
-  lines.slice(1).forEach((line, index) => {
-    const cells = splitRow(line, delimiter);
+
+  dataRows.forEach((cells, index) => {
     const row = {};
     const representativeImages = [];
 
     fields.forEach((field, cellIndex) => {
       if (!field) return;
-      const value = cells[cellIndex] || '';
+      const value = String(cells[cellIndex] ?? '').trim();
       if (field === 'representativeImages') representativeImages.push(...imageList(value));
       else row[field] = value;
     });
 
     const key = String(row.productName || '').trim() || `상품명 없음 ${index + 1}`;
+
     if (!groups.has(key)) {
       groups.set(key, {
         brand: row.brand || 'No Brand',
         productName: row.productName || '',
         description: row.description || '',
-        representativeImagesText: representativeImages.join('\n'),
+        representativeImagesText: representativeImages.join('
+'),
         options: [],
       });
     }
@@ -102,7 +100,8 @@ function parseUploadText(text) {
     if (representativeImages.length) {
       const merged = new Set(imageList(product.representativeImagesText));
       representativeImages.forEach((image) => merged.add(image));
-      product.representativeImagesText = Array.from(merged).join('\n');
+      product.representativeImagesText = Array.from(merged).join('
+');
     }
 
     product.options.push({
@@ -122,8 +121,45 @@ function parseUploadText(text) {
     ...product,
     options: product.options.length ? product.options : [emptyOption()],
   }));
+
   const optionCount = products.reduce((sum, product) => sum + product.options.length, 0);
   return { products, message: `${products.length}개 상품, ${optionCount}개 옵션을 불러왔습니다.` };
+}
+
+function parseUploadText(text) {
+  const lines = String(text || '').split(/?
+/).filter((line) => line.trim());
+  if (lines.length < 2) return { products: [], message: '헤더와 데이터 행이 필요합니다.' };
+
+  const delimiter = lines[0].includes('	') ? '	' : ',';
+  const headers = splitRow(lines[0], delimiter);
+  const rows = lines.slice(1).map((line) => splitRow(line, delimiter));
+
+  return parseUploadRows(headers, rows);
+}
+
+function parseUploadWorkbook(arrayBuffer) {
+  const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+  const firstSheetName = workbook.SheetNames[0];
+
+  if (!firstSheetName) {
+    return { products: [], message: '엑셀 시트를 찾지 못했습니다.' };
+  }
+
+  const sheet = workbook.Sheets[firstSheetName];
+  const table = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+  if (!table.length || !table[0]?.length) {
+    return { products: [], message: '엑셀 첫 번째 시트에서 헤더를 찾지 못했습니다.' };
+  }
+
+  const headers = table[0].map((value) => String(value || '').trim());
+  const rows = table
+    .slice(1)
+    .filter((row) => row.some((cell) => String(cell || '').trim()))
+    .map((row) => row.map((cell) => String(cell ?? '').trim()));
+
+  return parseUploadRows(headers, rows);
 }
 
 function validateOption(option) {
@@ -252,13 +288,38 @@ export default function MassUploadPage() {
   const handleFileUpload = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    const lowerName = file.name.toLowerCase();
     const reader = new FileReader();
+
     reader.onload = () => {
-      const text = String(reader.result || '');
-      setUploadText(text);
-      importText(text);
+      try {
+        const result = lowerName.endsWith('.xlsx')
+          ? parseUploadWorkbook(reader.result)
+          : parseUploadText(String(reader.result || ''));
+
+        if (!result.products.length) {
+          setMessage(result.message);
+          return;
+        }
+
+        setProducts(result.products);
+        setSelectedIndex(0);
+        setMessage(result.message);
+
+        if (!lowerName.endsWith('.xlsx')) {
+          setUploadText(String(reader.result || ''));
+        }
+      } catch (error) {
+        setMessage(`파일 읽기 실패: ${error.message}`);
+      }
     };
-    reader.readAsText(file, 'utf-8');
+
+    if (lowerName.endsWith('.xlsx')) {
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.readAsText(file, 'utf-8');
+    }
   };
 
   const updateProduct = (field, value) => {
@@ -301,17 +362,17 @@ export default function MassUploadPage() {
     <div className="page">
       <header className="page-header">
         <h1>대량등록</h1>
-        <p>표준 헤더 엑셀/CSV를 업로드하면 상품 공통정보와 옵션정보로 자동 분리합니다.</p>
+        <p>표준 헤더 엑셀/CSV를 업로드하면 상품 공통정보와 옵션정보로 자동 분리합니다. 엑셀은 첫 번째 시트의 첫 행을 헤더로 사용합니다.</p>
         <p>단품도 SKU 사용을 위해 옵션 1개로 처리합니다. 상품 등록/수정/삭제 API는 사용하지 않습니다.</p>
       </header>
 
       <section className="card" style={{ marginTop: 16 }}>
         <h2>1. 상품 엑셀/CSV 업로드</h2>
         <p style={{ color: '#6b7280' }}>
-          지원 헤더: 브랜드, 상품명, 상품설명, 대표이미지, 옵션명, sku, 가격, 재고, 무게, 가로, 세로, 높이, 옵션이미지
+          지원 파일: .xlsx, .csv, .tsv, .txt / 헤더: 브랜드, 상품명, 상품설명, 대표이미지, 옵션명, sku, 가격, 재고, 무게, 가로, 세로, 높이, 옵션이미지
         </p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <input type="file" accept=".csv,.tsv,.txt" onChange={handleFileUpload} />
+          <input type="file" accept=".xlsx,.csv,.tsv,.txt" onChange={handleFileUpload} />
           <button type="button" onClick={() => { const text = sampleText(); setUploadText(text); importText(text); }}>샘플 데이터 넣기</button>
           <button type="button" onClick={() => importText(uploadText)}>붙여넣기 적용</button>
           <button type="button" onClick={addManualProduct}>수동 상품 1개 추가</button>

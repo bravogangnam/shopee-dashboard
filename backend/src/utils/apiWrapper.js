@@ -190,7 +190,9 @@ const shopeeAxios = axios.create({
 shopeeAxios.interceptors.request.use(
   (config) => {
     // Remove access_token from log for security
-    const url = config.url?.replace(/access_token=[^&]+/, 'access_token=***');
+    const url = config.url
+      ?.replace(/access_token=[^&]+/, 'access_token=***')
+      ?.replace(/sign=[^&]+/, 'sign=***');
     console.log(`[Shopee API] → ${config.method?.toUpperCase()} ${url}`);
     return config;
   },

@@ -92,15 +92,18 @@ const callProductApiReadOnly = (opts) => callShopeeMetaReadOnly({ ...opts, apiTy
 const callGlobalProductApiReadOnly = (opts) => callShopeeMetaReadOnly({ ...opts, apiType: 'shop' });
 
 function normalizeCategoryRecommendResponse(raw = {}, request_id) {
-  const list = asArray(raw?.response?.category_list || raw?.response?.categories || raw?.category_list || raw?.categories);
-  const top = list[0] || {};
+  const root = raw?.response || raw || {};
+  const ids = asArray(root.category_id || root.category_ids || root.categoryid || raw?.category_id);
+
+  const categoryId = ids[0] ?? null;
+
   return {
-    ok: list.length > 0,
-    category_id: top.category_id ? String(top.category_id) : null,
-    category_path: top.category_path || top.display_name || top.category_name || null,
-    confidence: list.length > 0 ? 'auto_top1' : null,
+    ok: Boolean(categoryId),
+    category_id: categoryId ? String(categoryId) : null,
+    category_path: categoryId ? String(categoryId) : null,
+    confidence: categoryId ? 'auto_top1' : null,
     source: 'dashboard_shopee_api',
-    raw_count: list.length,
+    raw_count: ids.length,
     request_id,
   };
 }
@@ -153,7 +156,6 @@ async function recommendCategory({ tenantId, market, name, description }) {
     path: '/api/v2/product/category_recommend',
     query: {
       item_name: name,
-      item_description: description || name,
     },
   });
   if (!call.ok) return { ok: false, error: 'CATEGORY_RECOMMEND_FAILED', message: call.message || 'Category recommend failed.', ...normalizeCategoryRecommendResponse({}, request_id), diagnostics: call.diagnostics };

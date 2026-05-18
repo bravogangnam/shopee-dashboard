@@ -1,22 +1,75 @@
-name: Deploy to Server
+name: Deploy to VPS
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy via SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY_B64 }}" | base64 -d > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: junandkang.com
+          username: root
+          port: 22
+          key: ${{b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACAT1ztewlrkt0MSsr72Mlce+0CqqT/XPVy2KU44BGdiUgAAAJh50VsoedFb
+KAAAAAtzc2gtZWQyNTUxOQAAACAT1ztewlrkt0MSsr72Mlce+0CqqT/XPVy2KU44BGdiUg
+AAAEAdTN6arGTtPmfQntwvdocaeDa+0R712OK/kw7mQLoGLhPXO17CWuS3QxKyvvYyVx77
+QKqpP9c9XLYpTjgEZ2JSAAAAFWdpdGh1Yi1hY3Rpb25zLWRlcGxveQ==}}
+          script_stop: true
+          script: |
+            set -e
 
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
             cd /var/www/shopee-dashboard
-            ./deploy.sh
-          EOF
+
+            echo "[1/8] Update source"
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+
+            echo "[2/8] Backend deps"
+            cd backend
+            npm ci --omit=dev
+            cd ..
+
+            echo "[3/8] Frontend deps"
+            cd frontend
+            npm ci
+
+            echo "[4/8] Build frontend"
+            rm -rf deploy-build-auto
+            npx vite build --outDir deploy-build-auto --base /
+
+            echo "[5/8] Replace build"
+            mkdir -p /root/shopee-dashboard-backups
+            ts=$(date +%Y%m%d_%H%M%S)
+
+            if [ -d build ]; then
+              mv build /root/shopee-dashboard-backups/frontend-build-auto-$ts
+            fi
+
+            mv deploy-build-auto build
+            cd ..
+
+            echo "[6/8] Restart backend by PM2"
+            pm2 restart shopee-backend --update-env
+
+            echo "[7/8] Health check"
+            curl -sS http://127.0.0.1:4000/api/health
+            curl -I https://junandkang.com/mass-upload
+
+            echo "[8/8] Final status"
+            git log --oneline --decorate -5
+            git status --short
+            pm2 ls
+
+            echo "Deploy completed"

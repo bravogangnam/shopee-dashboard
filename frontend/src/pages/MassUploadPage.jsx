@@ -178,6 +178,93 @@ function analyzeRows(rows) {
   return { productCount: products.size, optionCount: rows.length, rowStates, summary };
 }
 
+
+function productGroupsFromRows(rows) {
+  const groups = new Map();
+
+  rows.forEach((row) => {
+    const key = String(row.productName || '').trim() || '상품명 없음';
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        productName: key,
+        description: '',
+        brand: row.brand || 'No Brand',
+        optionCount: 0,
+      });
+    }
+
+    const group = groups.get(key);
+    group.optionCount += 1;
+    if (!group.description && String(row.description || '').trim()) group.description = row.description;
+    if (!group.brand && row.brand) group.brand = row.brand;
+  });
+
+  return Array.from(groups.values());
+}
+
+function isDaysToShipAttribute(attr) {
+  const name = String(attr.attribute_name || '').toLowerCase();
+  return name.includes('day') && name.includes('ship');
+}
+
+function requiredAttributes(attributes) {
+  return (attributes || []).filter((attr) => attr.required && !isDaysToShipAttribute(attr));
+}
+
+function getAttributeKey(attr) {
+  return attr.attribute_id || attr.attribute_name;
+}
+
+function getAllowedValues(attr) {
+  return Array.isArray(attr.allowed_values) ? attr.allowed_values.filter(Boolean) : [];
+}
+
+function findAllowedValue(attr, candidates) {
+  const values = getAllowedValues(attr);
+  const normalized = values.map((value) => ({
+    value,
+    key: String(value).trim().toLowerCase(),
+  }));
+
+  return candidates
+    .map((candidate) => normalized.find((item) => item.key === String(candidate).trim().toLowerCase())?.value)
+    .find(Boolean) || '';
+}
+
+function getAutoAttributeValue(attr, fallbackBrand) {
+  const name = String(attr.attribute_name || '').trim().toLowerCase();
+
+  if (isDaysToShipAttribute(attr)) return '1';
+  if (name === 'brand' || name.includes('brand')) return fallbackBrand || 'No Brand';
+  if (name.includes('condition')) return findAllowedValue(attr, ['New', 'new']);
+  if (name.includes('sports product')) return findAllowedValue(attr, ['No', 'no']);
+  if (name.includes('pre-order') || name.includes('preorder')) return findAllowedValue(attr, ['No', 'no']);
+
+  return '';
+}
+
+function buildInitialAttributeValues(attributes, fallbackBrand) {
+  const values = {};
+  (attributes || []).forEach((attr) => {
+    const key = getAttributeKey(attr);
+    const autoValue = getAutoAttributeValue(attr, fallbackBrand);
+    if (key && autoValue) values[key] = autoValue;
+  });
+  return values;
+}
+
+function isRequiredAttributesComplete(meta) {
+  const required = requiredAttributes(meta?.attributes || []);
+  if (!required.length) return true;
+
+  return required.every((attr) => {
+    const key = getAttributeKey(attr);
+    return key && String(meta?.values?.[key] || '').trim();
+  });
+}
+
+
 function StatusBadge({ status }) {
   const color = status === 'Ready' ? ['#15803d', '#dcfce7'] : status === 'Error' ? ['#b91c1c', '#fee2e2'] : ['#b45309', '#fef3c7'];
   return <span style={{ color: color[0], background: color[1], borderRadius: 999, padding: '4px 10px', fontSize: 12, fontWeight: 700 }}>{STATUS_LABELS[status]}</span>;
@@ -194,8 +281,12 @@ export default function MassUploadPage() {
   const [pasteText, setPasteText] = useState('');
   const [rows, setRows] = useState([{ ...EMPTY_ROW }]);
   const [message, setMessage] = useState('등록용 엑셀을 선택한 뒤 “등록용 엑셀 읽기”를 누르세요.');
+  const [market, setMarket] = useState('SG');
+  const [categoryMetaByProduct, setCategoryMetaByProduct] = useState({});
+  const [categoryMessage, setCategoryMessage] = useState('카테고리 자동확정을 실행하세요.');
   const fileRef = useRef(null);
   const analysis = useMemo(() => analyzeRows(rows), [rows]);
+  const productGroups = useMemo(() => productGroupsFromRows(rows), [rows]);
 
   const loadResult = (result) => {
     if (!result.rows.length) {
@@ -234,6 +325,113 @@ export default function MassUploadPage() {
     setRows([{ ...EMPTY_ROW }]);
     setMessage('초기화되었습니다.');
     if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const updateAttributeValue = (productKey, attr, value) => {
+    const attrKey = getAttributeKey(attr);
+    setCategoryMetaByProduct((prev) => ({
+      ...prev,
+      [productKey]: {
+        ...(prev[productKey] || {}),
+        values: {
+          ...((prev[productKey] || {}).values || {}),
+          [attrKey]: value,
+        },
+      },
+    }));
+  };
+
+  const autoConfirmCategories = async () => {
+    if (!productGroups.length) {
+      setCategoryMessage('먼저 등록용 엑셀을 읽어야 합니다.');
+      return;
+    }
+
+    setCategoryMessage('카테고리 자동확정 중...');
+    const nextMeta = { ...categoryMetaByProduct };
+
+    for (const group of productGroups) {
+      try {
+        nextMeta[group.key] = {
+          ...(nextMeta[group.key] || {}),
+          status: '확인중',
+          productName: group.productName,
+          optionCount: group.optionCount,
+          message: '카테고리 추천 요청 중',
+        };
+        setCategoryMetaByProduct({ ...nextMeta });
+
+        const recommendRes = await fetch('/api/shopee-meta/category-recommend', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            market,
+            name: group.productName,
+            description: group.description || group.productName,
+          }),
+        });
+
+        const recommend = await recommendRes.json();
+
+        if (!recommendRes.ok || !recommend.ok || !recommend.category_id) {
+          const disabled = recommend.error === 'SHOPEE_META_LIVE_CALL_DISABLED';
+          nextMeta[group.key] = {
+            ...(nextMeta[group.key] || {}),
+            status: disabled ? 'API 비활성화' : '추천 실패',
+            categoryId: recommend.category_id || '',
+            categoryPath: recommend.category_path || '',
+            attributes: [],
+            values: {},
+            message: disabled
+              ? '서버에서 SHOPEE_META_LIVE_ENABLED=true 설정 필요'
+              : (recommend.message || recommend.error || '카테고리 추천 실패'),
+          };
+          setCategoryMetaByProduct({ ...nextMeta });
+          continue;
+        }
+
+        const categoryId = String(recommend.category_id);
+        let attributes = [];
+        let attributeMessage = '';
+
+        try {
+          const attrRes = await fetch(`/api/shopee-meta/attributes?market=${encodeURIComponent(market)}&category_id=${encodeURIComponent(categoryId)}`, {
+            credentials: 'include',
+          });
+          const attrJson = await attrRes.json();
+          attributes = Array.isArray(attrJson.attributes) ? attrJson.attributes : [];
+          attributeMessage = attrJson.ok === false ? (attrJson.message || attrJson.error || '') : '';
+        } catch (attrError) {
+          attributeMessage = attrError.message;
+        }
+
+        const values = buildInitialAttributeValues(attributes, group.brand || 'No Brand');
+
+        nextMeta[group.key] = {
+          status: '자동확정',
+          productName: group.productName,
+          optionCount: group.optionCount,
+          categoryId,
+          categoryPath: recommend.category_path || '',
+          attributes,
+          values,
+          message: attributeMessage || '카테고리 자동확정 완료',
+        };
+        setCategoryMetaByProduct({ ...nextMeta });
+      } catch (error) {
+        nextMeta[group.key] = {
+          ...(nextMeta[group.key] || {}),
+          status: '추천 실패',
+          productName: group.productName,
+          optionCount: group.optionCount,
+          message: error.message,
+        };
+        setCategoryMetaByProduct({ ...nextMeta });
+      }
+    }
+
+    setCategoryMessage('카테고리 자동확정이 완료되었습니다. 필수항목 선택 필요 여부를 확인하세요.');
   };
 
   return (
@@ -294,9 +492,88 @@ export default function MassUploadPage() {
       </section>
 
       <section className="card" style={{ marginTop: 16 }}>
-        <h2>4. 다음 단계 준비중</h2>
+        <h2>4. 카테고리 자동확정 / 필수항목</h2>
+        <p style={{ color: '#6b7280' }}>
+          Days to ship은 선택 없이 1로 고정합니다. 카테고리는 1순위 추천값으로 자동확정하고, 애매한 필수항목만 선택합니다.
+        </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+          <label>
+            마켓
+            <select value={market} onChange={(event) => setMarket(event.target.value)} style={{ marginLeft: 8, border: '1px solid #d1d5db', borderRadius: 8, padding: '7px 9px' }}>
+              <option value="SG">SG</option>
+              <option value="MY">MY</option>
+              <option value="TW">TW</option>
+              <option value="PH">PH</option>
+              <option value="TH">TH</option>
+              <option value="VN">VN</option>
+            </select>
+          </label>
+          <button type="button" onClick={autoConfirmCategories}>카테고리 자동확정 / 필수항목 조회</button>
+        </div>
+        <div style={{ color: '#6b7280', marginBottom: 10 }}>{categoryMessage}</div>
+
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: 1200, borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #e5e7eb' }}>상품명</th>
+                <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #e5e7eb' }}>옵션 수</th>
+                <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #e5e7eb' }}>상태</th>
+                <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #e5e7eb' }}>category_id</th>
+                <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #e5e7eb' }}>필수항목</th>
+              </tr>
+            </thead>
+            <tbody>
+              {productGroups.map((group) => {
+                const meta = categoryMetaByProduct[group.key] || {};
+                const required = requiredAttributes(meta.attributes || []);
+                const complete = isRequiredAttributesComplete(meta);
+                return (
+                  <tr key={group.key}>
+                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6', verticalAlign: 'top', width: 320 }}>{group.productName}</td>
+                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6', verticalAlign: 'top' }}>{group.optionCount}</td>
+                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6', verticalAlign: 'top', width: 180 }}>
+                      <div>{meta.status || '대기'}</div>
+                      <div style={{ color: '#6b7280', fontSize: 12 }}>{meta.message || ''}</div>
+                      {meta.categoryId && <div style={{ color: complete ? '#15803d' : '#b45309', fontSize: 12 }}>{complete ? '필수항목 완료' : '필수항목 선택 필요'}</div>}
+                    </td>
+                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6', verticalAlign: 'top', width: 180 }}>
+                      <input value={meta.categoryId || ''} readOnly style={{ width: 140, border: '1px solid #d1d5db', borderRadius: 8, padding: '8px 9px', background: '#f9fafb' }} />
+                      <div style={{ color: '#6b7280', fontSize: 12 }}>{meta.categoryPath || ''}</div>
+                    </td>
+                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6', verticalAlign: 'top' }}>
+                      {!meta.categoryId && <span style={{ color: '#6b7280' }}>카테고리 자동확정 전</span>}
+                      {meta.categoryId && !required.length && <span>필수항목 없음 또는 API 응답 없음</span>}
+                      {required.slice(0, 12).map((attr) => {
+                        const attrKey = getAttributeKey(attr);
+                        const allowed = getAllowedValues(attr);
+                        const value = meta.values?.[attrKey] || '';
+                        return (
+                          <label key={attrKey} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, margin: '0 10px 8px 0' }}>
+                            <span>{attr.attribute_name}</span>
+                            {allowed.length ? (
+                              <select value={value} onChange={(event) => updateAttributeValue(group.key, attr, event.target.value)} style={{ border: '1px solid #d1d5db', borderRadius: 8, padding: '6px 8px' }}>
+                                <option value="">선택</option>
+                                {allowed.map((option) => <option key={option} value={option}>{option}</option>)}
+                              </select>
+                            ) : (
+                              <input value={value} onChange={(event) => updateAttributeValue(group.key, attr, event.target.value)} style={{ width: 140, border: '1px solid #d1d5db', borderRadius: 8, padding: '6px 8px' }} />
+                            )}
+                          </label>
+                        );
+                      })}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <h2>5. 다음 단계 준비중</h2>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button type="button" disabled>카테고리 자동 추천 준비중</button>
           <button type="button" disabled>공식 템플릿 매핑 준비중</button>
           <button type="button" disabled>엑셀 생성 준비중</button>
         </div>

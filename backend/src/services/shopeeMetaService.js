@@ -147,7 +147,15 @@ async function recommendCategory({ tenantId, market, name, description }) {
   const request_id = createRequestId('catrec');
   if (!name || !String(name).trim()) return { ok: false, error: 'INVALID_REQUEST', message: 'name is required', request_id };
   if (!LIVE_ENABLED) return disabledResult({ requestId: request_id, apiPath: '/api/v2/product/category_recommend', market, shape: normalizeCategoryRecommendResponse({}, request_id) });
-  const call = await callProductApiReadOnly({ tenantId, market, path: '/api/v2/product/category_recommend', query: {} });
+  const call = await callProductApiReadOnly({
+    tenantId,
+    market,
+    path: '/api/v2/product/category_recommend',
+    query: {
+      item_name: name,
+      item_description: description || name,
+    },
+  });
   if (!call.ok) return { ok: false, error: 'CATEGORY_RECOMMEND_FAILED', message: call.message || 'Category recommend failed.', ...normalizeCategoryRecommendResponse({}, request_id), diagnostics: call.diagnostics };
   return { ...normalizeCategoryRecommendResponse(call.data, request_id), diagnostics: call.diagnostics };
 }

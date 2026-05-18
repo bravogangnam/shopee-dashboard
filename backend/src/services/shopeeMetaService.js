@@ -110,23 +110,85 @@ function normalizeCategoryRecommendResponse(raw = {}, request_id) {
 
 function normalizeCategoriesResponse(raw = {}, request_id) {
   const rows = asArray(raw?.response?.category_list || raw?.response?.categories || raw?.categories);
-  return { ok: rows.length > 0, categories: rows.map(r => ({ category_id: String(r.category_id ?? ''), category_name: r.category_name || r.display_name || '', parent_category_id: r.parent_category_id ?? null, is_leaf: Boolean(r.has_children === false || r.is_leaf), category_path: r.category_path || r.category_name || '' })), request_id };
+
+  return {
+    ok: rows.length > 0,
+    categories: rows.map(r => {
+      const name = r.display_category_name || r.original_category_name || r.category_name || r.display_name || '';
+      return {
+        category_id: String(r.category_id ?? ''),
+        category_name: name,
+        parent_category_id: r.parent_category_id ?? null,
+        is_leaf: Boolean(r.has_children === false || r.is_leaf),
+        category_path: r.category_path || name,
+      };
+    }),
+    request_id,
+  };
 }
 
 function normalizeAttributesResponse(raw = {}, category_id, request_id) {
   const root = raw?.response || raw || {};
-  const list = asArray(root.attribute_tree || root.attribute_list || root.attributes || root.list || root.category_attribute_list || root.children);
+  const responseList = asArray(root.list);
+
+  let list = [];
+
+  if (responseList.length) {
+    responseList.forEach(item => {
+      list.push(...asArray(item.attribute_tree || item.attribute_list || item.attributes));
+    });
+  } else {
+    list = asArray(
+      root.attribute_tree ||
+      root.attribute_list ||
+      root.attributes ||
+      root.list ||
+      root.category_attribute_list ||
+      root.children
+    );
+  }
+
   return {
     ok: list.length > 0,
     category_id: category_id || null,
-    attributes: list.map(a => ({ attribute_id: String(a.attribute_id ?? a.id ?? ''), attribute_name: a.display_name || a.attribute_name || a.name || '', required: Boolean(a.is_mandatory ?? a.required), input_type: a.input_type || a.value_type || 'TEXT', allowed_values: asArray(a.attribute_value_list || a.options || a.values).map(v => typeof v === 'object' ? (v.original_value_name || v.value || v.name || '') : String(v)), default_value: a.default_value ?? null, review_required: Boolean(a.is_key_attribute ?? a.review_required), source: 'dashboard_shopee_api' })),
+    attributes: list.map(a => ({
+      attribute_id: String(a.attribute_id ?? a.id ?? ''),
+      attribute_name:
+        a.display_attribute_name ||
+        a.original_attribute_name ||
+        a.display_name ||
+        a.attribute_name ||
+        a.name ||
+        '',
+      required: Boolean(a.mandatory ?? a.is_mandatory ?? a.required),
+      input_type: a.input_type || a.attribute_info?.input_type || a.value_type || 'TEXT',
+      allowed_values: asArray(a.attribute_value_list || a.options || a.values).map(v => {
+        if (typeof v === 'object') {
+          return (
+            v.display_value_name ||
+            v.original_value_name ||
+            v.value ||
+            v.name ||
+            ''
+          );
+        }
+        return String(v);
+      }).filter(Boolean),
+      default_value: a.default_value ?? null,
+      review_required: Boolean(a.is_key_attribute ?? a.review_required),
+      source: 'dashboard_shopee_api',
+    })),
     request_id,
   };
 }
 
 function normalizeBrandsResponse(raw = {}, category_id, request_id) {
   const rows = asArray(raw?.response?.brand_list || raw?.response?.brands || raw?.brand_list || raw?.brands);
-  const brands = rows.map(b => ({ brand_id: String(b.brand_id ?? b.id ?? ''), brand_name: b.original_brand_name || b.brand_name || b.name || '', normalized_name: cleanText((b.original_brand_name || b.brand_name || b.name || '').toLowerCase()) }));
+  const brands = rows.map(b => ({
+    brand_id: String(b.brand_id ?? b.id ?? ''),
+    brand_name: b.display_brand_name || b.original_brand_name || b.brand_name || b.name || '',
+    normalized_name: cleanText((b.display_brand_name || b.original_brand_name || b.brand_name || b.name || '').toLowerCase()),
+  }));
   const no_brand = brands.some(b => b.normalized_name === 'no brand' || b.normalized_name === 'nobrand');
   return { ok: rows.length > 0, category_id: category_id || null, brands, no_brand, request_id };
 }
@@ -173,23 +235,109 @@ async function fetchCategories({ tenantId, market }) {
 
 async function fetchAttributes({ tenantId, market, categoryId }) {
   const request_id = createRequestId('attributes');
-  if (!LIVE_ENABLED) return disabledResult({ requestId: request_id, apiPath: '/api/v2/product/get_attribute_tree', market, categoryId, shape: normalizeAttributesResponse({}, categoryId, request_id) });
-  let call = await callProductApiReadOnly({ tenantId, market, path: '/api/v2/product/get_attribute_tree', query: { category_id: categoryId } });
-  let n = normalizeAttributesResponse(call.data || {}, categoryId, request_id);
-  if (!n.ok) {
-    call = await callProductApiReadOnly({ tenantId, market, path: '/api/v2/product/get_attributes', query: { category_id: categoryId } });
-    n = normalizeAttributesResponse(call.data || {}, categoryId, request_id);
+
+  if (!LIVE_ENABLED) {
+    return disabledResult({
+      requestId: request_id,
+      apiPath: '/api/v2/product/get_attribute_tree',
+      market,
+      categoryId,
+      shape: normalizeAttributesResponse({}, categoryId, request_id),
+    });
   }
-  if (!call.ok || !n.ok) return { ok: false, error: 'ATTRIBUTE_EMPTY_RESPONSE', message: 'Shopee returned an empty attribute response.', category_id: categoryId || null, attributes: [], request_id, diagnostics: call.diagnostics };
-  return { ...n, diagnostics: call.diagnostics };
+
+  const attempts = [
+    {
+      path: '/api/v2/product/get_attribute_tree',
+      query: { category_id_list: categoryId, language: 'en' },
+    },
+    {
+      path: '/api/v2/product/get_attribute_tree',
+      query: { category_ids: categoryId, language: 'en' },
+    },
+    {
+      path: '/api/v2/product/get_attributes',
+      query: { category_id: categoryId, language: 'en' },
+    },
+  ];
+
+  let lastCall = null;
+
+  for (const attempt of attempts) {
+    const call = await callProductApiReadOnly({
+      tenantId,
+      market,
+      path: attempt.path,
+      query: attempt.query,
+    });
+
+    lastCall = call;
+    const normalized = normalizeAttributesResponse(call.data || {}, categoryId, request_id);
+
+    if (call.ok && normalized.ok) {
+      return {
+        ...normalized,
+        diagnostics: {
+          ...(call.diagnostics || {}),
+          selected_path: attempt.path,
+          selected_query_keys: Object.keys(attempt.query),
+        },
+      };
+    }
+  }
+
+  return {
+    ok: false,
+    error: 'ATTRIBUTE_EMPTY_RESPONSE',
+    message: 'Shopee returned an empty attribute response.',
+    category_id: categoryId || null,
+    attributes: [],
+    request_id,
+    diagnostics: lastCall?.diagnostics,
+  };
 }
 
 async function fetchBrands({ tenantId, market, categoryId }) {
   const request_id = createRequestId('brands');
-  if (!LIVE_ENABLED) return disabledResult({ requestId: request_id, apiPath: '/api/v2/product/get_brand_list', market, categoryId, shape: normalizeBrandsResponse({}, categoryId, request_id) });
-  const call = await callProductApiReadOnly({ tenantId, market, path: '/api/v2/product/get_brand_list', query: { category_id: categoryId } });
+
+  if (!LIVE_ENABLED) {
+    return disabledResult({
+      requestId: request_id,
+      apiPath: '/api/v2/product/get_brand_list',
+      market,
+      categoryId,
+      shape: normalizeBrandsResponse({}, categoryId, request_id),
+    });
+  }
+
+  const call = await callProductApiReadOnly({
+    tenantId,
+    market,
+    path: '/api/v2/product/get_brand_list',
+    query: {
+      category_id: categoryId,
+      offset: 0,
+      page_size: 100,
+      status: 1,
+      language: 'en',
+    },
+  });
+
   const n = normalizeBrandsResponse(call.data || {}, categoryId, request_id);
-  if (!call.ok || !n.ok) return { ok: false, error: 'BRAND_EMPTY_RESPONSE', message: 'Shopee returned an empty brand response.', category_id: categoryId || null, brands: [], no_brand: true, request_id, diagnostics: call.diagnostics };
+
+  if (!call.ok || !n.ok) {
+    return {
+      ok: false,
+      error: 'BRAND_EMPTY_RESPONSE',
+      message: 'Shopee returned an empty brand response.',
+      category_id: categoryId || null,
+      brands: [],
+      no_brand: true,
+      request_id,
+      diagnostics: call.diagnostics,
+    };
+  }
+
   return { ...n, diagnostics: call.diagnostics };
 }
 

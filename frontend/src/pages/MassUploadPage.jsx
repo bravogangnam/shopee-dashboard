@@ -125,9 +125,7 @@ function parseUploadRows(headers, dataRows) {
 }
 
 function parseUploadText(text) {
-  const lines = String(text || '').split(/
-?
-/).filter((line) => line.trim());
+  const lines = String(text || '').split(/\r?\n/).filter((line) => line.trim());
   if (lines.length < 2) return { products: [], message: '헤더와 데이터 행이 필요합니다.' };
 
   const delimiter = lines[0].includes('	') ? '	' : ',';

@@ -87,8 +87,7 @@ function parseUploadRows(headers, dataRows) {
         brand: row.brand || 'No Brand',
         productName: row.productName || '',
         description: row.description || '',
-        representativeImagesText: representativeImages.join('
-'),
+        representativeImagesText: representativeImages.join('\\n'),
         options: [],
       });
     }
@@ -100,8 +99,7 @@ function parseUploadRows(headers, dataRows) {
     if (representativeImages.length) {
       const merged = new Set(imageList(product.representativeImagesText));
       representativeImages.forEach((image) => merged.add(image));
-      product.representativeImagesText = Array.from(merged).join('
-');
+      product.representativeImagesText = Array.from(merged).join('\\n');
     }
 
     product.options.push({
@@ -127,7 +125,8 @@ function parseUploadRows(headers, dataRows) {
 }
 
 function parseUploadText(text) {
-  const lines = String(text || '').split(/?
+  const lines = String(text || '').split(/
+?
 /).filter((line) => line.trim());
   if (lines.length < 2) return { products: [], message: '헤더와 데이터 행이 필요합니다.' };
 

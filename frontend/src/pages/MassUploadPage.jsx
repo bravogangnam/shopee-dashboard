@@ -145,8 +145,16 @@ export default function MassUploadPage() {
       const res = await fetch('/api/shopee-meta/mass-upload/krsc-prepare', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(body) });
       const data = await res.json();
       if (!data.ok) { setMessage(data.message || 'KRSC 매핑 준비 실패'); return; }
-      setMetaResults(data.products || []);
-      setMessage('KRSC 템플릿 매핑 준비 완료');
+      const resultProducts = Array.isArray(data.products)
+        ? data.products
+        : Array.isArray(data.data?.products)
+          ? data.data.products
+          : Array.isArray(data.result?.products)
+            ? data.result.products
+            : [];
+
+      setMetaResults(resultProducts);
+      setMessage(`KRSC 템플릿 매핑 준비 완료: ${resultProducts.length}건`);
     } catch {
       setMessage('KRSC 템플릿 매핑 준비 실패');
     }
@@ -217,7 +225,23 @@ export default function MassUploadPage() {
           <span>Days to ship: 1 고정</span>
         </div>
         <div style={{ marginTop: 10 }}>
-          {metaResults.map((p) => <div key={p.productKey} style={{ border: '1px solid #eee', padding: 10, marginBottom: 8 }}><div><strong>{p.productName}</strong> | 옵션 {p.optionCount} | 상태 {p.status}</div><div>KRSC category_id: {p.category?.categoryId || '-'} / {p.category?.categoryPath || '-'}</div><div>brand: {p.brand?.brandName || '-'}</div><div>필수항목: {(p.requiredAttributes || []).length}</div><div>Days to ship: {p.daysToShip || 1}</div></div>)}
+          {metaResults.length > 0 ? (
+            <div style={{ marginTop: 12 }}>
+              <h3>KRSC 매핑 결과 {metaResults.length}건</h3>
+              {metaResults.map((p) => (
+                <div key={p.productKey || p.productName} style={{ border: '1px solid #eee', padding: 10, marginBottom: 8 }}>
+                  <div><strong>{p.productName}</strong> | 옵션 {p.optionCount} | 상태 {p.status}</div>
+                  <div>KRSC category_id: {p.category?.categoryId || '-'} / {p.category?.categoryPath || p.category?.categoryName || '-'}</div>
+                  <div>category source: {p.category?.source || '-'} / {p.category?.confidence || '-'}</div>
+                  <div>used item name: {p.category?.usedItemName || '-'}</div>
+                  <div>brand: {p.brand?.brandName || '-'} / brand_id: {p.brand?.brandId ?? '-'}</div>
+                  <div>brand status: {p.brand?.matchStatus || '-'}</div>
+                  <div>필수항목: {(p.requiredAttributes || []).length}</div>
+                  <div>Days to ship: {p.daysToShip || 1}</div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </section>
 

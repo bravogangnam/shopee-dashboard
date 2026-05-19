@@ -207,7 +207,94 @@ async function fetchCategoryKeywordFallback({ tenantId, itemName }) {
 }
 
 
-async function fetchCategoryRecommendTop1({ tenantId, itemName }) {
+
+function sanitizeCategoryRecommendName(value) {
+  return String(value || '')
+    .replace(/[|/]+/g, ' ')
+    .replace(/[()[\]{}]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function removeQtyAndBoxTerms(value) {
+  return String(value || '')
+    .replace(/\b\d+\s*s\b/gi, ' ')
+    .replace(/\b\d+\s*pcs?\b/gi, ' ')
+    .replace(/\b\d+\s*box\b/gi, ' ')
+    .replace(/\bno\s*box\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function escapeRegExp(text) {
+  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildCategoryRecommendNameCandidates(productName, brandName) {
+  const original = norm(productName);
+  const brand = norm(brandName);
+
+  const pipeParts = original
+    .split('|')
+    .map((x) => norm(x))
+    .filter(Boolean);
+
+  const withoutBrand = brand
+    ? original.replace(new RegExp(escapeRegExp(brand), 'ig'), ' ').replace(/\s+/g, ' ').trim()
+    : '';
+
+  const noSymbols = sanitizeCategoryRecommendName(original);
+  const noQty = removeQtyAndBoxTerms(noSymbols);
+  const noBrandNoQty = brand
+    ? removeQtyAndBoxTerms(
+        sanitizeCategoryRecommendName(
+          original.replace(new RegExp(escapeRegExp(brand), 'ig'), ' ')
+        )
+      )
+    : '';
+
+  const lower = original.toLowerCase();
+  const bloodGlucoseCore =
+    lower.includes('blood glucose') && lower.includes('test strip')
+      ? brand
+        ? `${brand} Blood Glucose Test Strips`
+        : 'Blood Glucose Test Strips'
+      : '';
+
+  return [
+    original,
+    ...pipeParts,
+    noSymbols,
+    noQty,
+    withoutBrand,
+    noBrandNoQty,
+    bloodGlucoseCore,
+    'Blood Glucose Test Strips',
+  ]
+    .map((v) => norm(v))
+    .filter(Boolean)
+    .map((v) => (v.length > 120 ? v.slice(0, 120).trim() : v))
+    .filter((v, i, arr) => arr.indexOf(v) === i);
+}
+
+function extractCategoryIdsFromRecommendResponse(resp) {
+  const raw = resp?.response || {};
+  const fromResponseArray = Array.isArray(raw.category_id) ? raw.category_id : [];
+  const fromRootArray = Array.isArray(resp?.category_id) ? resp.category_id : [];
+  const fromCategoryList = Array.isArray(raw.category_list)
+    ? raw.category_list.map((x) => x?.category_id).filter(Boolean)
+    : [];
+  const fromList = Array.isArray(raw.list)
+    ? raw.list.map((x) => x?.category_id).filter(Boolean)
+    : [];
+
+  return [...fromResponseArray, ...fromRootArray, ...fromCategoryList, ...fromList]
+    .map((x) => String(x))
+    .filter(Boolean);
+}
+
+
+async function fetchCategoryRecommendTop1({ tenantId, itemName, brandName }) {
   if (!LIVE_ENABLED) {
     return {
       ok: false,
@@ -221,10 +308,12 @@ async function fetchCategoryRecommendTop1({ tenantId, itemName }) {
 
   const { shop_id: shopId } = shopSel.shop;
   const db = getDb();
+
   const [tokenRows] = await db.query(
     `SELECT access_token FROM shops WHERE tenant_id = ? AND shop_id = ? LIMIT 1`,
     [tenantId, shopId]
   );
+
   const accessToken = tokenRows?.[0]?.access_token;
   if (!accessToken) {
     return {
@@ -236,56 +325,58 @@ async function fetchCategoryRecommendTop1({ tenantId, itemName }) {
 
   const { buildUrl, callWithRetry, shopeeAxios } = getShopeeLiveHelpers();
   const path = '/api/v2/product/category_recommend';
-  const url = buildUrl(path, { item_name: itemName }, 'shop', accessToken, shopId);
+  const candidates = buildCategoryRecommendNameCandidates(itemName, brandName);
 
-  try {
-    const resp = await callWithRetry(() => shopeeAxios.get(url), { context: 'ShopeeMeta:category_recommend' });
-    const raw = resp?.response || resp || {};
-    const categoryIds = Array.isArray(raw.category_id)
-      ? raw.category_id
-      : Array.isArray(resp?.category_id)
-        ? resp.category_id
-        : [];
+  console.log('[ShopeeMeta] category_recommend candidates', {
+    productName: itemName,
+    candidate_count: candidates.length,
+  });
 
-    console.log('[ShopeeMeta] category_recommend parsed', {
-      topKeys: Object.keys(resp || {}).slice(0, 20),
-      responseKeys: Object.keys((resp && resp.response) || {}).slice(0, 20),
-      rawKeys: Object.keys(raw || {}).slice(0, 20),
-      category_id_is_array_raw: Array.isArray(raw && raw.category_id),
-      category_id_is_array_root: Array.isArray(resp && resp.category_id),
-      category_id_count: Array.isArray(categoryIds) ? categoryIds.length : null,
-      error: resp && resp.error ? resp.error : null,
-      message: resp && resp.message ? resp.message : null,
-    });
+  for (let i = 0; i < candidates.length; i += 1) {
+    const candidate = candidates[i];
+    const url = buildUrl(path, { item_name: candidate }, 'shop', accessToken, shopId);
 
-    const categoryId = categoryIds.length > 0 ? String(categoryIds[0]) : null;
-    if (!categoryId) {
+    try {
+      const resp = await callWithRetry(() => shopeeAxios.get(url), {
+        context: 'ShopeeMeta:category_recommend',
+      });
+
+      const categoryIds = extractCategoryIdsFromRecommendResponse(resp || {});
+
+      console.log('[ShopeeMeta] category_recommend parsed', {
+        used_candidate_index: i,
+        used_item_name: candidate,
+        category_id_count: categoryIds.length,
+        error: resp?.error || null,
+        message: resp?.message || null,
+      });
+
+      const categoryId = categoryIds.length > 0 ? String(categoryIds[0]) : null;
+      if (!categoryId) continue;
+
       return {
-        ok: false,
-        error: 'CATEGORY_RECOMMEND_FAILED',
-        message: 'Shopee category_recommend가 상품명 기준 카테고리를 반환하지 않았습니다.',
+        ok: true,
+        category: {
+          categoryId,
+          categoryName: categoryId,
+          categoryPath: categoryId,
+          source: 'category_recommend',
+          confidence: 'auto_top1',
+          usedItemName: candidate,
+        },
       };
+    } catch {
+      // try next candidate
     }
-
-    return {
-      ok: true,
-      category: {
-        categoryId,
-        categoryName: categoryId,
-        categoryPath: categoryId,
-        source: 'category_recommend',
-        confidence: 'auto_top1',
-      },
-    };
-  } catch (err) {
-    return {
-      ok: false,
-      error: 'CATEGORY_RECOMMEND_FAILED',
-      message: err?.message || 'category_recommend failed.',
-    };
   }
-}
 
+  return {
+    ok: false,
+    error: 'CATEGORY_RECOMMEND_FAILED',
+    message: 'Shopee category_recommend가 상품명 기준 카테고리를 반환하지 않았습니다.',
+    usedItemName: itemName,
+  };
+}
 
 async function autoMetadataBatchDisabled({ products = [] }) {
   return sanitizeObjectForMetaResponse({
@@ -309,7 +400,7 @@ async function krscPrepare({ tenantId, products = [] }) {
     const productName = norm(p.productName);
     const optionCount = Number(p.optionCount || 0) || 0;
     const categoryResult = productName
-      ? await fetchCategoryRecommendTop1({ tenantId, itemName: productName })
+      ? await fetchCategoryRecommendTop1({ tenantId, itemName: productName, brandName: p.brand || '' })
       : {
         ok: false,
         error: 'CATEGORY_RECOMMEND_FAILED',

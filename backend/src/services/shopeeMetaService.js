@@ -104,6 +104,17 @@ async function fetchCategoryRecommendTop1({ tenantId, itemName }) {
         ? resp.category_id
         : [];
 
+    console.log('[ShopeeMeta] category_recommend parsed', {
+      topKeys: Object.keys(resp || {}).slice(0, 20),
+      responseKeys: Object.keys((resp && resp.response) || {}).slice(0, 20),
+      rawKeys: Object.keys(raw || {}).slice(0, 20),
+      category_id_is_array_raw: Array.isArray(raw && raw.category_id),
+      category_id_is_array_root: Array.isArray(resp && resp.category_id),
+      category_id_count: Array.isArray(categoryIds) ? categoryIds.length : null,
+      error: resp && resp.error ? resp.error : null,
+      message: resp && resp.message ? resp.message : null,
+    });
+
     const categoryId = categoryIds.length > 0 ? String(categoryIds[0]) : null;
     if (!categoryId) {
       return {

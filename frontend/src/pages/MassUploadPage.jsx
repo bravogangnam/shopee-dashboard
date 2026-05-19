@@ -67,6 +67,68 @@ function parseWorkbook(arrayBuffer) {
   return { products: parseRows(headers, rows), visibleHeaders: parseVisibleHeaders(headers) };
 }
 
+
+function isLikelyRequiredHeader(value) {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  return text.includes('*') || /required|mandatory|필수/i.test(text);
+}
+
+function analyzeTemplateWorkbook(arrayBuffer) {
+  const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+  const sheetNames = workbook.SheetNames || [];
+
+  const sheets = sheetNames.map((sheetName) => {
+    const sheet = workbook.Sheets[sheetName];
+    const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+    let bestHeaderRow = 0;
+    let bestScore = -1;
+
+    matrix.slice(0, 30).forEach((row, idx) => {
+      const cells = Array.isArray(row) ? row.map((c) => String(c || '').trim()) : [];
+      const nonEmpty = cells.filter(Boolean).length;
+      const keywordScore = cells.filter((c) =>
+        /product|sku|stock|price|brand|category|image|weight|variation|option|attribute|name|description|필수|상품|브랜드|가격|재고/i.test(c)
+      ).length;
+      const requiredScore = cells.filter(isLikelyRequiredHeader).length;
+      const score = nonEmpty + keywordScore * 2 + requiredScore * 3;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestHeaderRow = idx;
+      }
+    });
+
+    const headers = (matrix[bestHeaderRow] || []).map((c) => String(c || '').trim());
+    const requiredColumns = headers
+      .map((h, idx) => ({ index: idx + 1, header: h }))
+      .filter((x) => isLikelyRequiredHeader(x.header));
+
+    const mappingCandidates = headers
+      .map((header, idx) => {
+        const key = normalizeHeader(header);
+        const internal = HEADER_ALIASES[key] || null;
+        return internal ? { templateColumn: idx + 1, templateHeader: header, internalField: internal } : null;
+      })
+      .filter(Boolean);
+
+    return {
+      sheetName,
+      rowCount: matrix.length,
+      headerRow: bestHeaderRow + 1,
+      dataStartRow: bestHeaderRow + 2,
+      headerCount: headers.filter(Boolean).length,
+      headers: headers.filter(Boolean).slice(0, 80),
+      requiredColumns,
+      mappingCandidates,
+    };
+  });
+
+  return { sheetNames, sheets };
+}
+
+
 function validateProduct(product) {
   const errors = []; const reviews = [];
   if (!String(product.productName || '').trim()) errors.push('상품명 필수');
@@ -92,6 +154,9 @@ export default function MassUploadPage() {
   const [message, setMessage] = useState('');
   const [metaResults, setMetaResults] = useState([]);
   const [visibleHeaders, setVisibleHeaders] = useState(DISPLAY_HEADERS);
+  const [templateFile, setTemplateFile] = useState(null);
+  const [templateAnalysis, setTemplateAnalysis] = useState(null);
+  const [templateMessage, setTemplateMessage] = useState('');
 
   const displayRows = useMemo(() => {
     const out = [];
@@ -162,6 +227,25 @@ export default function MassUploadPage() {
     }
   };
 
+
+  const analyzeTemplateFile = async () => {
+    if (!templateFile) {
+      setTemplateMessage('공식 템플릿 파일을 선택하세요.');
+      return;
+    }
+
+    try {
+      setTemplateMessage('공식 템플릿 분석 중...');
+      const buffer = await templateFile.arrayBuffer();
+      const analysis = analyzeTemplateWorkbook(buffer);
+      setTemplateAnalysis(analysis);
+      setTemplateMessage(`공식 템플릿 분석 완료: 시트 ${analysis.sheetNames.length}개`);
+    } catch (err) {
+      setTemplateAnalysis(null);
+      setTemplateMessage(`공식 템플릿 분석 실패: ${err?.message || '알 수 없는 오류'}`);
+    }
+  };
+
   return (
     <div className="page">
       <header className="page-header">
@@ -187,7 +271,7 @@ export default function MassUploadPage() {
           }}>
             붙여넣기 적용
           </button>
-          <button type="button" onClick={() => { setProducts([]); setMetaResults([]); setPasteText(''); setVisibleHeaders(DISPLAY_HEADERS); setSelectedFile(null); setMessage('초기화되었습니다.'); }}>초기화</button>
+          <button type="button" onClick={() => { setProducts([]); setMetaResults([]); setPasteText(''); setVisibleHeaders(DISPLAY_HEADERS); setSelectedFile(null); setTemplateFile(null); setTemplateAnalysis(null); setTemplateMessage(''); setMessage('초기화되었습니다.'); }}>초기화</button>
         </div>
         {selectedFile ? (
           <p style={{ marginTop: 8 }}>선택된 파일: {selectedFile.name}</p>
@@ -241,7 +325,7 @@ export default function MassUploadPage() {
                   <div>used item name: {p.category?.usedItemName || '-'}</div>
                   <div>brand: {p.brand?.brandName || '-'} / brand_id: {p.brand?.brandId ?? '-'}</div>
                   <div>brand status: {p.brand?.matchStatus || '-'}</div>
-                  <div>필수항목: {(p.requiredAttributes || []).length}</div>
+                  <div>필수항목: 공식 템플릿 분석 전</div>
                   {(p.requiredAttributes || []).length > 0 ? (
                     <div style={{ marginTop: 4 }}>
                       {(p.requiredAttributes || []).slice(0, 12).map((a, idx) => (
@@ -252,6 +336,7 @@ export default function MassUploadPage() {
                       {(p.requiredAttributes || []).length > 12 ? <span>외 {(p.requiredAttributes || []).length - 12}개</span> : null}
                     </div>
                   ) : null}
+                  <div>공식 템플릿: category_id별 공식 템플릿 업로드 필요</div>
                   <div>Days to ship: {p.daysToShip || 1}</div>
                 </div>
               ))}
@@ -261,11 +346,69 @@ export default function MassUploadPage() {
       </section>
 
       <section className="card" style={{ marginTop: 16 }}>
-        <h2>다음 단계 준비중</h2>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button type="button" disabled>공식 템플릿 매핑 준비중</button>
+        <h2>5. 공식 템플릿 업로드 / 매핑 분석</h2>
+        <p>
+          KRSC 대량등록은 category_id별 공식 Excel 템플릿이 기준입니다.
+          공식 템플릿을 업로드하면 시트/헤더행/데이터 시작행/필수 컬럼 후보/매핑 후보를 분석합니다.
+        </p>
+
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <label style={{ border: '1px solid #ddd', borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}>
+            공식 템플릿 선택
+            <input
+              type="file"
+              accept=".xlsx"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                setTemplateFile(e.target.files?.[0] || null);
+                setTemplateAnalysis(null);
+                setTemplateMessage('');
+              }}
+            />
+          </label>
+          <button type="button" onClick={analyzeTemplateFile}>공식 템플릿 분석</button>
           <button type="button" disabled>엑셀 생성 준비중</button>
         </div>
+
+        <p style={{ marginTop: 8 }}>
+          {templateFile ? `선택된 공식 템플릿: ${templateFile.name}` : '선택된 공식 템플릿이 없습니다.'}
+        </p>
+        {templateMessage ? <p>{templateMessage}</p> : null}
+
+        {templateAnalysis ? (
+          <div style={{ marginTop: 12 }}>
+            <h3>템플릿 분석 결과</h3>
+            <div>시트: {templateAnalysis.sheetNames.join(', ') || '-'}</div>
+            {templateAnalysis.sheets.map((sheet) => (
+              <div key={sheet.sheetName} style={{ border: '1px solid #eee', padding: 10, marginTop: 8 }}>
+                <div><strong>{sheet.sheetName}</strong></div>
+                <div>헤더 행 추정: {sheet.headerRow}</div>
+                <div>데이터 시작 행 추정: {sheet.dataStartRow}</div>
+                <div>헤더 수: {sheet.headerCount}</div>
+                <div>필수 컬럼 후보: {sheet.requiredColumns.length}</div>
+                {sheet.requiredColumns.length > 0 ? (
+                  <div style={{ marginTop: 4 }}>
+                    {sheet.requiredColumns.slice(0, 20).map((c) => (
+                      <span key={`${sheet.sheetName}-${c.index}`} style={{ display: 'inline-block', marginRight: 6, marginBottom: 4, padding: '2px 6px', border: '1px solid #ddd', borderRadius: 6 }}>
+                        {c.header}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                <div style={{ marginTop: 6 }}>매핑 후보: {sheet.mappingCandidates.length}</div>
+                {sheet.mappingCandidates.length > 0 ? (
+                  <div style={{ marginTop: 4 }}>
+                    {sheet.mappingCandidates.slice(0, 20).map((m) => (
+                      <span key={`${sheet.sheetName}-${m.templateColumn}-${m.internalField}`} style={{ display: 'inline-block', marginRight: 6, marginBottom: 4, padding: '2px 6px', border: '1px solid #ddd', borderRadius: 6 }}>
+                        {m.templateHeader} → {m.internalField}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
       </section>
     </div>
   );

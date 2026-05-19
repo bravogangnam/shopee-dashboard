@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import * as XLSX from 'xlsx';
 
 const DISPLAY_HEADERS = ['sku', '브랜드', '상품명', '옵션명', '상품설명', '대표이미지', '무게', '가격', '재고', '가로', '세로', '높이', '옵션이미지'];
 const HEADER_ALIASES = { 브랜드:'brand',brand:'brand',상품명:'productName',productname:'productName',product_name:'productName',상품설명:'description',description:'description',대표이미지:'representativeImages',representativeimages:'representativeImages',representative_images:'representativeImages',옵션명:'optionName',optionname:'optionName',option_name:'optionName',sku:'sku',가격:'price',price:'price',재고:'stock',stock:'stock',무게:'weight',weight:'weight',가로:'length',length:'length',세로:'width',width:'width',높이:'height',height:'height',옵션이미지:'optionImage',optionimage:'optionImage',option_image:'optionImage' };
@@ -7,22 +8,39 @@ const splitLine = (line) => line.includes('\t') ? line.split('\t').map((v) => v.
 const normalizeHeader = (v) => String(v || '').trim().replace(/\s+/g, '').toLowerCase();
 const parseRep = (v) => String(v || '').split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean);
 
+function parseRows(headers, rows) {
+  if (!Array.isArray(headers) || headers.length === 0 || !Array.isArray(rows) || rows.length === 0) return [];
+  const keys = headers.map((h) => HEADER_ALIASES[normalizeHeader(h)] || null);
+  const bucket = new Map();
+  rows.forEach((cols, idx) => {
+    const row = {};
+    keys.forEach((k, i) => { if (k) row[k] = String(cols?.[i] ?? '').trim(); });
+    const name = String(row.productName || '').trim() || `(상품명 없음 #${idx + 1})`;
+    if (!bucket.has(name)) bucket.set(name, { id: `p_${Date.now()}_${idx}`, brand: row.brand || '', productName: name, description: row.description || '', representativeImages: parseRep(row.representativeImages), options: [] });
+    const product = bucket.get(name);
+    product.options.push({ optionName: String(row.optionName || '').trim() || 'Default', sku: row.sku || '', weight: row.weight || '', price: row.price || '', stock: row.stock || '', length: row.length || '', width: row.width || '', height: row.height || '', optionImage: row.optionImage || '' });
+  });
+  return Array.from(bucket.values());
+}
+
 function parseUploadText(text) {
   const lines = String(text || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length < 2) return [];
   const headers = splitLine(lines[0]);
-  const keys = headers.map((h) => HEADER_ALIASES[normalizeHeader(h)] || null);
   const rows = lines.slice(1).map(splitLine);
-  const bucket = new Map();
-  rows.forEach((cols, idx) => {
-    const row = {};
-    keys.forEach((k, i) => { if (k) row[k] = cols[i] || ''; });
-    const name = String(row.productName || '').trim() || `(상품명 없음 #${idx + 1})`;
-    if (!bucket.has(name)) bucket.set(name, { id: `p_${Date.now()}_${idx}`, brand: row.brand || '', productName: name, description: row.description || '', representativeImages: parseRep(row.representativeImages), options: [] });
-    const p = bucket.get(name);
-    p.options.push({ optionName: String(row.optionName || '').trim() || 'Default', sku: row.sku || '', weight: row.weight || '', price: row.price || '', stock: row.stock || '', length: row.length || '', width: row.width || '', height: row.height || '', optionImage: row.optionImage || '' });
-  });
-  return Array.from(bucket.values());
+  return parseRows(headers, rows);
+}
+
+function parseWorkbook(arrayBuffer) {
+  const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+  const firstSheetName = workbook.SheetNames?.[0];
+  if (!firstSheetName) return [];
+  const sheet = workbook.Sheets[firstSheetName];
+  const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+  if (!Array.isArray(matrix) || matrix.length < 2) return [];
+  const headers = (matrix[0] || []).map((v) => String(v || '').trim());
+  const rows = matrix.slice(1).map((row) => (Array.isArray(row) ? row : []));
+  return parseRows(headers, rows);
 }
 
 function validateProduct(product) {
@@ -73,9 +91,24 @@ export default function MassUploadPage() {
 
   const readSelectedFile = () => {
     if (!selectedFile) { setMessage('파일을 먼저 선택하세요.'); return; }
-    const r = new FileReader();
-    r.onload = () => { setProducts(parseUploadText(String(r.result || ''))); setMessage('파일 읽기 완료'); };
-    r.readAsText(selectedFile);
+    const fileName = String(selectedFile.name || '').toLowerCase();
+    const reader = new FileReader();
+
+    if (fileName.endsWith('.xlsx')) {
+      reader.onload = () => {
+        const nextProducts = parseWorkbook(reader.result);
+        setProducts(nextProducts);
+        setMessage('xlsx 파일 읽기 완료');
+      };
+      reader.readAsArrayBuffer(selectedFile);
+      return;
+    }
+
+    reader.onload = () => {
+      setProducts(parseUploadText(String(reader.result || '')));
+      setMessage('파일 읽기 완료');
+    };
+    reader.readAsText(selectedFile);
   };
 
   const runKrscPrepare = async () => {
@@ -96,16 +129,16 @@ export default function MassUploadPage() {
       <header className="page-header">
         <h1>대량등록</h1>
         <p>등록용 엑셀을 업로드하면 Shopee 공식 템플릿 생성용 데이터로 검증합니다.</p>
-        <p><strong>기준: KRSC 글로벌 필로덕트 대량등록</strong></p>
+        <p><strong>기준: KRSC 글로벌 프로덕트 대량등록</strong></p>
       </header>
 
       <section className="card" style={{ marginTop: 16 }}>
         <h2>파일 업로드</h2>
-        <p>지원 파일: .csv, .tsv, .txt</p>
+        <p>지원 파일: .xlsx, .csv, .tsv, .txt</p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <label style={{ border: '1px solid #ddd', borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}>
             파일 선택
-            <input type="file" accept=".csv,.tsv,.txt" style={{ display: 'none' }} onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
+            <input type="file" accept=".xlsx,.csv,.tsv,.txt" style={{ display: 'none' }} onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
           </label>
           <button type="button" onClick={readSelectedFile}>등록용 엑셀 읽기</button>
           <button type="button" onClick={() => { setProducts(parseUploadText(pasteText)); setMessage('붙여넣기 적용 완료'); }}>붙여넣기 적용</button>
@@ -113,7 +146,7 @@ export default function MassUploadPage() {
         </div>
         <p style={{ marginTop: 8 }}>{message || '선택된 파일이 없습니다.'}</p>
         <details style={{ marginTop: 8 }}>
-          <summary>붙여넣기 입력 열긠</summary>
+          <summary>붙여넣기 입력 열기</summary>
           <textarea rows={4} value={pasteText} onChange={(e) => setPasteText(e.target.value)} style={{ width: '100%' }} />
         </details>
       </section>

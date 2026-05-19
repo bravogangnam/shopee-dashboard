@@ -7,78 +7,36 @@ const {
   fetchCategories,
   fetchAttributes,
   fetchBrands,
-  fetchDtsLimit,
+  autoMetadataBatchDisabled,
+  krscPrepare,
 } = require('../services/shopeeMetaService');
 
 const router = express.Router();
-
 router.use(requireAuth);
 router.use(requireApprovedTenant);
 
-function getTenantIdFromRequest(req) {
-  return req?.tenantId ?? req?.user?.tenant_id ?? req?.user?.tenantId ?? null;
-}
-
-function normalizeMarket(value) {
-  return typeof value === 'string' ? value.trim().toUpperCase() : '';
-}
+const getTenantId = (req) => req?.tenantId ?? req?.user?.tenant_id ?? req?.user?.tenantId ?? null;
 
 function sendResult(res, result) {
-  const safe = sanitizeObjectForMetaResponse(result || {});
-  if (safe.ok === false && safe.error === 'TENANT_CONTEXT_REQUIRED') return res.status(401).json(safe);
-  if (safe.ok === false && safe.error === 'NO_ACTIVE_SHOP_TOKEN') return res.status(404).json(safe);
-  if (safe.ok === false && (safe.error === 'SHOPEE_META_LIVE_CALL_DISABLED' || safe.error === 'SHOPEE_META_NOT_IMPLEMENTED')) return res.status(501).json(safe);
-  if (safe.ok === false && safe.error === 'INVALID_REQUEST') return res.status(400).json(safe);
-  return res.json(safe);
+  return res.json(sanitizeObjectForMetaResponse(result || {}));
 }
 
-router.get('/status', async (req, res) => {
-  const tenantId = getTenantIdFromRequest(req);
-  if (!tenantId) return res.status(401).json({ ok: false, error: 'TENANT_CONTEXT_REQUIRED', message: 'tenant_id context is required.' });
-  return sendResult(res, await getShopeeMetaStatus({ tenantId }));
+router.get('/status', async (req, res) => sendResult(res, await getShopeeMetaStatus({ tenantId: getTenantId(req) })));
+router.post('/category-recommend', async (req, res) => sendResult(res, await recommendCategory({ tenantId: getTenantId(req), name: req.body?.name, description: req.body?.description })));
+router.get('/categories', async (req, res) => sendResult(res, await fetchCategories({ tenantId: getTenantId(req) })));
+router.get('/attributes', async (req, res) => sendResult(res, await fetchAttributes({ tenantId: getTenantId(req), categoryId: String(req.query.category_id || '').trim() })));
+router.get('/brands', async (req, res) => sendResult(res, await fetchBrands({ tenantId: getTenantId(req), categoryId: String(req.query.category_id || '').trim() })));
+
+
+
+router.post('/mass-upload/auto-metadata', async (req, res) => {
+  const products = Array.isArray(req.body?.products) ? req.body.products : [];
+  return sendResult(res, await autoMetadataBatchDisabled({ products }));
 });
 
-router.post('/category-recommend', async (req, res) => {
-  const tenantId = getTenantIdFromRequest(req);
-  if (!tenantId) return res.status(401).json({ ok: false, error: 'TENANT_CONTEXT_REQUIRED', message: 'tenant_id context is required.' });
-
-  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
-  const description = typeof req.body?.description === 'string' ? req.body.description.trim() : '';
-  const market = normalizeMarket(req.body?.market);
-
-  return sendResult(res, await recommendCategory({ tenantId, market, name, description }));
-});
-
-router.get('/categories', async (req, res) => {
-  const tenantId = getTenantIdFromRequest(req);
-  if (!tenantId) return res.status(401).json({ ok: false, error: 'TENANT_CONTEXT_REQUIRED', message: 'tenant_id context is required.' });
-  return sendResult(res, await fetchCategories({ tenantId, market: normalizeMarket(req.query.market) }));
-});
-
-router.get('/attributes', async (req, res) => {
-  const tenantId = getTenantIdFromRequest(req);
-  if (!tenantId) return res.status(401).json({ ok: false, error: 'TENANT_CONTEXT_REQUIRED', message: 'tenant_id context is required.' });
-  const categoryId = typeof req.query.category_id === 'string' ? req.query.category_id.trim() : '';
-  return sendResult(res, await fetchAttributes({ tenantId, market: normalizeMarket(req.query.market), categoryId }));
-});
-
-router.get('/brands', async (req, res) => {
-  const tenantId = getTenantIdFromRequest(req);
-  if (!tenantId) return res.status(401).json({ ok: false, error: 'TENANT_CONTEXT_REQUIRED', message: 'tenant_id context is required.' });
-  const categoryId = typeof req.query.category_id === 'string' ? req.query.category_id.trim() : '';
-  return sendResult(res, await fetchBrands({ tenantId, market: normalizeMarket(req.query.market), categoryId }));
-});
-
-router.get('/dts-limit', async (req, res) => {
-  const tenantId = getTenantIdFromRequest(req);
-  if (!tenantId) return res.status(401).json({ ok: false, error: 'TENANT_CONTEXT_REQUIRED', message: 'tenant_id context is required.' });
-  const categoryId = typeof req.query.category_id === 'string' ? req.query.category_id.trim() : '';
-  return sendResult(res, await fetchDtsLimit({ tenantId, market: normalizeMarket(req.query.market), categoryId }));
-});
-
-router.use((err, req, res, next) => {
-  console.error('[ShopeeMetaRoute] error:', err.message);
-  return res.status(500).json(sanitizeObjectForMetaResponse({ ok: false, error: 'SHOPEE_META_NOT_IMPLEMENTED', message: 'Shopee metadata bridge internal error.' }));
+router.post('/mass-upload/krsc-prepare', async (req, res) => {
+  const products = Array.isArray(req.body?.products) ? req.body.products : [];
+  return sendResult(res, await krscPrepare({ products }));
 });
 
 module.exports = router;

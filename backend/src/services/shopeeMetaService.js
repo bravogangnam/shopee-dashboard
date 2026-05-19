@@ -282,7 +282,7 @@ function buildCategoryRecommendNameCandidates(productName, brandName) {
 function extractCategoryIdsFromRecommendResponse(resp) {
   const raw = resp?.response || {};
   const fromResponseArray = Array.isArray(raw.category_id) ? raw.category_id : [];
-  const fromRootArray = Array.isArray(resp?.category_id) ? resp.category_id : [];
+  const fromRootArray = Array.isArray(data?.category_id) ? data.category_id : Array.isArray(resp?.category_id) ? resp.category_id : [];
   const fromCategoryList = Array.isArray(raw.category_list)
     ? raw.category_list.map((x) => x?.category_id).filter(Boolean)
     : [];
@@ -349,8 +349,8 @@ async function fetchCategoryRecommendTop1({ tenantId, itemName, brandName }) {
         used_candidate_index: i,
         used_item_name: candidate,
         category_id_count: categoryIds.length,
-        error: resp?.error || null,
-        message: resp?.message || null,
+        error: resp?.data?.error || resp?.error || null,
+        message: resp?.data?.message || resp?.message || null,
       });
 
       const categoryId = categoryIds.length > 0 ? String(categoryIds[0]) : null;

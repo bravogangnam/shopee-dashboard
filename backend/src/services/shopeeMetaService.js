@@ -1,4 +1,5 @@
 const META_MODE = 'read_only_bridge';
+const LIVE_ENABLED = String(process.env.SHOPEE_META_LIVE_ENABLED || '').toLowerCase() === 'true';
 
 function sanitizeObjectForMetaResponse(input) {
   const secretKeys = new Set(['access_token', 'refresh_token', 'partner_key', 'sign', 'code', 'authorization_code']);
@@ -12,6 +13,124 @@ function sanitizeObjectForMetaResponse(input) {
 }
 
 function norm(v) { return String(v || '').trim(); }
+function normalizeMarket(v) { return String(v || '').trim().toUpperCase(); }
+
+function getDb() {
+  return require('../config/database');
+}
+
+function getShopeeLiveHelpers() {
+  const { buildUrl } = require('../utils/shopeeSignature');
+  const { callWithRetry, shopeeAxios } = require('../utils/apiWrapper');
+  return { buildUrl, callWithRetry, shopeeAxios };
+}
+
+async function selectActiveShopForMetadata({ tenantId }) {
+  if (!tenantId) return { ok: false, error: 'TENANT_CONTEXT_REQUIRED', message: 'tenant_id context is required.' };
+  const db = getDb();
+  const [rows] = await db.query(
+    `SELECT shop_id, alias, region, token_status
+       FROM shops
+      WHERE tenant_id = ?
+        AND is_active = 1
+        AND access_token IS NOT NULL
+        AND access_token <> ''
+      ORDER BY
+        CASE WHEN UPPER(region) = 'SG' THEN 0 ELSE 1 END,
+        CASE WHEN token_status = 'active' THEN 0 ELSE 1 END,
+        id ASC`,
+    [tenantId]
+  );
+
+  if (!rows.length) {
+    return {
+      ok: false,
+      error: 'NO_ACTIVE_SHOP_TOKEN',
+      message: 'No active shop token is available for this tenant.',
+      shop: null,
+    };
+  }
+
+  const s = rows[0];
+  return {
+    ok: true,
+    shop: {
+      shop_id: String(s.shop_id),
+      shop_name: s.alias || null,
+      region: s.region || null,
+      market: normalizeMarket(s.region || ''),
+      token_status: s.token_status || null,
+    },
+  };
+}
+
+async function fetchCategoryRecommendTop1({ tenantId, itemName }) {
+  if (!LIVE_ENABLED) {
+    return {
+      ok: false,
+      error: 'SHOPEE_META_LIVE_CALL_DISABLED',
+      message: 'Live Shopee metadata call disabled.',
+    };
+  }
+
+  const shopSel = await selectActiveShopForMetadata({ tenantId });
+  if (!shopSel.ok) return shopSel;
+
+  const { shop_id: shopId } = shopSel.shop;
+  const db = getDb();
+  const [tokenRows] = await db.query(
+    `SELECT access_token FROM shops WHERE tenant_id = ? AND shop_id = ? LIMIT 1`,
+    [tenantId, shopId]
+  );
+  const accessToken = tokenRows?.[0]?.access_token;
+  if (!accessToken) {
+    return {
+      ok: false,
+      error: 'NO_ACTIVE_SHOP_TOKEN',
+      message: 'No active shop token is available for this tenant.',
+    };
+  }
+
+  const { buildUrl, callWithRetry, shopeeAxios } = getShopeeLiveHelpers();
+  const path = '/api/v2/product/category_recommend';
+  const url = buildUrl(path, { item_name: itemName }, 'shop', accessToken, shopId);
+
+  try {
+    const resp = await callWithRetry(() => shopeeAxios.get(url), { context: 'ShopeeMeta:category_recommend' });
+    const raw = resp?.response || resp || {};
+    const categoryIds = Array.isArray(raw.category_id)
+      ? raw.category_id
+      : Array.isArray(resp?.category_id)
+        ? resp.category_id
+        : [];
+
+    const categoryId = categoryIds.length > 0 ? String(categoryIds[0]) : null;
+    if (!categoryId) {
+      return {
+        ok: false,
+        error: 'CATEGORY_RECOMMEND_FAILED',
+        message: 'category_recommend returned no category_id candidates.',
+      };
+    }
+
+    return {
+      ok: true,
+      category: {
+        categoryId,
+        categoryName: categoryId,
+        categoryPath: categoryId,
+        source: 'category_recommend',
+        confidence: 'auto_top1',
+      },
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: 'CATEGORY_RECOMMEND_FAILED',
+      message: err?.message || 'category_recommend failed.',
+    };
+  }
+}
 
 
 async function autoMetadataBatchDisabled({ products = [] }) {
@@ -29,21 +148,37 @@ async function autoMetadataBatchDisabled({ products = [] }) {
   });
 }
 
-async function krscPrepare({ products = [] }) {
-  return sanitizeObjectForMetaResponse({
-    ok: true,
-    mode: 'KRSC_GLOBAL_PRODUCT_MASS_UPLOAD',
-    products: products.map((p) => ({
-      productKey: p.productKey,
-      productName: p.productName,
-      optionCount: p.optionCount || 0,
-      category: {
+async function krscPrepare({ tenantId, products = [] }) {
+  const results = [];
+
+  for (const p of products) {
+    const productName = norm(p.productName);
+    const optionCount = Number(p.optionCount || 0) || 0;
+    const categoryResult = productName
+      ? await fetchCategoryRecommendTop1({ tenantId, itemName: productName })
+      : {
+        ok: false,
+        error: 'CATEGORY_RECOMMEND_FAILED',
+        message: 'productName is required for category recommendation.',
+      };
+
+    const category = categoryResult.ok
+      ? categoryResult.category
+      : {
         categoryId: null,
         categoryName: '',
         categoryPath: '',
-        source: 'manual_required',
-        confidence: 'manual_required',
-      },
+        source: 'category_recommend_failed',
+        confidence: 'failed',
+      };
+
+    const isCategoryOk = Boolean(category.categoryId);
+
+    results.push({
+      productKey: p.productKey,
+      productName,
+      optionCount,
+      category,
       brand: {
         inputBrandName: p.brand || '',
         brandId: null,
@@ -56,9 +191,17 @@ async function krscPrepare({ products = [] }) {
       },
       itemLimit: {},
       daysToShip: 1,
-      status: '카테고리 확인 필요',
-      message: 'KRSC 글로벌 대량등록 기준으로 카테고리와 필수항목 확인이 필요합니다.',
-    })),
+      status: isCategoryOk ? '카테고리 자동확정' : '추천 실패',
+      message: isCategoryOk
+        ? '1순위 추천 카테고리로 자동확정되었습니다.'
+        : (categoryResult.message || '카테고리 추천에 실패했습니다.'),
+    });
+  }
+
+  return sanitizeObjectForMetaResponse({
+    ok: true,
+    mode: 'KRSC_GLOBAL_PRODUCT_MASS_UPLOAD',
+    products: results,
   });
 }
 

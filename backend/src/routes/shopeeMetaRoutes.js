@@ -36,7 +36,7 @@ router.post('/mass-upload/auto-metadata', async (req, res) => {
 
 router.post('/mass-upload/krsc-prepare', async (req, res) => {
   const products = Array.isArray(req.body?.products) ? req.body.products : [];
-  return sendResult(res, await krscPrepare({ products }));
+  return sendResult(res, await krscPrepare({ tenantId: getTenantId(req), products }));
 });
 
 module.exports = router;

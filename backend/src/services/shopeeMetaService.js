@@ -280,7 +280,8 @@ function buildCategoryRecommendNameCandidates(productName, brandName) {
 }
 
 function extractCategoryIdsFromRecommendResponse(resp) {
-  const raw = resp?.response || {};
+  const data = resp?.data || resp || {};
+  const raw = data?.response || resp?.response || {};
   const fromResponseArray = Array.isArray(raw.category_id) ? raw.category_id : [];
   const fromRootArray = Array.isArray(data?.category_id) ? data.category_id : Array.isArray(resp?.category_id) ? resp.category_id : [];
   const fromCategoryList = Array.isArray(raw.category_list)

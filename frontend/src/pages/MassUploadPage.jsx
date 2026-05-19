@@ -177,9 +177,14 @@ export default function MassUploadPage() {
           }}>
             붙여넣기 적용
           </button>
-          <button type="button" onClick={() => { setProducts([]); setMetaResults([]); setPasteText(''); setVisibleHeaders(DISPLAY_HEADERS); setMessage('초기화되었습니다.'); }}>초기화</button>
+          <button type="button" onClick={() => { setProducts([]); setMetaResults([]); setPasteText(''); setVisibleHeaders(DISPLAY_HEADERS); setSelectedFile(null); setMessage('초기화되었습니다.'); }}>초기화</button>
         </div>
-        <p style={{ marginTop: 8 }}>{message || '선택된 파일이 없습니다.'}</p>
+        {selectedFile ? (
+          <p style={{ marginTop: 8 }}>선택된 파일: {selectedFile.name}</p>
+        ) : (
+          <p style={{ marginTop: 8 }}>선택된 파일이 없습니다.</p>
+        )}
+        {message ? <p style={{ marginTop: 4 }}>{message}</p> : null}
         <details style={{ marginTop: 8 }}>
           <summary>붙여넣기 입력 열기</summary>
           <textarea rows={4} value={pasteText} onChange={(e) => setPasteText(e.target.value)} style={{ width: '100%' }} />

@@ -194,7 +194,7 @@ export default function MassUploadPage() {
         ) : (
           <p style={{ marginTop: 8 }}>선택된 파일이 없습니다.</p>
         )}
-        {message ? <p style={{ marginTop: 4 }}>{message}</p> : null}
+        {message && !message.startsWith('KRSC') ? <p style={{ marginTop: 4 }}>{message}</p> : null}
         <details style={{ marginTop: 8 }}>
           <summary>붙여넣기 입력 열기</summary>
           <textarea rows={4} value={pasteText} onChange={(e) => setPasteText(e.target.value)} style={{ width: '100%' }} />
@@ -226,6 +226,9 @@ export default function MassUploadPage() {
           <button type="button" onClick={runKrscPrepare}>KRSC 템플릿 매핑 준비</button>
           <span>Days to ship: 1 고정</span>
         </div>
+        {message && message.startsWith('KRSC') ? (
+          <p style={{ marginTop: 8 }}>{message}</p>
+        ) : null}
         <div style={{ marginTop: 10 }}>
           {metaResults.length > 0 ? (
             <div style={{ marginTop: 12 }}>

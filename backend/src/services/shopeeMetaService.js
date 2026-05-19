@@ -381,6 +381,125 @@ async function fetchCategoryRecommendTop1({ tenantId, itemName, brandName }) {
   };
 }
 
+
+async function fetchBrandListForCategory({ tenantId, categoryId }) {
+  if (!LIVE_ENABLED || !categoryId) return [];
+
+  const shopSel = await selectActiveShopForMetadata({ tenantId });
+  if (!shopSel.ok) return [];
+
+  const { shop_id: shopId } = shopSel.shop;
+  const db = getDb();
+
+  const [tokenRows] = await db.query(
+    `SELECT access_token FROM shops WHERE tenant_id = ? AND shop_id = ? LIMIT 1`,
+    [tenantId, shopId]
+  );
+
+  const accessToken = tokenRows?.[0]?.access_token;
+  if (!accessToken) return [];
+
+  const { buildUrl, callWithRetry, shopeeAxios } = getShopeeLiveHelpers();
+  const path = '/api/v2/product/get_brand_list';
+
+  let offset = 0;
+  let page = 0;
+  const out = [];
+
+  while (page < 3) {
+    const url = buildUrl(
+      path,
+      {
+        category_id: categoryId,
+        offset,
+        page_size: 100,
+        status: 1,
+        language: 'en',
+      },
+      'shop',
+      accessToken,
+      shopId
+    );
+
+    try {
+      const resp = await callWithRetry(() => shopeeAxios.get(url), {
+        context: 'ShopeeMeta:get_brand_list',
+      });
+
+      const root = resp?.data?.response || resp?.response || resp || {};
+      const list = Array.isArray(root.brand_list) ? root.brand_list : [];
+      out.push(...list);
+
+      if (!root.has_next_page || root.next_offset == null) break;
+      offset = root.next_offset;
+      page += 1;
+    } catch {
+      break;
+    }
+  }
+
+  return out;
+}
+
+function matchBrand(inputBrandName, brandList = []) {
+  const rawInput = norm(inputBrandName);
+  const normalizedInput = normalizeBrandText(rawInput);
+
+  const normalizedRows = brandList.map((b) => ({
+    brandId: b?.brand_id != null ? String(b.brand_id) : null,
+    displayName: norm(b?.display_brand_name),
+    originalName: norm(b?.original_brand_name),
+    brandName: norm(b?.brand_name),
+  }));
+
+  const noBrandRow = normalizedRows.find((r) =>
+    isNoBrandText(r.displayName) ||
+    isNoBrandText(r.originalName) ||
+    isNoBrandText(r.brandName)
+  );
+
+  if (isNoBrandText(rawInput)) {
+    return {
+      inputBrandName: rawInput,
+      brandId: noBrandRow?.brandId || null,
+      brandName: noBrandRow?.displayName || noBrandRow?.originalName || noBrandRow?.brandName || 'No brand',
+      matchStatus: noBrandRow?.brandId != null ? 'matched' : 'no_brand',
+    };
+  }
+
+  const exact = normalizedRows.find((r) =>
+    normalizeBrandText(r.displayName) === normalizedInput ||
+    normalizeBrandText(r.originalName) === normalizedInput ||
+    normalizeBrandText(r.brandName) === normalizedInput
+  );
+
+  if (exact) {
+    return {
+      inputBrandName: rawInput,
+      brandId: exact.brandId,
+      brandName: exact.displayName || exact.originalName || exact.brandName || rawInput,
+      matchStatus: 'matched',
+    };
+  }
+
+  if (noBrandRow?.brandId != null) {
+    return {
+      inputBrandName: rawInput,
+      brandId: noBrandRow.brandId,
+      brandName: noBrandRow.displayName || noBrandRow.originalName || noBrandRow.brandName || 'No brand',
+      matchStatus: 'no_brand_fallback',
+    };
+  }
+
+  return {
+    inputBrandName: rawInput,
+    brandId: null,
+    brandName: rawInput || 'No brand',
+    matchStatus: rawInput ? 'review_required' : 'no_brand',
+  };
+}
+
+
 async function autoMetadataBatchDisabled({ products = [] }) {
   return sanitizeObjectForMetaResponse({
     ok: true,
@@ -421,18 +540,25 @@ async function krscPrepare({ tenantId, products = [] }) {
       };
 
     const isCategoryOk = Boolean(category.categoryId);
+    const brandList = isCategoryOk
+      ? await fetchBrandListForCategory({ tenantId, categoryId: category.categoryId })
+      : [];
+
+    const brand = isCategoryOk
+      ? matchBrand(p.brand || '', brandList)
+      : {
+          inputBrandName: p.brand || '',
+          brandId: null,
+          brandName: p.brand || '',
+          matchStatus: 'review_required',
+        };
 
     results.push({
       productKey: p.productKey,
       productName,
       optionCount,
       category,
-      brand: {
-        inputBrandName: p.brand || '',
-        brandId: null,
-        brandName: p.brand || 'No Brand',
-        matchStatus: p.brand ? 'review_required' : 'no_brand',
-      },
+      brand,
       requiredAttributes: [],
       values: {
         daysToShip: 1,

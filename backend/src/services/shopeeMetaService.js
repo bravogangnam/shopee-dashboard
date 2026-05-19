@@ -15,6 +15,15 @@ function sanitizeObjectForMetaResponse(input) {
 function norm(v) { return String(v || '').trim(); }
 function normalizeMarket(v) { return String(v || '').trim().toUpperCase(); }
 
+function normalizeBrandText(v) {
+  return String(v || '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+}
+
+function isNoBrandText(v) {
+  const n = normalizeBrandText(v);
+  return !n || n === 'nobrand';
+}
+
 function getDb() {
   return require('../config/database');
 }

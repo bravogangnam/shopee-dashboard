@@ -64,6 +64,149 @@ async function selectActiveShopForMetadata({ tenantId }) {
   };
 }
 
+
+function tokenizeText(input) {
+  return String(input || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣\s]/g, ' ')
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+function buildCategoryPath(category, byId) {
+  const parts = [];
+  let cursor = category;
+  const visited = new Set();
+
+  while (cursor && !visited.has(String(cursor.category_id))) {
+    visited.add(String(cursor.category_id));
+    const name =
+      norm(cursor.display_category_name) ||
+      norm(cursor.original_category_name) ||
+      norm(cursor.category_name) ||
+      String(cursor.category_id);
+
+    if (name) parts.unshift(name);
+
+    const parentId = cursor.parent_category_id;
+    if (!parentId || String(parentId) === '0') break;
+    cursor = byId.get(String(parentId));
+  }
+
+  return parts.join(' > ');
+}
+
+function scoreCategoryByKeyword(itemName, categoryName, categoryPath) {
+  const tokens = tokenizeText(itemName);
+  const haystack = `${String(categoryName || '').toLowerCase()} ${String(categoryPath || '').toLowerCase()}`;
+  const weighted = new Set(['blood', 'glucose', 'sugar', 'test', 'strip', 'monitor', 'health', 'medical', 'care']);
+
+  let score = 0;
+  tokens.forEach((t) => {
+    if (haystack.includes(t)) score += weighted.has(t) ? 3 : 1;
+  });
+
+  return score;
+}
+
+async function fetchCategoryKeywordFallback({ tenantId, itemName }) {
+  if (!LIVE_ENABLED) {
+    return {
+      ok: false,
+      error: 'SHOPEE_META_LIVE_CALL_DISABLED',
+      message: 'Live Shopee metadata call disabled.',
+    };
+  }
+
+  const shopSel = await selectActiveShopForMetadata({ tenantId });
+  if (!shopSel.ok) return shopSel;
+
+  const { shop_id: shopId } = shopSel.shop;
+  const db = getDb();
+
+  const [tokenRows] = await db.query(
+    `SELECT access_token FROM shops WHERE tenant_id = ? AND shop_id = ? LIMIT 1`,
+    [tenantId, shopId]
+  );
+
+  const accessToken = tokenRows?.[0]?.access_token;
+  if (!accessToken) {
+    return {
+      ok: false,
+      error: 'NO_ACTIVE_SHOP_TOKEN',
+      message: 'No active shop token is available for this tenant.',
+    };
+  }
+
+  const { buildUrl, callWithRetry, shopeeAxios } = getShopeeLiveHelpers();
+  const path = '/api/v2/product/get_category';
+  const url = buildUrl(path, { language: 'en' }, 'shop', accessToken, shopId);
+
+  try {
+    const resp = await callWithRetry(() => shopeeAxios.get(url), {
+      context: 'ShopeeMeta:get_category_fallback',
+    });
+
+    const root = resp?.response || resp || {};
+    const categoryList = Array.isArray(root.category_list) ? root.category_list : [];
+    const byId = new Map(categoryList.map((c) => [String(c.category_id), c]));
+
+    const leaves = categoryList.filter((c) =>
+      c && (c.has_children === false || c.has_children === 0 || c.has_children === 'false')
+    );
+
+    let best = null;
+
+    leaves.forEach((c) => {
+      const categoryName =
+        norm(c.display_category_name) ||
+        norm(c.original_category_name) ||
+        norm(c.category_name) ||
+        String(c.category_id);
+
+      const categoryPath = buildCategoryPath(c, byId);
+      const score = scoreCategoryByKeyword(itemName, categoryName, categoryPath);
+
+      if (!best || score > best.score) {
+        best = { c, score, categoryName, categoryPath };
+      }
+    });
+
+    console.log('[ShopeeMeta] get_category fallback', {
+      leaf_candidate_count: leaves.length,
+      selected_category_id: best?.c?.category_id ? String(best.c.category_id) : null,
+      selected_score: best?.score ?? null,
+    });
+
+    if (!best || !best.c?.category_id || best.score <= 0) {
+      return {
+        ok: false,
+        error: 'CATEGORY_RECOMMEND_FAILED',
+        message: 'get_category keyword fallback found no suitable leaf category.',
+      };
+    }
+
+    return {
+      ok: true,
+      category: {
+        categoryId: String(best.c.category_id),
+        categoryName: best.categoryName,
+        categoryPath: best.categoryPath || best.categoryName,
+        source: 'get_category_keyword_fallback',
+        confidence: 'fallback_keyword',
+      },
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: 'CATEGORY_RECOMMEND_FAILED',
+      message: err?.message || 'get_category keyword fallback failed.',
+    };
+  }
+}
+
+
 async function fetchCategoryRecommendTop1({ tenantId, itemName }) {
   if (!LIVE_ENABLED) {
     return {
@@ -117,11 +260,7 @@ async function fetchCategoryRecommendTop1({ tenantId, itemName }) {
 
     const categoryId = categoryIds.length > 0 ? String(categoryIds[0]) : null;
     if (!categoryId) {
-      return {
-        ok: false,
-        error: 'CATEGORY_RECOMMEND_FAILED',
-        message: 'category_recommend returned no category_id candidates.',
-      };
+      return await fetchCategoryKeywordFallback({ tenantId, itemName });
     }
 
     return {

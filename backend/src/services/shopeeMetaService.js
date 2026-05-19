@@ -193,8 +193,8 @@ async function fetchCategoryKeywordFallback({ tenantId, itemName }) {
         categoryId: String(best.c.category_id),
         categoryName: best.categoryName,
         categoryPath: best.categoryPath || best.categoryName,
-        source: 'get_category_keyword_fallback',
-        confidence: 'fallback_keyword',
+        source: 'category_recommend_failed',
+        confidence: 'failed',
       },
     };
   } catch (err) {
@@ -260,7 +260,11 @@ async function fetchCategoryRecommendTop1({ tenantId, itemName }) {
 
     const categoryId = categoryIds.length > 0 ? String(categoryIds[0]) : null;
     if (!categoryId) {
-      return await fetchCategoryKeywordFallback({ tenantId, itemName });
+      return {
+        ok: false,
+        error: 'CATEGORY_RECOMMEND_FAILED',
+        message: 'Shopee category_recommend가 상품명 기준 카테고리를 반환하지 않았습니다.',
+      };
     }
 
     return {

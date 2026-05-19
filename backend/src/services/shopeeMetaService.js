@@ -270,6 +270,8 @@ function buildCategoryRecommendNameCandidates(productName, brandName) {
     noBrandNoQty,
     bloodGlucoseCore,
     'Blood Glucose Test Strips',
+    'blood sugar test strips',
+    'Blood Sugar Test Strips',
   ]
     .map((v) => norm(v))
     .filter(Boolean)

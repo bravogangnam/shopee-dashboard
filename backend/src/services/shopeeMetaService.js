@@ -509,6 +509,121 @@ function matchBrand(inputBrandName, brandList = []) {
 }
 
 
+
+function collectAttributesFromTree(input, out = [], seen = new Set()) {
+  if (!input) return out;
+
+  if (Array.isArray(input)) {
+    input.forEach((x) => collectAttributesFromTree(x, out, seen));
+    return out;
+  }
+
+  if (typeof input !== 'object') return out;
+
+  const attributeId =
+    input.attribute_id ??
+    input.attributeId ??
+    input.id ??
+    null;
+
+  const attributeName =
+    input.attribute_name ??
+    input.attributeName ??
+    input.name ??
+    input.display_attribute_name ??
+    input.original_attribute_name ??
+    '';
+
+  const hasAttributeShape = attributeId != null || attributeName;
+
+  if (hasAttributeShape) {
+    const key = `${attributeId || ''}:${attributeName || ''}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+
+      const isMandatory = Boolean(
+        input.is_mandatory ??
+        input.mandatory ??
+        input.required ??
+        input.is_required ??
+        input.isMandatory ??
+        false
+      );
+
+      const valueList =
+        input.attribute_value_list ||
+        input.value_list ||
+        input.values ||
+        input.options ||
+        [];
+
+      out.push({
+        attributeId: attributeId != null ? String(attributeId) : null,
+        attributeName: String(attributeName || '').trim(),
+        isMandatory,
+        inputType: input.input_type || input.inputType || input.type || null,
+        valueCount: Array.isArray(valueList) ? valueList.length : 0,
+        rawKeys: Object.keys(input || {}).slice(0, 20),
+      });
+    }
+  }
+
+  Object.values(input).forEach((v) => {
+    if (v && typeof v === 'object') collectAttributesFromTree(v, out, seen);
+  });
+
+  return out;
+}
+
+async function fetchRequiredAttributesForCategory({ tenantId, categoryId }) {
+  if (!LIVE_ENABLED || !categoryId) return [];
+
+  const shopSel = await selectActiveShopForMetadata({ tenantId });
+  if (!shopSel.ok) return [];
+
+  const { shop_id: shopId } = shopSel.shop;
+  const db = getDb();
+
+  const [tokenRows] = await db.query(
+    `SELECT access_token FROM shops WHERE tenant_id = ? AND shop_id = ? LIMIT 1`,
+    [tenantId, shopId]
+  );
+
+  const accessToken = tokenRows?.[0]?.access_token;
+  if (!accessToken) return [];
+
+  const { buildUrl, callWithRetry, shopeeAxios } = getShopeeLiveHelpers();
+  const path = '/api/v2/product/get_attribute_tree';
+  const url = buildUrl(path, { category_id: categoryId, language: 'en' }, 'shop', accessToken, shopId);
+
+  try {
+    const resp = await callWithRetry(() => shopeeAxios.get(url), {
+      context: 'ShopeeMeta:get_attribute_tree',
+    });
+
+    const data = resp?.data || resp || {};
+    const root = data?.response || resp?.response || data || {};
+    const attrs = collectAttributesFromTree(root);
+    const required = attrs.filter((a) => a.isMandatory);
+
+    console.log('[ShopeeMeta] get_attribute_tree parsed', {
+      category_id: String(categoryId),
+      attribute_count: attrs.length,
+      required_count: required.length,
+      responseKeys: Object.keys(root || {}).slice(0, 20),
+    });
+
+    return required;
+  } catch (err) {
+    console.log('[ShopeeMeta] get_attribute_tree failed', {
+      category_id: String(categoryId),
+      message: err?.message || 'unknown',
+    });
+    return [];
+  }
+}
+
+
 async function autoMetadataBatchDisabled({ products = [] }) {
   return sanitizeObjectForMetaResponse({
     ok: true,
@@ -562,13 +677,17 @@ async function krscPrepare({ tenantId, products = [] }) {
           matchStatus: 'review_required',
         };
 
+    const requiredAttributes = isCategoryOk
+      ? await fetchRequiredAttributesForCategory({ tenantId, categoryId: category.categoryId })
+      : [];
+
     results.push({
       productKey: p.productKey,
       productName,
       optionCount,
       category,
       brand,
-      requiredAttributes: [],
+      requiredAttributes,
       values: {
         daysToShip: 1,
       },

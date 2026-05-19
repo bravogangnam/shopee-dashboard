@@ -242,6 +242,16 @@ export default function MassUploadPage() {
                   <div>brand: {p.brand?.brandName || '-'} / brand_id: {p.brand?.brandId ?? '-'}</div>
                   <div>brand status: {p.brand?.matchStatus || '-'}</div>
                   <div>필수항목: {(p.requiredAttributes || []).length}</div>
+                  {(p.requiredAttributes || []).length > 0 ? (
+                    <div style={{ marginTop: 4 }}>
+                      {(p.requiredAttributes || []).slice(0, 12).map((a, idx) => (
+                        <span key={`${a.attributeId || a.attributeName || idx}`} style={{ display: 'inline-block', marginRight: 6, marginBottom: 4, padding: '2px 6px', border: '1px solid #ddd', borderRadius: 6 }}>
+                          {a.attributeName || a.attributeId}
+                        </span>
+                      ))}
+                      {(p.requiredAttributes || []).length > 12 ? <span>외 {(p.requiredAttributes || []).length - 12}개</span> : null}
+                    </div>
+                  ) : null}
                   <div>Days to ship: {p.daysToShip || 1}</div>
                 </div>
               ))}

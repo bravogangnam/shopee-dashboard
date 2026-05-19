@@ -140,6 +140,8 @@ export default function MassUploadPage() {
   };
 
   const runKrscPrepare = async () => {
+    setMetaResults([]);
+    setMessage('KRSC 템플릿 매핑 준비 중...');
     const body = { products: products.map((p) => ({ productKey: p.id, productName: p.productName, description: p.description || p.productName, brand: p.brand, optionCount: p.options.length })) };
     try {
       const res = await fetch('/api/shopee-meta/mass-upload/krsc-prepare', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(body) });

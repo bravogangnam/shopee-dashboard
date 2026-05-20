@@ -158,7 +158,6 @@ export default function MassUploadPage() {
   const [templateMessage, setTemplateMessage] = useState('');
   const [templateFile, setTemplateFile] = useState(null);
   const [templateAnalysis, setTemplateAnalysis] = useState(null);
-  const [templateMessage, setTemplateMessage] = useState('');
 
   const displayRows = useMemo(() => {
     const out = [];

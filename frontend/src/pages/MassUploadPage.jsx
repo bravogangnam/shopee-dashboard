@@ -154,6 +154,8 @@ export default function MassUploadPage() {
   const [message, setMessage] = useState('');
   const [metaResults, setMetaResults] = useState([]);
   const [visibleHeaders, setVisibleHeaders] = useState(DISPLAY_HEADERS);
+  const [templateRegistry, setTemplateRegistry] = useState({});
+  const [templateMessage, setTemplateMessage] = useState('');
   const [templateFile, setTemplateFile] = useState(null);
   const [templateAnalysis, setTemplateAnalysis] = useState(null);
   const [templateMessage, setTemplateMessage] = useState('');
@@ -178,6 +180,138 @@ export default function MassUploadPage() {
     products.forEach((p) => { const v = validateProduct(p); out.options += p.options.length; out[v.status] += 1; });
     return out;
   }, [products]);
+
+
+  const categoryRegistryRows = useMemo(() => {
+    const map = new Map();
+
+    (metaResults || []).forEach((p) => {
+      const categoryId = String(p.category?.categoryId || '').trim() || '미확정';
+      if (!map.has(categoryId)) {
+        map.set(categoryId, {
+          categoryId,
+          productCount: 0,
+          brandProcessedCount: 0,
+          products: [],
+        });
+      }
+
+      const row = map.get(categoryId);
+      row.productCount += 1;
+      row.products.push(p);
+
+      if (p.brand?.brandId !== null && p.brand?.brandId !== undefined && p.brand?.brandId !== '') {
+        row.brandProcessedCount += 1;
+      }
+    });
+
+    return Array.from(map.values()).map((row) => {
+      const reg = templateRegistry[row.categoryId] || null;
+      return {
+        ...row,
+        templateStatus: reg?.fileName ? '등록됨' : '공식 템플릿 등록 필요',
+        templateFileName: reg?.fileName || '-',
+        analysisStatus: reg?.analysis ? '분석 완료' : '-',
+        headerRow: reg?.analysis?.headerRow || '-',
+        dataStartRow: reg?.analysis?.dataStartRow || '-',
+        requiredCount: reg?.analysis?.requiredColumns?.length || 0,
+        mappingCount: reg?.analysis?.mappingCandidates?.length || 0,
+        excelReady: reg?.analysis ? '준비중' : '불가',
+      };
+    });
+  }, [metaResults, templateRegistry]);
+
+  const isRequiredTemplateHeader = (value) => {
+    const text = String(value || '').trim();
+    return Boolean(text) && (text.includes('*') || /required|mandatory|필수/i.test(text));
+  };
+
+  const analyzeTemplateWorkbook = async (file) => {
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const sheetName = workbook.SheetNames?.[0];
+    const sheet = workbook.Sheets[sheetName];
+
+    if (!sheetName || !sheet) {
+      throw new Error('템플릿 시트를 찾지 못했습니다.');
+    }
+
+    const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+    let bestHeaderRow = 0;
+    let bestScore = -1;
+
+    matrix.slice(0, 40).forEach((row, idx) => {
+      const cells = Array.isArray(row) ? row.map((c) => String(c || '').trim()) : [];
+      const nonEmpty = cells.filter(Boolean).length;
+      const keywordScore = cells.filter((c) =>
+        /product|sku|stock|price|brand|category|image|weight|variation|option|attribute|name|description|days|ship|상품|브랜드|가격|재고|필수/i.test(c)
+      ).length;
+      const requiredScore = cells.filter(isRequiredTemplateHeader).length;
+      const score = nonEmpty + keywordScore * 2 + requiredScore * 3;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestHeaderRow = idx;
+      }
+    });
+
+    const headers = (matrix[bestHeaderRow] || []).map((c) => String(c || '').trim());
+    const requiredColumns = headers
+      .map((header, idx) => ({ index: idx + 1, header }))
+      .filter((x) => isRequiredTemplateHeader(x.header));
+
+    const mappingCandidates = headers
+      .map((header, idx) => {
+        const key = normalizeHeader(header);
+        const internalField = HEADER_ALIASES[key] || null;
+        return internalField ? { templateColumn: idx + 1, templateHeader: header, internalField } : null;
+      })
+      .filter(Boolean);
+
+    return {
+      sheetName,
+      sheetNames: workbook.SheetNames || [],
+      rowCount: matrix.length,
+      headerRow: bestHeaderRow + 1,
+      dataStartRow: bestHeaderRow + 2,
+      headerCount: headers.filter(Boolean).length,
+      requiredColumns,
+      mappingCandidates,
+    };
+  };
+
+  const registerTemplateForCategory = async (categoryId, file) => {
+    if (!categoryId || categoryId === '미확정') {
+      setTemplateMessage('category_id가 확정된 상품만 템플릿을 등록할 수 있습니다.');
+      return;
+    }
+
+    if (!file) {
+      setTemplateMessage('공식 템플릿 파일을 선택하세요.');
+      return;
+    }
+
+    try {
+      setTemplateMessage(`category_id ${categoryId} 공식 템플릿 분석 중...`);
+      const analysis = await analyzeTemplateWorkbook(file);
+
+      setTemplateRegistry((prev) => ({
+        ...prev,
+        [categoryId]: {
+          categoryId,
+          fileName: file.name,
+          registeredAt: new Date().toISOString(),
+          analysis,
+        },
+      }));
+
+      setTemplateMessage(`category_id ${categoryId} 공식 템플릿 등록 완료: ${file.name}`);
+    } catch (err) {
+      setTemplateMessage(`공식 템플릿 분석 실패: ${err?.message || '알 수 없는 오류'}`);
+    }
+  };
+
 
   const readSelectedFile = () => {
     if (!selectedFile) { setMessage('파일을 먼저 선택하세요.'); return; }
@@ -346,69 +480,73 @@ export default function MassUploadPage() {
       </section>
 
       <section className="card" style={{ marginTop: 16 }}>
-        <h2>5. 공식 템플릿 업로드 / 매핑 분석</h2>
+        <h2>5. category_id별 공식 템플릿 레지스트리</h2>
         <p>
-          KRSC 대량등록은 category_id별 공식 Excel 템플릿이 기준입니다.
-          공식 템플릿을 업로드하면 시트/헤더행/데이터 시작행/필수 컬럼 후보/매핑 후보를 분석합니다.
+          Shopee OpenAPI에는 KRSC Mass Upload 공식 템플릿 다운로드/생성 API가 없습니다.
+          공식 템플릿은 Seller Center에서 category_id별로 다운로드한 뒤, 이 화면에 최초 1회 등록해야 합니다.
+          등록된 category_id 템플릿은 다음부터 자동으로 매칭됩니다.
         </p>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <label style={{ border: '1px solid #ddd', borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}>
-            공식 템플릿 선택
-            <input
-              type="file"
-              accept=".xlsx"
-              style={{ display: 'none' }}
-              onChange={(e) => {
-                setTemplateFile(e.target.files?.[0] || null);
-                setTemplateAnalysis(null);
-                setTemplateMessage('');
-              }}
-            />
-          </label>
-          <button type="button" onClick={analyzeTemplateFile}>공식 템플릿 분석</button>
-          <button type="button" disabled>엑셀 생성 준비중</button>
-        </div>
+        {categoryRegistryRows.length > 0 ? (
+          <div style={{ overflowX: 'auto', marginTop: 12 }}>
+            <table style={{ width: '100%', minWidth: 1100, borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>category_id</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>상품 수</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>브랜드 처리</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>템플릿 상태</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>파일명</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>분석 상태</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>헤더/시작행</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>필수/매핑 후보</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>엑셀 생성</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>공식 템플릿 등록</th>
+                </tr>
+              </thead>
+              <tbody>
+                {categoryRegistryRows.map((row) => (
+                  <tr key={row.categoryId}>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.categoryId}</td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.productCount}</td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.brandProcessedCount}/{row.productCount}</td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.templateStatus}</td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.templateFileName}</td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.analysisStatus}</td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.headerRow} / {row.dataStartRow}</td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.requiredCount} / {row.mappingCount}</td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>
+                      <button type="button" disabled>공식 템플릿 등록 후 생성 가능</button>
+                    </td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>
+                      {row.categoryId === '미확정' ? (
+                        <span>category_id 필요</span>
+                      ) : (
+                        <label style={{ border: '1px solid #ddd', borderRadius: 8, padding: '4px 8px', cursor: 'pointer', display: 'inline-block' }}>
+                          공식 템플릿 선택/분석
+                          <input
+                            type="file"
+                            accept=".xlsx"
+                            style={{ display: 'none' }}
+                            onChange={(e) => registerTemplateForCategory(row.categoryId, e.target.files?.[0] || null)}
+                          />
+                        </label>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p style={{ marginTop: 8 }}>KRSC 매핑 결과가 생성되면 category_id별 템플릿 상태가 표시됩니다.</p>
+        )}
+
+        {templateMessage ? <p style={{ marginTop: 8 }}>{templateMessage}</p> : null}
 
         <p style={{ marginTop: 8 }}>
-          {templateFile ? `선택된 공식 템플릿: ${templateFile.name}` : '선택된 공식 템플릿이 없습니다.'}
+          최종 Excel 생성은 category_id별 공식 템플릿 등록/분석 후 진행됩니다.
         </p>
-        {templateMessage ? <p>{templateMessage}</p> : null}
-
-        {templateAnalysis ? (
-          <div style={{ marginTop: 12 }}>
-            <h3>템플릿 분석 결과</h3>
-            <div>시트: {templateAnalysis.sheetNames.join(', ') || '-'}</div>
-            {templateAnalysis.sheets.map((sheet) => (
-              <div key={sheet.sheetName} style={{ border: '1px solid #eee', padding: 10, marginTop: 8 }}>
-                <div><strong>{sheet.sheetName}</strong></div>
-                <div>헤더 행 추정: {sheet.headerRow}</div>
-                <div>데이터 시작 행 추정: {sheet.dataStartRow}</div>
-                <div>헤더 수: {sheet.headerCount}</div>
-                <div>필수 컬럼 후보: {sheet.requiredColumns.length}</div>
-                {sheet.requiredColumns.length > 0 ? (
-                  <div style={{ marginTop: 4 }}>
-                    {sheet.requiredColumns.slice(0, 20).map((c) => (
-                      <span key={`${sheet.sheetName}-${c.index}`} style={{ display: 'inline-block', marginRight: 6, marginBottom: 4, padding: '2px 6px', border: '1px solid #ddd', borderRadius: 6 }}>
-                        {c.header}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-                <div style={{ marginTop: 6 }}>매핑 후보: {sheet.mappingCandidates.length}</div>
-                {sheet.mappingCandidates.length > 0 ? (
-                  <div style={{ marginTop: 4 }}>
-                    {sheet.mappingCandidates.slice(0, 20).map((m) => (
-                      <span key={`${sheet.sheetName}-${m.templateColumn}-${m.internalField}`} style={{ display: 'inline-block', marginRight: 6, marginBottom: 4, padding: '2px 6px', border: '1px solid #ddd', borderRadius: 6 }}>
-                        {m.templateHeader} → {m.internalField}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : null}
       </section>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 
 const DISPLAY_HEADERS = ['sku', '브랜드', '상품명', '옵션명', '상품설명', '대표이미지', '무게', '가격', '재고', '가로', '세로', '높이', '옵션이미지'];
@@ -156,8 +156,41 @@ export default function MassUploadPage() {
   const [visibleHeaders, setVisibleHeaders] = useState(DISPLAY_HEADERS);
   const [templateRegistry, setTemplateRegistry] = useState({});
   const [templateMessage, setTemplateMessage] = useState('');
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [templateFile, setTemplateFile] = useState(null);
   const [templateAnalysis, setTemplateAnalysis] = useState(null);
+
+
+  const refreshTemplateRegistry = async () => {
+    setLoadingTemplates(true);
+
+    try {
+      const res = await fetch('/api/shopee-meta/mass-upload/templates', {
+        credentials: 'include',
+      });
+      const data = await res.json();
+
+      if (!data?.ok) {
+        throw new Error(data?.message || data?.error || '템플릿 조회 실패');
+      }
+
+      const nextRegistry = {};
+      (Array.isArray(data.templates) ? data.templates : []).forEach((template) => {
+        const key = String(template?.categoryId || '').trim();
+        if (key) nextRegistry[key] = template;
+      });
+
+      setTemplateRegistry(nextRegistry);
+    } catch (err) {
+      setTemplateMessage(`서버 템플릿 조회 실패: ${err?.message || '알 수 없는 오류'}`);
+    } finally {
+      setLoadingTemplates(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshTemplateRegistry();
+  }, []);
 
   const displayRows = useMemo(() => {
     const out = [];
@@ -212,7 +245,7 @@ export default function MassUploadPage() {
       const reg = templateRegistry[row.categoryId] || null;
       return {
         ...row,
-        templateStatus: reg?.fileName ? '등록됨' : '공식 템플릿 등록 필요',
+        templateStatus: reg?.fileName ? '서버 등록됨' : '공식 템플릿 등록 필요',
         templateFileName: reg?.fileName || '-',
         analysisStatus: reg?.analysis ? '분석 완료' : '-',
         headerRow: reg?.analysis?.headerRow || '-',
@@ -298,20 +331,61 @@ export default function MassUploadPage() {
     try {
       setTemplateMessage(`category_id ${categoryId} 공식 템플릿 분석 중...`);
       const analysis = await analyzeTemplateWorkbook(file);
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      const chunkSize = 0x8000;
 
-      setTemplateRegistry((prev) => ({
-        ...prev,
-        [categoryId]: {
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+      }
+
+      const fileBase64 = btoa(binary);
+      const categoryPath = categoryRegistryRows.find((row) => row.categoryId === categoryId)?.categoryPath || '';
+
+      const res = await fetch('/api/shopee-meta/mass-upload/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
           categoryId,
+          categoryPath,
           fileName: file.name,
-          registeredAt: new Date().toISOString(),
+          fileBase64,
           analysis,
-        },
-      }));
+        }),
+      });
 
-      setTemplateMessage(`category_id ${categoryId} 공식 템플릿 등록 완료: ${file.name}`);
+      const data = await res.json();
+      if (!data?.ok) {
+        throw new Error(data?.message || data?.error || '템플릿 저장 실패');
+      }
+
+      await refreshTemplateRegistry();
+      setTemplateMessage(`category_id ${categoryId} 서버 템플릿 등록 완료: ${data?.template?.fileName || file.name}`);
     } catch (err) {
-      setTemplateMessage(`공식 템플릿 분석 실패: ${err?.message || '알 수 없는 오류'}`);
+      setTemplateMessage(`공식 템플릿 등록 실패: ${err?.message || '알 수 없는 오류'}`);
+    }
+  };
+
+  const deleteTemplateForCategory = async (categoryId) => {
+    if (!categoryId || categoryId === '미확정') return;
+
+    try {
+      const res = await fetch(`/api/shopee-meta/mass-upload/templates/${encodeURIComponent(categoryId)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      const data = await res.json();
+      if (!data?.ok) {
+        throw new Error(data?.message || data?.error || '템플릿 삭제 실패');
+      }
+
+      await refreshTemplateRegistry();
+      setTemplateMessage(`category_id ${categoryId} 템플릿 삭제 완료`);
+    } catch (err) {
+      setTemplateMessage(`템플릿 삭제 실패: ${err?.message || '알 수 없는 오류'}`);
     }
   };
 
@@ -506,6 +580,7 @@ export default function MassUploadPage() {
                   <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>필수/매핑 후보</th>
                   <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>엑셀 생성</th>
                   <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>공식 템플릿 등록</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>삭제</th>
                 </tr>
               </thead>
               <tbody>
@@ -538,6 +613,15 @@ export default function MassUploadPage() {
                         </label>
                       )}
                     </td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => deleteTemplateForCategory(row.categoryId)}
+                        disabled={!templateRegistry[row.categoryId]}
+                      >
+                        템플릿 삭제
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -547,6 +631,7 @@ export default function MassUploadPage() {
           <p style={{ marginTop: 8 }}>KRSC 매핑 결과가 생성되면 category_id별 템플릿 상태가 표시됩니다.</p>
         )}
 
+        {loadingTemplates ? <p style={{ marginTop: 8 }}>서버 템플릿 상태 조회 중...</p> : null}
         {templateMessage ? <p style={{ marginTop: 8 }}>{templateMessage}</p> : null}
 
         <p style={{ marginTop: 8 }}>

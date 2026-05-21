@@ -189,6 +189,7 @@ export default function MassUploadPage() {
       if (!map.has(categoryId)) {
         map.set(categoryId, {
           categoryId,
+          categoryPath: p.category?.categoryPath || p.category?.categoryName || categoryId,
           productCount: 0,
           brandProcessedCount: 0,
           products: [],
@@ -196,6 +197,9 @@ export default function MassUploadPage() {
       }
 
       const row = map.get(categoryId);
+      if (!row.categoryPath || row.categoryPath === row.categoryId) {
+        row.categoryPath = p.category?.categoryPath || p.category?.categoryName || row.categoryPath;
+      }
       row.productCount += 1;
       row.products.push(p);
 
@@ -482,7 +486,7 @@ export default function MassUploadPage() {
         <h2>5. category_id별 공식 템플릿 레지스트리</h2>
         <p>
           Shopee OpenAPI에는 KRSC Mass Upload 공식 템플릿 다운로드/생성 API가 없습니다.
-          공식 템플릿은 Seller Center에서 category_id별로 다운로드한 뒤, 이 화면에 최초 1회 등록해야 합니다.
+          공식 템플릿은 Seller Center에서 아래 카테고리 경로를 찾아 다운로드한 뒤, 이 화면에 최초 1회 등록해야 합니다.
           등록된 category_id 템플릿은 다음부터 자동으로 매칭됩니다.
         </p>
 
@@ -492,6 +496,7 @@ export default function MassUploadPage() {
               <thead>
                 <tr>
                   <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>category_id</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>카테고리 경로</th>
                   <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>상품 수</th>
                   <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>브랜드 처리</th>
                   <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>템플릿 상태</th>
@@ -507,6 +512,7 @@ export default function MassUploadPage() {
                 {categoryRegistryRows.map((row) => (
                   <tr key={row.categoryId}>
                     <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.categoryId}</td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6, minWidth: 280 }}>{row.categoryPath || '-'}</td>
                     <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.productCount}</td>
                     <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.brandProcessedCount}/{row.productCount}</td>
                     <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.templateStatus}</td>

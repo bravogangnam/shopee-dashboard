@@ -154,26 +154,10 @@ export default function MassUploadPage() {
   const [message, setMessage] = useState('');
   const [metaResults, setMetaResults] = useState([]);
   const [visibleHeaders, setVisibleHeaders] = useState(DISPLAY_HEADERS);
-  const [requiredValues, setRequiredValues] = useState(() => {
-    try {
-      const raw = window.localStorage.getItem('krsc_required_values_by_category_v1');
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
-  });
   const [templateRegistry, setTemplateRegistry] = useState({});
   const [templateMessage, setTemplateMessage] = useState('');
   const [templateFile, setTemplateFile] = useState(null);
   const [templateAnalysis, setTemplateAnalysis] = useState(null);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem('krsc_required_values_by_category_v1', JSON.stringify(requiredValues));
-    } catch {
-      // ignore
-    }
-  }, [requiredValues]);
 
   const displayRows = useMemo(() => {
     const out = [];
@@ -353,69 +337,6 @@ export default function MassUploadPage() {
     reader.readAsText(selectedFile);
   };
 
-
-  const requiredValueCategoryRows = useMemo(() => {
-    const map = new Map();
-
-    (metaResults || []).forEach((p) => {
-      const categoryId = String(p.category?.categoryId || '').trim();
-      if (!categoryId) return;
-
-      if (!map.has(categoryId)) {
-        map.set(categoryId, {
-          categoryId,
-          categoryPath: p.category?.categoryPath || p.category?.categoryName || categoryId,
-          productCount: 0,
-        });
-      }
-
-      map.get(categoryId).productCount += 1;
-    });
-
-    return Array.from(map.values()).map((row) => ({
-      ...row,
-      values: requiredValues[row.categoryId] || {},
-    }));
-  }, [metaResults, requiredValues]);
-
-  const addRequiredValueForCategory = (categoryId) => {
-    const fieldName = window.prompt('필수 컬럼명 또는 템플릿 컬럼명을 입력하세요.');
-    if (!fieldName) return;
-
-    const value = window.prompt(`${fieldName}에 일괄 적용할 값을 입력하세요.`);
-    if (value == null) return;
-
-    setRequiredValues((prev) => ({
-      ...prev,
-      [categoryId]: {
-        ...(prev[categoryId] || {}),
-        [fieldName]: value,
-      },
-    }));
-  };
-
-  const updateRequiredValueForCategory = (categoryId, fieldName, value) => {
-    setRequiredValues((prev) => ({
-      ...prev,
-      [categoryId]: {
-        ...(prev[categoryId] || {}),
-        [fieldName]: value,
-      },
-    }));
-  };
-
-  const deleteRequiredValueForCategory = (categoryId, fieldName) => {
-    setRequiredValues((prev) => {
-      const nextCategory = { ...(prev[categoryId] || {}) };
-      delete nextCategory[fieldName];
-
-      return {
-        ...prev,
-        [categoryId]: nextCategory,
-      };
-    });
-  };
-
   const runKrscPrepare = async () => {
     setMetaResults([]);
     setMessage('KRSC 템플릿 매핑 준비 중...');
@@ -537,7 +458,7 @@ export default function MassUploadPage() {
                   <div>used item name: {p.category?.usedItemName || '-'}</div>
                   <div>brand: {p.brand?.brandName || '-'} / brand_id: {p.brand?.brandId ?? '-'}</div>
                   <div>brand status: {p.brand?.matchStatus || '-'}</div>
-                  <div>필수 컬럼: 공식 템플릿 분석 전</div>
+                  <div>필수항목: 공식 템플릿 분석 전</div>
                   {(p.requiredAttributes || []).length > 0 ? (
                     <div style={{ marginTop: 4 }}>
                       {(p.requiredAttributes || []).slice(0, 12).map((a, idx) => (
@@ -626,63 +547,6 @@ export default function MassUploadPage() {
           최종 Excel 생성은 category_id별 공식 템플릿 등록/분석 후 진행됩니다.
         </p>
       </section>
-      <section className="card" style={{ marginTop: 16 }}>
-        <h2>6. Required Values / category_id별 공통값</h2>
-        <p>
-          Required Values는 상품별 값이 아니라 category_id별 공통값으로 관리합니다.
-          같은 category_id 상품에는 같은 값이 일괄 적용됩니다.
-          상품별 예외는 이번 단계에서 만들지 않고, 필요하면 최종 Excel에서 수동 수정합니다.
-        </p>
-
-        {requiredValueCategoryRows.length > 0 ? (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>category_id</th>
-                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>카테고리 경로</th>
-                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>상품 수</th>
-                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>공통값</th>
-                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>동작</th>
-                </tr>
-              </thead>
-              <tbody>
-                {requiredValueCategoryRows.map((row) => (
-                  <tr key={row.categoryId}>
-                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.categoryId}</td>
-                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.categoryPath}</td>
-                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.productCount}</td>
-                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>
-                      {Object.keys(row.values).length === 0 ? (
-                        <span>등록된 공통값 없음</span>
-                      ) : (
-                        Object.entries(row.values).map(([fieldName, value]) => (
-                          <div key={`${row.categoryId}-${fieldName}`} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
-                            <strong style={{ minWidth: 140 }}>{fieldName}</strong>
-                            <input
-                              value={value}
-                              onChange={(e) => updateRequiredValueForCategory(row.categoryId, fieldName, e.target.value)}
-                              style={{ minWidth: 180 }}
-                            />
-                            <button type="button" onClick={() => deleteRequiredValueForCategory(row.categoryId, fieldName)}>삭제</button>
-                          </div>
-                        ))
-                      )}
-                    </td>
-                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>
-                      <button type="button" onClick={() => addRequiredValueForCategory(row.categoryId)}>공통값 추가</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p>KRSC 매핑 결과가 생성되면 category_id별 Required Values를 설정할 수 있습니다.</p>
-        )}
-      </section>
-
-
     </div>
   );
 }

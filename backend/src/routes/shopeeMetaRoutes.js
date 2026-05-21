@@ -14,6 +14,35 @@ const {
 } = require('../services/shopeeMetaService');
 
 const router = express.Router();
+
+router.get('/mass-upload/images/public/:tenantFolder/:jobId/:fileName', async (req, res) => {
+  const tenantFolder = String(req.params?.tenantFolder || '');
+  const jobId = safeName(req.params?.jobId || '');
+  const fileName = safeName(req.params?.fileName || '');
+
+  if (!safeTenantFolder(tenantFolder)) {
+    return res.status(400).json({ ok: false, error: 'INVALID_TENANT_FOLDER' });
+  }
+
+  if (!jobId || !safeImageExt(fileName)) {
+    return res.status(400).json({ ok: false, error: 'INVALID_FILE_NAME' });
+  }
+
+  const root = path.resolve(IMAGE_ROOT, tenantFolder, jobId);
+  const filePath = path.resolve(root, fileName);
+
+  if (!filePath.startsWith(`${root}${path.sep}`)) {
+    return res.status(400).json({ ok: false, error: 'INVALID_PATH' });
+  }
+
+  res.type(imageContentType(fileName));
+  return res.sendFile(filePath, (err) => {
+    if (err && !res.headersSent) {
+      res.status(404).json({ ok: false, error: 'IMAGE_NOT_FOUND' });
+    }
+  });
+});
+
 router.use(requireAuth);
 router.use(requireApprovedTenant);
 
@@ -21,7 +50,10 @@ const getTenantId = (req) => req?.tenantId ?? req?.user?.tenant_id ?? req?.user?
 
 const TEMPLATE_ROOT = path.join(process.cwd(), 'storage', 'krsc-templates');
 const MAX_TEMPLATE_SIZE_BYTES = 15 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+const MAX_IMAGE_FILES = 200;
 const GENERATED_ROOT = path.join(process.cwd(), 'storage', 'krsc-generated');
+const IMAGE_ROOT = path.join(process.cwd(), 'storage', 'mass-upload-images');
 
 function safeName(value) {
   return String(value || '').replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -72,6 +104,23 @@ async function readTenantTemplates(tenantId) {
   return templates.filter(Boolean);
 }
 
+
+
+function safeImageExt(name) {
+  return /\.(jpe?g|png)$/i.test(String(name || ''));
+}
+
+function safeTenantFolder(name) {
+  return /^tenant_\d+$/.test(String(name || ''));
+}
+
+function makeImageJobId() {
+  return `${new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').slice(0, 15)}_${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function imageContentType(fileName) {
+  return /\.png$/i.test(String(fileName || '')) ? 'image/png' : 'image/jpeg';
+}
 
 function sendResult(res, result) {
   return res.json(sanitizeObjectForMetaResponse(result || {}));
@@ -159,6 +208,103 @@ router.delete('/mass-upload/templates/:categoryId', async (req, res) => {
 
 
 
+
+router.post('/mass-upload/images', async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return sendResult(res, { ok: false, error: 'TENANT_CONTEXT_REQUIRED' });
+
+  const files = Array.isArray(req.body?.files) ? req.body.files : [];
+  if (!files.length) return sendResult(res, { ok: false, error: 'FILES_REQUIRED' });
+  if (files.length > MAX_IMAGE_FILES) return sendResult(res, { ok: false, error: 'FILES_TOO_MANY' });
+
+  const jobId = safeName(req.body?.jobId || makeImageJobId());
+  if (!jobId) return sendResult(res, { ok: false, error: 'JOB_ID_REQUIRED' });
+
+  const tenantFolder = `tenant_${tenantId}`;
+  const targetDir = path.join(IMAGE_ROOT, tenantFolder, jobId);
+  await fs.mkdir(targetDir, { recursive: true });
+
+  const images = [];
+
+  for (const file of files) {
+    const fileName = safeName(file?.fileName || '');
+    if (!safeImageExt(fileName)) continue;
+
+    const raw = String(file?.fileBase64 || '').replace(/^data:.*;base64,/, '');
+    let buffer;
+
+    try {
+      buffer = Buffer.from(raw, 'base64');
+    } catch {
+      continue;
+    }
+
+    if (!buffer?.length || buffer.length > MAX_IMAGE_BYTES) continue;
+
+    await fs.writeFile(path.join(targetDir, fileName), buffer);
+
+    const stem = fileName.replace(/\.[^.]+$/, '');
+    images.push({
+      fileName,
+      stem,
+      publicUrl: `https://junandkang.com/api/shopee-meta/mass-upload/images/public/${tenantFolder}/${encodeURIComponent(jobId)}/${encodeURIComponent(fileName)}`,
+      size: buffer.length,
+    });
+  }
+
+  const metadata = {
+    tenantId: Number(tenantId) || tenantId,
+    jobId,
+    uploadedAt: new Date().toISOString(),
+    images,
+  };
+
+  await fs.writeFile(path.join(targetDir, 'metadata.json'), `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
+
+  return sendResult(res, { ok: true, jobId, images });
+});
+
+router.get('/mass-upload/images', async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return sendResult(res, { ok: false, error: 'TENANT_CONTEXT_REQUIRED' });
+
+  const tenantDir = path.join(IMAGE_ROOT, `tenant_${tenantId}`);
+  let entries = [];
+
+  try {
+    entries = await fs.readdir(tenantDir, { withFileTypes: true });
+  } catch (err) {
+    if (err?.code === 'ENOENT') return sendResult(res, { ok: true, jobs: [] });
+    throw err;
+  }
+
+  const jobs = await Promise.all(
+    entries.filter((entry) => entry.isDirectory()).map(async (entry) => {
+      try {
+        const raw = await fs.readFile(path.join(tenantDir, entry.name, 'metadata.json'), 'utf8');
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return sendResult(res, { ok: true, jobs: jobs.filter(Boolean) });
+});
+
+router.delete('/mass-upload/images/:jobId', async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return sendResult(res, { ok: false, error: 'TENANT_CONTEXT_REQUIRED' });
+
+  const jobId = safeName(req.params?.jobId || '');
+  if (!jobId) return sendResult(res, { ok: false, error: 'JOB_ID_REQUIRED' });
+
+  await fs.rm(path.join(IMAGE_ROOT, `tenant_${tenantId}`, jobId), { recursive: true, force: true });
+
+  return sendResult(res, { ok: true });
+});
+
+
 router.post('/mass-upload/generate-template-files', async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return sendResult(res, { ok: false, error: 'TENANT_CONTEXT_REQUIRED' });
@@ -176,6 +322,7 @@ router.post('/mass-upload/generate-template-files', async (req, res) => {
 
   const products = Array.isArray(req.body?.products) ? req.body.products : [];
   const metaResults = Array.isArray(req.body?.metaResults) ? req.body.metaResults : [];
+  const imageJobId = safeName(req.body?.imageJobId || '');
   const byKey = new Map(metaResults.map((m) => [String(m.productKey || ''), m]));
   const groups = new Map();
   let seq = 1;
@@ -224,6 +371,24 @@ router.post('/mass-upload/generate-template-files', async (req, res) => {
       });
     });
   });
+
+
+  const imageMap = new Map();
+
+  if (imageJobId) {
+    try {
+      const imageMetaPath = path.join(IMAGE_ROOT, `tenant_${tenantId}`, imageJobId, 'metadata.json');
+      const imageMeta = JSON.parse(await fs.readFile(imageMetaPath, 'utf8'));
+
+      (Array.isArray(imageMeta?.images) ? imageMeta.images : []).forEach((image) => {
+        const stem = String(image?.stem || '').trim();
+        const publicUrl = String(image?.publicUrl || '').trim();
+        if (stem && publicUrl) imageMap.set(stem, publicUrl);
+      });
+    } catch {
+      // image job is optional
+    }
+  }
 
   const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').slice(0, 15);
   const outputDir = path.join(GENERATED_ROOT, `tenant_${tenantId}`, timestamp);
@@ -278,13 +443,22 @@ router.post('/mass-upload/generate-template-files', async (req, res) => {
       put(rowNo, col('Variation Integration No.'), row.variationIntegrationNo);
       put(rowNo, col('Variation Name1'), row.variationName1);
       put(rowNo, col('Option for Variation 1'), row.optionName);
-      put(rowNo, col('Image per Variation'), row.optionImage);
+      const firstSku = row.first ? String(row.sku || '').trim() : '';
+      const coverImage = row.first && firstSku
+        ? (imageMap.get(`${firstSku}-m1`) || row.coverImage)
+        : row.coverImage;
+      const itemImages = row.first
+        ? Array.from({ length: 8 }).map((_, index) => (firstSku ? imageMap.get(`${firstSku}-m${index + 1}`) : '') || row.itemImages[index] || '')
+        : [];
+      const optionImage = imageMap.get(String(row.sku || '').trim()) || row.optionImage;
+
+      put(rowNo, col('Image per Variation'), optionImage);
       put(rowNo, col('Global SKU Price'), row.price);
       put(rowNo, col('Stock'), row.stock);
       put(rowNo, col('SKU'), row.sku);
-      put(rowNo, col('Cover image'), row.coverImage);
+      put(rowNo, col('Cover image'), coverImage);
       for (let i = 1; i <= 8; i += 1) {
-        put(rowNo, col(`Item Image ${i}`), row.first ? (row.itemImages[i - 1] || '') : '');
+        put(rowNo, col(`Item Image ${i}`), row.first ? (itemImages[i - 1] || '') : '');
       }
       put(rowNo, col('Weight'), row.weight);
       put(rowNo, col('Length'), row.length);
@@ -297,7 +471,7 @@ router.post('/mass-upload/generate-template-files', async (req, res) => {
       if (!row.categoryId) missing.push('category_id');
       if (row.first && !row.productName) missing.push('Product Name');
       if (row.first && !row.productDescription) missing.push('Product Description');
-      if (row.first && !row.coverImage) missing.push('Cover image');
+      if (row.first && !coverImage) missing.push('Cover image');
       if (!row.price) missing.push('Global SKU Price');
       if (!row.stock) missing.push('Stock');
       if (!row.sku) missing.push('SKU');

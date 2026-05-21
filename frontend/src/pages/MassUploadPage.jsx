@@ -193,6 +193,10 @@ export default function MassUploadPage() {
   const [generatedFiles, setGeneratedFiles] = useState([]);
   const [generateWarnings, setGenerateWarnings] = useState([]);
   const [generateMessage, setGenerateMessage] = useState('');
+  const [imageJobId, setImageJobId] = useState('');
+  const [imageUploadFiles, setImageUploadFiles] = useState([]);
+  const [imageUploadMessage, setImageUploadMessage] = useState('');
+  const [uploadedImages, setUploadedImages] = useState([]);
   const [templateFile, setTemplateFile] = useState(null);
   const [templateAnalysis, setTemplateAnalysis] = useState(null);
 
@@ -377,6 +381,55 @@ export default function MassUploadPage() {
     );
   }, [products, metaResults, categoryPreviewRows, templateRegistry]);
 
+
+  const uploadImages = async () => {
+    if (!imageUploadFiles.length) {
+      setImageUploadMessage('이미지를 선택하세요.');
+      return;
+    }
+
+    setImageUploadMessage('이미지 업로드 중...');
+
+    try {
+      const files = await Promise.all(imageUploadFiles.map(async (file) => {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let binary = '';
+        const chunkSize = 0x8000;
+
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+        }
+
+        return {
+          fileName: file.name,
+          fileBase64: btoa(binary),
+          contentType: file.type || '',
+        };
+      }));
+
+      const res = await fetch('/api/shopee-meta/mass-upload/images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          jobId: imageJobId || undefined,
+          files,
+        }),
+      });
+
+      const data = await res.json();
+      if (!data?.ok) {
+        throw new Error(data?.message || data?.error || '업로드 실패');
+      }
+
+      setImageJobId(data.jobId || '');
+      setUploadedImages(Array.isArray(data.images) ? data.images : []);
+      setImageUploadMessage(`업로드 완료: ${(data.images || []).length}개`);
+    } catch (err) {
+      setImageUploadMessage(`업로드 실패: ${err?.message || '알 수 없는 오류'}`);
+    }
+  };
+
   const generateTemplateFiles = async () => {
     setGenerateMessage('공식 템플릿 xlsx 생성 중...');
     setGeneratedFiles([]);
@@ -387,7 +440,7 @@ export default function MassUploadPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ products, metaResults }),
+        body: JSON.stringify({ products, metaResults, imageJobId }),
       });
 
       const data = await res.json();
@@ -736,6 +789,43 @@ export default function MassUploadPage() {
           <summary>붙여넣기 입력 열기</summary>
           <textarea rows={4} value={pasteText} onChange={(e) => setPasteText(e.target.value)} style={{ width: '100%' }} />
         </details>
+      </section>
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <h2>이미지 파일 업로드 / SKU 자동 매칭</h2>
+        <p>
+          대표이미지는 첫 번째 옵션 SKU-m1, SKU-m2 형식으로 올리고,
+          옵션이미지는 각 옵션 SKU 파일명으로 올립니다. 이미지는 리사이즈/압축 없이 원본 그대로 서버에 저장됩니다.
+        </p>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            placeholder="jobId 선택 입력"
+            value={imageJobId}
+            onChange={(e) => setImageJobId(e.target.value)}
+          />
+          <input
+            type="file"
+            accept=".jpg,.jpeg,.png"
+            multiple
+            onChange={(e) => setImageUploadFiles(Array.from(e.target.files || []))}
+          />
+          <button type="button" onClick={uploadImages}>이미지 업로드</button>
+        </div>
+        {imageUploadMessage ? <p style={{ marginTop: 8 }}>{imageUploadMessage}</p> : null}
+        {uploadedImages.length > 0 ? (
+          <div style={{ marginTop: 8 }}>
+            <p>jobId: {imageJobId} / 업로드 파일 수: {uploadedImages.length}</p>
+            {uploadedImages.map((image) => {
+              const isMain = /-m\d+$/i.test(String(image.stem || ''));
+              return (
+                <div key={image.fileName}>
+                  {image.fileName} | {isMain ? '대표이미지' : '옵션이미지'} | <a href={image.publicUrl} target="_blank" rel="noreferrer">{image.publicUrl}</a>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
       </section>
 
       <section className="card" style={{ marginTop: 16 }}>

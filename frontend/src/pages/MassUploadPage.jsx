@@ -31,6 +31,7 @@ const splitLine = (line) => line.includes('\t') ? line.split('\t').map((v) => v.
 const normalizeHeader = (v) => String(v || '').trim().replace(/\s+/g, '').toLowerCase();
 const parseRep = (v) => String(v || '').split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean);
 const isNonEmptyRow = (row) => Array.isArray(row) && row.some((cell) => String(cell ?? '').trim() !== '');
+const padProductKey = (n) => `P${String(n).padStart(4, '0')}`;
 
 function parseRows(headers, rows) {
   if (!Array.isArray(headers) || headers.length === 0 || !Array.isArray(rows) || rows.length === 0) return [];
@@ -278,6 +279,82 @@ export default function MassUploadPage() {
       };
     });
   }, [metaResults, templateRegistry]);
+
+
+  const categoryPreviewRows = useMemo(() => {
+    const byProductKey = new Map((metaResults || []).map((m) => [String(m.productKey || ''), m]));
+    const grouped = new Map();
+    let seq = 1;
+
+    products.forEach((p) => {
+      const result = byProductKey.get(String(p.id || ''));
+      const categoryId = String(result?.category?.categoryId || '').trim() || '미확정';
+      const categoryPath = result?.category?.categoryPath || result?.category?.categoryName || categoryId;
+      const brandId = result?.brand?.brandId ?? '';
+      const integrationNo = padProductKey(seq++);
+      const repImages = Array.isArray(p.representativeImages) ? p.representativeImages : [];
+      const coverImage = repImages[0] || '';
+
+      if (!grouped.has(categoryId)) {
+        const template = templateRegistry[categoryId] || null;
+        grouped.set(categoryId, {
+          categoryId,
+          categoryPath,
+          templateStatus: template?.fileName ? '서버 등록됨' : '등록 필요',
+          templateAnalysis: template?.analysis || null,
+          rows: [],
+        });
+      }
+
+      const bucket = grouped.get(categoryId);
+
+      (p.options || []).forEach((o, optionIndex) => {
+        const isFirstOption = optionIndex === 0;
+
+        const row = {
+          Category: categoryId === '미확정' ? '' : categoryId,
+          'Product Name': isFirstOption ? (p.productName || '') : '',
+          'Product Description': isFirstOption ? (p.description || '') : '',
+          'Variation Integration No.': integrationNo,
+          'Variation Name1': 'Option',
+          'Option for Variation 1': String(o.optionName || '').trim() || 'Default',
+          'Image per Variation': String(o.optionImage || '').trim(),
+          'Global SKU Price': String(o.price || '').trim(),
+          Stock: String(o.stock || '').trim(),
+          SKU: String(o.sku || '').trim(),
+          'Cover image': isFirstOption ? coverImage : '',
+          'Item Image 1': isFirstOption ? (repImages[0] || '') : '',
+          'Item Image 2': isFirstOption ? (repImages[1] || '') : '',
+          'Item Image 3': isFirstOption ? (repImages[2] || '') : '',
+          'Item Image 4': isFirstOption ? (repImages[3] || '') : '',
+          'Item Image 5': isFirstOption ? (repImages[4] || '') : '',
+          'Item Image 6': isFirstOption ? (repImages[5] || '') : '',
+          'Item Image 7': isFirstOption ? (repImages[6] || '') : '',
+          'Item Image 8': isFirstOption ? (repImages[7] || '') : '',
+          Weight: String(o.weight || '').trim(),
+          Length: String(o.length || '').trim(),
+          Width: String(o.width || '').trim(),
+          Height: String(o.height || '').trim(),
+          'Days to ship': '1',
+          Brand: brandId === null || brandId === undefined ? '' : String(brandId).trim(),
+          _missing: [],
+        };
+
+        const alwaysRequired = ['Category', 'Variation Integration No.', 'Variation Name1', 'Option for Variation 1', 'Global SKU Price', 'Stock', 'SKU', 'Weight', 'Days to ship', 'Brand'];
+        const firstRowRequired = ['Product Name', 'Product Description', 'Cover image'];
+        const missingKeys = isFirstOption ? [...alwaysRequired, ...firstRowRequired] : alwaysRequired;
+
+        row._missing = missingKeys.filter((key) => !String(row[key] || '').trim());
+        bucket.rows.push(row);
+      });
+    });
+
+    return Array.from(grouped.values()).map((group) => ({
+      ...group,
+      rowCount: group.rows.length,
+      missingCount: group.rows.reduce((sum, row) => sum + row._missing.length, 0),
+    }));
+  }, [metaResults, products, templateRegistry]);
 
   const isRequiredTemplateHeader = (value) => {
     const text = String(value || '').trim();
@@ -756,6 +833,58 @@ export default function MassUploadPage() {
           최종 Excel 생성은 category_id별 공식 템플릿 등록/분석 후 진행됩니다.
         </p>
       </section>
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <h2>6. 공식 템플릿 입력 미리보기</h2>
+        <p>
+          서버에 저장된 공식 템플릿 분석 결과를 기준으로 Template 시트에 입력될 데이터를 미리 보여줍니다.
+          같은 상품의 두 번째 옵션 행부터 Product Name / Product Description / Cover image는 비워질 수 있습니다.
+        </p>
+        <p>카테고리별 추가 필수 속성은 Required Values 단계에서 처리합니다.</p>
+
+        {categoryPreviewRows.length === 0 ? (
+          <p style={{ marginTop: 8 }}>미리보기 대상 데이터가 없습니다. 등록용 엑셀 읽기 및 KRSC 매핑 준비를 먼저 진행하세요.</p>
+        ) : (
+          categoryPreviewRows.map((group) => (
+            <div key={`preview_${group.categoryId}`} style={{ marginTop: 16, border: '1px solid #eee', borderRadius: 8, padding: 12 }}>
+              <div><strong>category_id:</strong> {group.categoryId}</div>
+              <div><strong>카테고리 경로:</strong> {group.categoryPath || '-'}</div>
+              <div><strong>템플릿 상태:</strong> {group.templateStatus}</div>
+              <div><strong>생성 예정 행 수:</strong> {group.rowCount}</div>
+              <div><strong>누락값 수:</strong> {group.missingCount}</div>
+              <div style={{ marginTop: 4 }}>
+                <strong>매핑 후보 수:</strong> {Array.isArray(group.templateAnalysis?.mappingCandidates) ? group.templateAnalysis.mappingCandidates.length : 0}
+              </div>
+
+              <div style={{ overflowX: 'auto', marginTop: 10 }}>
+                <table style={{ width: '100%', minWidth: 1300, borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      {['Category', 'Product Name', 'Variation Integration No.', 'Variation Name1', 'Option for Variation 1', 'Global SKU Price', 'Stock', 'SKU', 'Weight', 'Length', 'Width', 'Height', 'Days to ship', 'Brand'].map((header) => (
+                        <th key={header} style={{ borderBottom: '1px solid #ddd', padding: 6 }}>{header}</th>
+                      ))}
+                      <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>누락</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.rows.map((row, idx) => (
+                      <tr key={`${group.categoryId}_${idx}`}>
+                        {['Category', 'Product Name', 'Variation Integration No.', 'Variation Name1', 'Option for Variation 1', 'Global SKU Price', 'Stock', 'SKU', 'Weight', 'Length', 'Width', 'Height', 'Days to ship', 'Brand'].map((header) => (
+                          <td key={header} style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row[header] || ''}</td>
+                        ))}
+                        <td style={{ borderBottom: '1px solid #eee', padding: 6, color: row._missing.length ? '#b42318' : '#1b7f3b' }}>
+                          {row._missing.length ? row._missing.join(', ') : '없음'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))
+        )}
+      </section>
+
     </div>
   );
 }

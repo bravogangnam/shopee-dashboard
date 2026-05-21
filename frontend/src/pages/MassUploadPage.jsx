@@ -5,6 +5,28 @@ const DISPLAY_HEADERS = ['sku', '브랜드', '상품명', '옵션명', '상품�
 const HEADER_ALIASES = { 브랜드:'brand',brand:'brand',상품명:'productName',productname:'productName',product_name:'productName',상품설명:'description',description:'description',대표이미지:'representativeImages',representativeimages:'representativeImages',representative_images:'representativeImages',옵션명:'optionName',optionname:'optionName',option_name:'optionName',sku:'sku',가격:'price',price:'price',재고:'stock',stock:'stock',무게:'weight',weight:'weight',가로:'length',length:'length',세로:'width',width:'width',높이:'height',height:'height',옵션이미지:'optionImage',optionimage:'optionImage',option_image:'optionImage' };
 const INTERNAL_TO_DISPLAY = { sku:'sku', brand:'브랜드', productName:'상품명', optionName:'옵션명', description:'상품설명', representativeImages:'대표이미지', weight:'무게', price:'가격', stock:'재고', length:'가로', width:'세로', height:'높이', optionImage:'옵션이미지' };
 
+const TEMPLATE_HEADER_MAPPING = [
+  { pattern: /^category$/i, internalField: 'category_id' },
+  { pattern: /^product\s*name$/i, internalField: 'productName' },
+  { pattern: /^product\s*description$/i, internalField: 'description' },
+  { pattern: /^parent\s*sku$/i, internalField: 'parentSku' },
+  { pattern: /^variation\s*integration\s*no\.?$/i, internalField: 'variationIntegrationNo' },
+  { pattern: /^variation\s*name\s*1$/i, internalField: 'optionGroupName' },
+  { pattern: /^option\s*for\s*variation\s*1$/i, internalField: 'optionName' },
+  { pattern: /^image\s*per\s*variation$/i, internalField: 'optionImage' },
+  { pattern: /^global\s*sku\s*price$/i, internalField: 'price' },
+  { pattern: /^stock$/i, internalField: 'stock' },
+  { pattern: /^sku$/i, internalField: 'sku' },
+  { pattern: /^cover\s*image$/i, internalField: 'representativeImages[0]' },
+  { pattern: /^item\s*image\s*[1-8]$/i, internalField: 'representativeImages' },
+  { pattern: /^weight$/i, internalField: 'weight' },
+  { pattern: /^length$/i, internalField: 'length' },
+  { pattern: /^width$/i, internalField: 'width' },
+  { pattern: /^height$/i, internalField: 'height' },
+  { pattern: /^days\s*to\s*ship$/i, internalField: 'daysToShip' },
+  { pattern: /^brand$/i, internalField: 'brandId' },
+];
+
 const splitLine = (line) => line.includes('\t') ? line.split('\t').map((v) => v.trim()) : line.split(',').map((v) => v.trim());
 const normalizeHeader = (v) => String(v || '').trim().replace(/\s+/g, '').toLowerCase();
 const parseRep = (v) => String(v || '').split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean);
@@ -265,7 +287,9 @@ export default function MassUploadPage() {
   const analyzeTemplateWorkbook = async (file) => {
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'array' });
-    const sheetName = workbook.SheetNames?.[0];
+    const sheetNames = workbook.SheetNames || [];
+    const hasTemplateSheet = sheetNames.includes('Template');
+    const sheetName = hasTemplateSheet ? 'Template' : sheetNames?.[0];
     const sheet = workbook.Sheets[sheetName];
 
     if (!sheetName || !sheet) {
@@ -273,6 +297,82 @@ export default function MassUploadPage() {
     }
 
     const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+    const pickValue = (rowIdx, colIdx) => String(matrix?.[rowIdx]?.[colIdx] || '').trim();
+
+    const mapHeaderToInternalField = (header) => {
+      const normalizedHeader = String(header || '').trim();
+      if (!normalizedHeader) return null;
+
+      const explicit = TEMPLATE_HEADER_MAPPING.find((m) => m.pattern.test(normalizedHeader));
+      if (explicit) return explicit.internalField;
+
+      const key = normalizeHeader(normalizedHeader);
+      return HEADER_ALIASES[key] || null;
+    };
+
+    if (hasTemplateSheet) {
+      const headerRowIndex = 2;       // row 3
+      const requiredRowIndex = 3;     // row 4
+      const descriptionRowIndex = 4;  // row 5
+      const ruleRowIndex = 5;         // row 6
+      const dataStartRow = 7;
+
+      const colCount = Math.max(
+        (matrix?.[0] || []).length,
+        (matrix?.[headerRowIndex] || []).length,
+        (matrix?.[requiredRowIndex] || []).length,
+        (matrix?.[descriptionRowIndex] || []).length,
+        (matrix?.[ruleRowIndex] || []).length
+      );
+
+      const columns = Array.from({ length: colCount }).map((_, idx) => ({
+        index: idx + 1,
+        code: pickValue(0, idx),
+        header: pickValue(headerRowIndex, idx),
+        requirement: pickValue(requiredRowIndex, idx),
+        description: pickValue(descriptionRowIndex, idx),
+        rule: pickValue(ruleRowIndex, idx),
+      })).filter((c) => c.code || c.header || c.requirement || c.description || c.rule);
+
+      const requiredColumns = columns
+        .filter((c) => {
+          const req = String(c.requirement || '').trim().toLowerCase();
+          return req === 'mandatory' || req === 'conditional mandatory';
+        })
+        .map((c) => ({
+          index: c.index,
+          header: c.header,
+          code: c.code,
+          requirement: c.requirement,
+        }));
+
+      const mappingCandidates = columns
+        .map((c) => {
+          const internalField = mapHeaderToInternalField(c.header);
+          return internalField ? {
+            templateColumn: c.index,
+            templateHeader: c.header,
+            internalField,
+            templateCode: c.code,
+          } : null;
+        })
+        .filter(Boolean);
+
+      return {
+        sheetName: 'Template',
+        sheetNames,
+        headerRow: 3,
+        requiredRow: 4,
+        descriptionRow: 5,
+        ruleRow: 6,
+        dataStartRow,
+        headerCount: columns.filter((c) => c.header).length,
+        columns,
+        requiredColumns,
+        mappingCandidates,
+      };
+    }
 
     let bestHeaderRow = 0;
     let bestScore = -1;
@@ -294,24 +394,42 @@ export default function MassUploadPage() {
 
     const headers = (matrix[bestHeaderRow] || []).map((c) => String(c || '').trim());
     const requiredColumns = headers
-      .map((header, idx) => ({ index: idx + 1, header }))
+      .map((h, idx) => ({ index: idx + 1, header: h }))
       .filter((x) => isRequiredTemplateHeader(x.header));
 
     const mappingCandidates = headers
       .map((header, idx) => {
         const key = normalizeHeader(header);
         const internalField = HEADER_ALIASES[key] || null;
-        return internalField ? { templateColumn: idx + 1, templateHeader: header, internalField } : null;
+        return internalField ? {
+          templateColumn: idx + 1,
+          templateHeader: header,
+          internalField,
+          templateCode: '',
+        } : null;
       })
       .filter(Boolean);
 
+    const columns = headers.map((header, idx) => ({
+      index: idx + 1,
+      code: '',
+      header: String(header || '').trim(),
+      requirement: '',
+      description: '',
+      rule: '',
+    })).filter((c) => c.header);
+
     return {
       sheetName,
-      sheetNames: workbook.SheetNames || [],
+      sheetNames,
       rowCount: matrix.length,
       headerRow: bestHeaderRow + 1,
+      requiredRow: null,
+      descriptionRow: null,
+      ruleRow: null,
       dataStartRow: bestHeaderRow + 2,
       headerCount: headers.filter(Boolean).length,
+      columns,
       requiredColumns,
       mappingCandidates,
     };

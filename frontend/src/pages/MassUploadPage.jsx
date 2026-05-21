@@ -180,6 +180,9 @@ export default function MassUploadPage() {
   const [templateRegistry, setTemplateRegistry] = useState({});
   const [templateMessage, setTemplateMessage] = useState('');
   const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [generatedFiles, setGeneratedFiles] = useState([]);
+  const [generateWarnings, setGenerateWarnings] = useState([]);
+  const [generateMessage, setGenerateMessage] = useState('');
   const [templateFile, setTemplateFile] = useState(null);
   const [templateAnalysis, setTemplateAnalysis] = useState(null);
 
@@ -355,6 +358,40 @@ export default function MassUploadPage() {
       missingCount: group.rows.reduce((sum, row) => sum + row._missing.length, 0),
     }));
   }, [metaResults, products, templateRegistry]);
+
+
+  const canGenerateTemplateFiles = useMemo(() => {
+    if (!products.length || !metaResults.length || !categoryPreviewRows.length) return false;
+    return categoryPreviewRows.every((group) =>
+      group.categoryId !== '미확정' && Boolean(templateRegistry[group.categoryId]?.fileName)
+    );
+  }, [products, metaResults, categoryPreviewRows, templateRegistry]);
+
+  const generateTemplateFiles = async () => {
+    setGenerateMessage('공식 템플릿 xlsx 생성 중...');
+    setGeneratedFiles([]);
+    setGenerateWarnings([]);
+
+    try {
+      const res = await fetch('/api/shopee-meta/mass-upload/generate-template-files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ products, metaResults }),
+      });
+
+      const data = await res.json();
+      if (!data?.ok) {
+        throw new Error(data?.message || data?.error || '생성 실패');
+      }
+
+      setGeneratedFiles(Array.isArray(data.files) ? data.files : []);
+      setGenerateWarnings(Array.isArray(data.warnings) ? data.warnings : []);
+      setGenerateMessage(`생성 완료: ${(data.files || []).length}개 파일`);
+    } catch (err) {
+      setGenerateMessage(`생성 실패: ${err?.message || '알 수 없는 오류'}`);
+    }
+  };
 
   const isRequiredTemplateHeader = (value) => {
     const text = String(value || '').trim();
@@ -884,6 +921,54 @@ export default function MassUploadPage() {
           ))
         )}
       </section>
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <h2>7. 공식 템플릿 xlsx 생성</h2>
+        <p>서버에 저장된 공식 template.xlsx를 복사해서 Template 시트 7행부터 데이터를 입력합니다.</p>
+
+        <button type="button" onClick={generateTemplateFiles} disabled={!canGenerateTemplateFiles}>
+          공식 템플릿 xlsx 생성
+        </button>
+
+        {!canGenerateTemplateFiles ? (
+          <p style={{ marginTop: 6 }}>생성 조건: 등록용 상품/매핑 결과 존재 + category_id별 서버 템플릿 등록 완료</p>
+        ) : null}
+
+        {generateMessage ? <p style={{ marginTop: 6 }}>{generateMessage}</p> : null}
+
+        {generatedFiles.length > 0 ? (
+          <div style={{ marginTop: 12, overflowX: 'auto' }}>
+            <h3>생성 결과</h3>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>category_id</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>카테고리 경로</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>파일명</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>다운로드</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>warning 수</th>
+                </tr>
+              </thead>
+              <tbody>
+                {generatedFiles.map((file) => {
+                  const warningCount = generateWarnings.filter((warning) => String(warning.categoryId) === String(file.categoryId)).length;
+                  return (
+                    <tr key={`${file.categoryId}_${file.fileName}`}>
+                      <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{file.categoryId}</td>
+                      <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{file.categoryPath || '-'}</td>
+                      <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{file.fileName}</td>
+                      <td style={{ borderBottom: '1px solid #eee', padding: 6 }}><a href={file.downloadUrl}>다운로드</a></td>
+                      <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{warningCount}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </section>
+
+
 
     </div>
   );

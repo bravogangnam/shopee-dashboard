@@ -678,8 +678,8 @@ export default function MassUploadPage() {
         <h2>5. category_id별 공식 템플릿 레지스트리</h2>
         <p>
           Shopee OpenAPI에는 KRSC Mass Upload 공식 템플릿 다운로드/생성 API가 없습니다.
-          공식 템플릿은 Seller Center에서 아래 카테고리 경로를 찾아 다운로드한 뒤, 이 화면에 최초 1회 등록해야 합니다.
-          등록된 category_id 템플릿은 다음부터 자동으로 매칭됩니다.
+          공식 템플릿은 Seller Center에서 아래 카테고리 경로를 찾아 다운로드한 뒤, 해당 category_id 행에서 등록/갱신하세요. 새 카테고리 템플릿도 선택 즉시 자동 분석 후 서버에 저장됩니다.
+          서버에 저장된 category_id 템플릿은 다음 대량등록부터 자동으로 불러옵니다. 새 템플릿을 다시 올리면 기존 템플릿을 덮어쓰고 재분석합니다.
         </p>
 
         {categoryRegistryRows.length > 0 ? (
@@ -714,14 +714,14 @@ export default function MassUploadPage() {
                     <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.headerRow} / {row.dataStartRow}</td>
                     <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.requiredCount} / {row.mappingCount}</td>
                     <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>
-                      <button type="button" disabled>공식 템플릿 등록 후 생성 가능</button>
+                      <button type="button" disabled>공식 템플릿 서버 등록 후 생성 가능</button>
                     </td>
                     <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>
                       {row.categoryId === '미확정' ? (
                         <span>category_id 필요</span>
                       ) : (
                         <label style={{ border: '1px solid #ddd', borderRadius: 8, padding: '4px 8px', cursor: 'pointer', display: 'inline-block' }}>
-                          공식 템플릿 선택/분석
+                          공식 템플릿 등록/갱신
                           <input
                             type="file"
                             accept=".xlsx"

@@ -256,9 +256,14 @@ router.post('/mass-upload/generate-template-files', async (req, res) => {
     const mappingCandidates = Array.isArray(metadata?.analysis?.mappingCandidates)
       ? metadata.analysis.mappingCandidates
       : [];
-    const colByHeader = new Map(
-      mappingCandidates.map((m) => [String(m.templateHeader || '').trim().toLowerCase(), Number(m.templateColumn || 0)])
-    );
+    const colByHeader = new Map();
+    mappingCandidates.forEach((m) => {
+      const key = String(m.templateHeader || '').trim().toLowerCase();
+      const value = Number(m.templateColumn || 0);
+      if (key && value && !colByHeader.has(key)) {
+        colByHeader.set(key, value);
+      }
+    });
     const col = (header) => colByHeader.get(String(header).toLowerCase()) || 0;
     const put = (row, colIdx, value) => {
       if (!colIdx) return;

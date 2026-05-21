@@ -444,13 +444,25 @@ router.post('/mass-upload/generate-template-files', async (req, res) => {
       put(rowNo, col('Variation Name1'), row.variationName1);
       put(rowNo, col('Option for Variation 1'), row.optionName);
       const firstSku = row.first ? String(row.sku || '').trim() : '';
+      const optionImage = imageMap.get(String(row.sku || '').trim()) || row.optionImage;
       const coverImage = row.first && firstSku
-        ? (imageMap.get(`${firstSku}-m1`) || row.coverImage)
+        ? (
+          imageMap.get(`${firstSku}-m1`)
+          || imageMap.get(`${firstSku}-m`)
+          || imageMap.get(firstSku)
+          || row.coverImage
+        )
         : row.coverImage;
       const itemImages = row.first
-        ? Array.from({ length: 8 }).map((_, index) => (firstSku ? imageMap.get(`${firstSku}-m${index + 1}`) : '') || row.itemImages[index] || '')
+        ? Array.from({ length: 8 }).map((_, index) => {
+          const mainImage = firstSku ? imageMap.get(`${firstSku}-m${index + 1}`) : '';
+          if (mainImage) return mainImage;
+          if (index === 0 && firstSku) {
+            return imageMap.get(`${firstSku}-m`) || imageMap.get(firstSku) || row.itemImages[index] || '';
+          }
+          return row.itemImages[index] || '';
+        })
         : [];
-      const optionImage = imageMap.get(String(row.sku || '').trim()) || row.optionImage;
 
       put(rowNo, col('Image per Variation'), optionImage);
       put(rowNo, col('Global SKU Price'), row.price);

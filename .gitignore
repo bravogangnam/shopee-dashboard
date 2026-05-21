@@ -12,3 +12,4 @@ data/
 tmp/
 .DS_Store
 frontend/build/
+backend/storage/

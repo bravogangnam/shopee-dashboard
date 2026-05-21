@@ -32,6 +32,16 @@ const normalizeHeader = (v) => String(v || '').trim().replace(/\s+/g, '').toLowe
 const parseRep = (v) => String(v || '').split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean);
 const isNonEmptyRow = (row) => Array.isArray(row) && row.some((cell) => String(cell ?? '').trim() !== '');
 const padProductKey = (n) => `P${String(n).padStart(4, '0')}`;
+const gramsToKgForShopee = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const numeric = Number(raw.replace(/,/g, '').replace(/g$/i, ''));
+  if (!Number.isFinite(numeric) || numeric <= 0) return raw;
+
+  const kg = numeric / 1000;
+  return String(Number(kg.toFixed(3)));
+};
 
 function parseRows(headers, rows) {
   if (!Array.isArray(headers) || headers.length === 0 || !Array.isArray(rows) || rows.length === 0) return [];
@@ -334,7 +344,7 @@ export default function MassUploadPage() {
           'Item Image 6': isFirstOption ? (repImages[5] || '') : '',
           'Item Image 7': isFirstOption ? (repImages[6] || '') : '',
           'Item Image 8': isFirstOption ? (repImages[7] || '') : '',
-          Weight: String(o.weight || '').trim(),
+          Weight: gramsToKgForShopee(o.weight),
           Length: String(o.length || '').trim(),
           Width: String(o.width || '').trim(),
           Height: String(o.height || '').trim(),

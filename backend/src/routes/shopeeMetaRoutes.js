@@ -27,6 +27,17 @@ function safeName(value) {
   return String(value || '').replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
+function gramsToKgForShopee(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const numeric = Number(raw.replace(/,/g, '').replace(/g$/i, ''));
+  if (!Number.isFinite(numeric) || numeric <= 0) return raw;
+
+  const kg = numeric / 1000;
+  return String(Number(kg.toFixed(3)));
+}
+
 function padNo(n) {
   return `P${String(n).padStart(4, '0')}`;
 }
@@ -204,7 +215,7 @@ router.post('/mass-upload/generate-template-files', async (req, res) => {
         price: String(option.price || '').trim(),
         stock: String(option.stock || '').trim(),
         sku: String(option.sku || '').trim(),
-        weight: String(option.weight || '').trim(),
+        weight: gramsToKgForShopee(option.weight),
         length: String(option.length || '').trim(),
         width: String(option.width || '').trim(),
         height: String(option.height || '').trim(),

@@ -366,12 +366,14 @@ async function fetchCategoryRecommendTop1({ tenantId, itemName, brandName }) {
       const categoryId = categoryIds.length > 0 ? String(categoryIds[0]) : null;
       if (!categoryId) continue;
 
+      const categoryDisplayPath = await fetchCategoryDisplayPath({ tenantId, categoryId });
+
       return {
         ok: true,
         category: {
           categoryId,
-          categoryName: categoryId,
-          categoryPath: categoryId,
+          categoryName: categoryDisplayPath || categoryId,
+          categoryPath: categoryDisplayPath || categoryId,
           source: 'category_recommend',
           confidence: 'auto_top1',
           usedItemName: candidate,
@@ -388,6 +390,57 @@ async function fetchCategoryRecommendTop1({ tenantId, itemName, brandName }) {
     message: 'Shopee category_recommend가 상품명 기준 카테고리를 반환하지 않았습니다.',
     usedItemName: itemName,
   };
+}
+
+
+
+async function fetchCategoryDisplayPath({ tenantId, categoryId }) {
+  if (!LIVE_ENABLED || !categoryId) return String(categoryId || '');
+
+  const shopSel = await selectActiveShopForMetadata({ tenantId });
+  if (!shopSel.ok) return String(categoryId || '');
+
+  const { shop_id: shopId } = shopSel.shop;
+  const db = getDb();
+
+  const [tokenRows] = await db.query(
+    `SELECT access_token FROM shops WHERE tenant_id = ? AND shop_id = ? LIMIT 1`,
+    [tenantId, shopId]
+  );
+
+  const accessToken = tokenRows?.[0]?.access_token;
+  if (!accessToken) return String(categoryId || '');
+
+  const { buildUrl, callWithRetry, shopeeAxios } = getShopeeLiveHelpers();
+
+  try {
+    const url = buildUrl('/api/v2/product/get_category', { language: 'en' }, 'shop', accessToken, shopId);
+    const resp = await callWithRetry(() => shopeeAxios.get(url), {
+      context: 'ShopeeMeta:get_category_display_path',
+    });
+
+    const root = resp?.data?.response || resp?.response || resp || {};
+    const rows = Array.isArray(root.category_list) ? root.category_list : [];
+    const byId = new Map(rows.map((r) => [String(r.category_id), r]));
+
+    let cur = byId.get(String(categoryId));
+    if (!cur) return String(categoryId || '');
+
+    const parts = [];
+    const seen = new Set();
+
+    while (cur && !seen.has(String(cur.category_id))) {
+      seen.add(String(cur.category_id));
+      parts.unshift(String(cur.display_category_name || cur.original_category_name || cur.category_name || cur.category_id));
+      const parent = cur.parent_category_id;
+      if (!parent || String(parent) === '0') break;
+      cur = byId.get(String(parent));
+    }
+
+    return parts.length ? parts.join(' > ') : String(categoryId || '');
+  } catch {
+    return String(categoryId || '');
+  }
 }
 
 

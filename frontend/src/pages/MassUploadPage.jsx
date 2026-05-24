@@ -181,6 +181,7 @@ function validateProduct(product) {
 const badge = (s) => s === 'ready' ? { text: '준비 완료', style: { background: '#e8f7ed', color: '#1b7f3b' } } : s === 'review' ? { text: '검수 필요', style: { background: '#fff7e8', color: '#a46300' } } : { text: '오류', style: { background: '#fdecec', color: '#b42318' } };
 
 export default function MassUploadPage() {
+  const CATEGORY_OVERRIDE_KEY = 'krsc_category_overrides_v1';
   const [products, setProducts] = useState([]);
   const [pasteText, setPasteText] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
@@ -204,6 +205,8 @@ export default function MassUploadPage() {
   const [requiredValuesRegistry, setRequiredValuesRegistry] = useState({});
   const [requiredValueDrafts, setRequiredValueDrafts] = useState({});
   const [requiredValueOptionsRegistry, setRequiredValueOptionsRegistry] = useState({});
+  const [categoryOverrides, setCategoryOverrides] = useState({});
+  const [categoryOverrideDrafts, setCategoryOverrideDrafts] = useState({});
   const [templateFile, setTemplateFile] = useState(null);
   const [templateAnalysis, setTemplateAnalysis] = useState(null);
 
@@ -239,6 +242,70 @@ export default function MassUploadPage() {
     refreshTemplateRegistry();
   }, []);
 
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(CATEGORY_OVERRIDE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+
+      if (parsed && typeof parsed === 'object') {
+        setCategoryOverrides(parsed);
+
+        const draftSeed = {};
+        Object.entries(parsed).forEach(([productKey, value]) => {
+          draftSeed[productKey] = {
+            categoryId: String(value?.categoryId || ''),
+            categoryPath: String(value?.categoryPath || ''),
+          };
+        });
+        setCategoryOverrideDrafts(draftSeed);
+      }
+    } catch {
+      setCategoryOverrides({});
+      setCategoryOverrideDrafts({});
+    }
+  }, []);
+
+  const effectiveMetaResults = useMemo(() => {
+    return (metaResults || []).map((item) => {
+      const productKey = String(item?.productKey || '').trim();
+      const override = categoryOverrides?.[productKey] || null;
+
+      if (!override?.categoryId) return item;
+
+      return {
+        ...item,
+        category: {
+          ...(item.category || {}),
+          categoryId: String(override.categoryId || '').trim(),
+          categoryPath: String(override.categoryPath || '').trim()
+            || item?.category?.categoryPath
+            || item?.category?.categoryName
+            || String(override.categoryId || '').trim(),
+          source: 'manual_override',
+        },
+      };
+    });
+  }, [metaResults, categoryOverrides]);
+
+  useEffect(() => {
+    setCategoryOverrideDrafts((prev) => {
+      const next = { ...prev };
+
+      (metaResults || []).forEach((item) => {
+        const key = String(item?.productKey || '').trim();
+        if (!key || next[key]) return;
+
+        next[key] = {
+          categoryId: String(item?.category?.categoryId || ''),
+          categoryPath: String(item?.category?.categoryPath || item?.category?.categoryName || ''),
+        };
+      });
+
+      return next;
+    });
+  }, [metaResults]);
+
   const displayRows = useMemo(() => {
     const out = [];
     products.forEach((p, pi) => {
@@ -264,7 +331,7 @@ export default function MassUploadPage() {
   const categoryRegistryRows = useMemo(() => {
     const map = new Map();
 
-    (metaResults || []).forEach((p) => {
+    (effectiveMetaResults || []).forEach((p) => {
       const categoryId = String(p.category?.categoryId || '').trim() || '미확정';
       if (!map.has(categoryId)) {
         map.set(categoryId, {
@@ -302,11 +369,11 @@ export default function MassUploadPage() {
         excelReady: reg?.analysis ? '준비중' : '불가',
       };
     });
-  }, [metaResults, templateRegistry]);
+  }, [effectiveMetaResults, templateRegistry]);
 
 
   const categoryPreviewRows = useMemo(() => {
-    const byProductKey = new Map((metaResults || []).map((m) => [String(m.productKey || ''), m]));
+    const byProductKey = new Map((effectiveMetaResults || []).map((m) => [String(m.productKey || ''), m]));
     const grouped = new Map();
     let seq = 1;
 
@@ -378,15 +445,15 @@ export default function MassUploadPage() {
       rowCount: group.rows.length,
       missingCount: group.rows.reduce((sum, row) => sum + row._missing.length, 0),
     }));
-  }, [metaResults, products, templateRegistry]);
+  }, [effectiveMetaResults, products, templateRegistry]);
 
 
   const canGenerateTemplateFiles = useMemo(() => {
-    if (!products.length || !metaResults.length || !categoryPreviewRows.length) return false;
+    if (!products.length || !effectiveMetaResults.length || !categoryPreviewRows.length) return false;
     return categoryPreviewRows.every((group) =>
       group.categoryId !== '미확정' && Boolean(templateRegistry[group.categoryId]?.fileName)
     );
-  }, [products, metaResults, categoryPreviewRows, templateRegistry]);
+  }, [products, effectiveMetaResults, categoryPreviewRows, templateRegistry]);
 
 
 
@@ -428,6 +495,67 @@ export default function MassUploadPage() {
     }));
   };
 
+
+
+  const getOverrideDraft = (productKey) => {
+    return categoryOverrideDrafts?.[productKey] || { categoryId: '', categoryPath: '' };
+  };
+
+  const setOverrideDraft = (productKey, field, value) => {
+    setCategoryOverrideDrafts((prev) => ({
+      ...prev,
+      [productKey]: {
+        ...(prev[productKey] || { categoryId: '', categoryPath: '' }),
+        [field]: value,
+      },
+    }));
+  };
+
+  const saveCategoryOverride = (productKey) => {
+    const draft = getOverrideDraft(productKey);
+    const categoryId = String(draft.categoryId || '').trim();
+    const categoryPath = String(draft.categoryPath || '').trim();
+
+    if (!categoryId) {
+      setMessage('category_id가 비어 있으면 수동확정으로 저장할 수 없습니다.');
+      return;
+    }
+
+    const next = {
+      ...categoryOverrides,
+      [productKey]: {
+        categoryId,
+        categoryPath,
+        source: 'manual_override',
+      },
+    };
+
+    setCategoryOverrides(next);
+    localStorage.setItem(CATEGORY_OVERRIDE_KEY, JSON.stringify(next));
+    setMessage(`수동확정 저장 완료: ${productKey} -> ${categoryId}`);
+  };
+
+  const resetCategoryOverride = (productKey) => {
+    const next = { ...categoryOverrides };
+    delete next[productKey];
+
+    setCategoryOverrides(next);
+    localStorage.setItem(CATEGORY_OVERRIDE_KEY, JSON.stringify(next));
+
+    const original = (metaResults || []).find((item) =>
+      String(item?.productKey || '') === String(productKey || '')
+    );
+
+    setCategoryOverrideDrafts((prev) => ({
+      ...prev,
+      [productKey]: {
+        categoryId: String(original?.category?.categoryId || ''),
+        categoryPath: String(original?.category?.categoryPath || original?.category?.categoryName || ''),
+      },
+    }));
+
+    setMessage(`수동확정 초기화 완료: ${productKey}`);
+  };
 
   const fetchRequiredValueOptionsForCategories = async (categoryIds) => {
     const targets = Array.from(new Set((categoryIds || []).map((x) => String(x || '').trim()).filter(Boolean)));
@@ -806,7 +934,7 @@ export default function MassUploadPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ products, metaResults, imageJobId }),
+        body: JSON.stringify({ products, metaResults: effectiveMetaResults, imageJobId }),
       });
 
       const data = await res.json();
@@ -1228,11 +1356,52 @@ export default function MassUploadPage() {
               <h3>KRSC 매핑 결과 {metaResults.length}건</h3>
               {metaResults.map((p) => (
                 <div key={p.productKey || p.productName} style={{ border: '1px solid #eee', padding: 10, marginBottom: 8 }}>
-                  <div><strong>{p.productName}</strong> | 옵션 {p.optionCount} | 상태 {p.status}</div>
-                  <div>KRSC category_id: {p.category?.categoryId || '-'} / {p.category?.categoryPath || p.category?.categoryName || '-'}</div>
-                  <div>category source: {p.category?.source || '-'} / {p.category?.confidence || '-'}</div>
-                  <div>used item name: {p.category?.usedItemName || '-'}</div>
-                  <div>brand: {p.brand?.brandName || '-'} / brand_id: {p.brand?.brandId ?? '-'}</div>
+                  {(() => {
+                    const productKey = String(p.productKey || '').trim();
+                    const override = categoryOverrides?.[productKey] || null;
+                    const effective = effectiveMetaResults.find((item) => String(item.productKey || '').trim() === productKey) || p;
+                    const draft = getOverrideDraft(productKey);
+                    const isManual = Boolean(override?.categoryId);
+
+                    return (
+                      <>
+                        <div><strong>{p.productName}</strong> | 옵션 {p.optionCount} | 상태 {p.status}</div>
+                        <div>자동추천 category_id: {p.category?.categoryId || '-'} / {p.category?.categoryPath || p.category?.categoryName || '-'}</div>
+                        <div>
+                          적용 category_id: {effective.category?.categoryId || '-'} / {effective.category?.categoryPath || effective.category?.categoryName || '-'}
+                          {isManual ? (
+                            <span style={{ marginLeft: 6, background: '#e6f4ff', color: '#0958d9', borderRadius: 999, padding: '2px 8px', fontSize: 12 }}>수동확정</span>
+                          ) : (
+                            <span style={{ marginLeft: 6, background: '#f5f5f5', color: '#555', borderRadius: 999, padding: '2px 8px', fontSize: 12 }}>자동추천</span>
+                          )}
+                        </div>
+                        <div>category source: {effective.category?.source || '-'} / {effective.category?.confidence || '-'}</div>
+                        <div>used item name: {p.category?.usedItemName || '-'}</div>
+                        <div>brand: {p.brand?.brandName || '-'} / brand_id: {p.brand?.brandId ?? '-'}</div>
+                        <div style={{ marginTop: 8, padding: 8, border: '1px solid #ddd', borderRadius: 6, background: '#fafafa' }}>
+                          <div style={{ fontWeight: 600, marginBottom: 6 }}>카테고리 수정</div>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <input
+                              type="text"
+                              value={draft.categoryId}
+                              onChange={(event) => setOverrideDraft(productKey, 'categoryId', event.target.value)}
+                              placeholder="override category_id"
+                              style={{ minWidth: 220 }}
+                            />
+                            <input
+                              type="text"
+                              value={draft.categoryPath}
+                              onChange={(event) => setOverrideDraft(productKey, 'categoryPath', event.target.value)}
+                              placeholder="override categoryPath 선택"
+                              style={{ minWidth: 420, flex: 1 }}
+                            />
+                            <button type="button" onClick={() => saveCategoryOverride(productKey)}>저장</button>
+                            <button type="button" onClick={() => resetCategoryOverride(productKey)}>초기화</button>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                   <div>brand status: {p.brand?.matchStatus || '-'}</div>
                   <div>필수항목: 공식 템플릿 분석 전</div>
                   {(p.requiredAttributes || []).length > 0 ? (

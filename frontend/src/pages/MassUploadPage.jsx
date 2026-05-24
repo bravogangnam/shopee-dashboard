@@ -491,14 +491,13 @@ export default function MassUploadPage() {
           bucket.failReasonSamples.push(failReason);
         }
 
-        const normalizedReason = normalizeForMatch(failReason);
+        const normalizedReason = ` ${normalizeForMatch(failReason)} `;
         const matchedHeaders = [];
 
         candidateHeaders.forEach((candidate) => {
-          const escaped = candidate.normalized.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
-          const pattern = new RegExp(`(^|\\\\s)${escaped}(?=\\\\s|$)`, 'i');
+          const normalizedCandidate = ` ${candidate.normalized} `;
 
-          if (pattern.test(normalizedReason)) {
+          if (normalizedReason.includes(normalizedCandidate)) {
             matchedHeaders.push(candidate.header);
           }
         });

@@ -448,9 +448,22 @@ export default function MassUploadPage() {
         'fail reason',
       ]);
 
+      const normalizeForMatch = (value) => String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[\\s_-]+/g, ' ')
+        .replace(/[^a-z0-9 ]+/g, '')
+        .replace(/\\s+/g, ' ');
+
       const candidateHeaders = headers
         .filter(Boolean)
-        .filter((header) => !commonHeaders.has(header.toLowerCase()));
+        .filter((header) => !commonHeaders.has(header.toLowerCase()))
+        .map((header) => ({
+          header,
+          normalized: normalizeForMatch(header),
+        }))
+        .filter((item) => item.normalized.length >= 3)
+        .sort((a, b) => b.normalized.length - a.normalized.length);
 
       const byCategory = new Map();
 
@@ -478,14 +491,32 @@ export default function MassUploadPage() {
           bucket.failReasonSamples.push(failReason);
         }
 
-        const lowerReason = failReason.toLowerCase();
+        const normalizedReason = normalizeForMatch(failReason);
+        const matchedHeaders = [];
 
-        candidateHeaders.forEach((header) => {
-          const normalizedHeader = header.toLowerCase();
+        candidateHeaders.forEach((candidate) => {
+          const escaped = candidate.normalized.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
+          const pattern = new RegExp(`(^|\\\\s)${escaped}(?=\\\\s|$)`, 'i');
 
-          if (normalizedHeader.length >= 3 && lowerReason.includes(normalizedHeader)) {
-            bucket.missingAttributes.add(header);
+          if (pattern.test(normalizedReason)) {
+            matchedHeaders.push(candidate.header);
           }
+        });
+
+        // 긴 속성명이 잡힌 경우, 그 안에 포함되는 짧은 속성명은 제외한다.
+        // 예: "Medical Functions"가 있으면 "Medical"은 제외.
+        const refinedHeaders = matchedHeaders.filter((header) => {
+          const current = normalizeForMatch(header);
+
+          return !matchedHeaders.some((other) => {
+            if (other === header) return false;
+            const normalizedOther = normalizeForMatch(other);
+            return normalizedOther.length > current.length && normalizedOther.includes(current);
+          });
+        });
+
+        refinedHeaders.forEach((header) => {
+          bucket.missingAttributes.add(header);
         });
       }
 

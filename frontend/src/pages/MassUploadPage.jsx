@@ -455,12 +455,23 @@ export default function MassUploadPage() {
         .replace(/[^a-z0-9 ]+/g, '')
         .replace(/\\s+/g, ' ');
 
+      const getHeaderMatchTerms = (header) => {
+        const normalized = normalizeForMatch(header);
+        const terms = new Set([normalized]);
+
+        if (normalized === 'shelf lifes') terms.add('shelf life');
+        if (normalized === 'shelf life') terms.add('shelf lifes');
+
+        return Array.from(terms).filter(Boolean);
+      };
+
       const candidateHeaders = headers
         .filter(Boolean)
         .filter((header) => !commonHeaders.has(header.toLowerCase()))
         .map((header) => ({
           header,
           normalized: normalizeForMatch(header),
+          terms: getHeaderMatchTerms(header),
         }))
         .filter((item) => item.normalized.length >= 3)
         .sort((a, b) => b.normalized.length - a.normalized.length);
@@ -495,9 +506,11 @@ export default function MassUploadPage() {
         const matchedHeaders = [];
 
         candidateHeaders.forEach((candidate) => {
-          const normalizedCandidate = ` ${candidate.normalized} `;
+          const isMatched = (candidate.terms || [candidate.normalized]).some((term) =>
+            normalizedReason.includes(` ${term} `)
+          );
 
-          if (normalizedReason.includes(normalizedCandidate)) {
+          if (isMatched) {
             matchedHeaders.push(candidate.header);
           }
         });

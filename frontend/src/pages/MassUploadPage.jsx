@@ -505,6 +505,24 @@ export default function MassUploadPage() {
         const normalizedReason = ` ${normalizeForMatch(failReason)} `;
         const matchedHeaders = [];
 
+        const attributeNameMatches = Array.from(failReason.matchAll(/Attribute\\s+["“”']([^"“”']+)["“”']/gi))
+          .map((match) => String(match[1] || '').trim())
+          .filter(Boolean);
+
+        attributeNameMatches.forEach((name) => {
+          const normalizedName = normalizeForMatch(name);
+
+          const matchedCandidate = candidateHeaders.find((candidate) =>
+            (candidate.terms || [candidate.normalized]).some((term) =>
+              term === normalizedName || term.replace(/s$/, '') === normalizedName.replace(/s$/, '')
+            )
+          );
+
+          if (matchedCandidate) {
+            matchedHeaders.push(matchedCandidate.header);
+          }
+        });
+
         candidateHeaders.forEach((candidate) => {
           const isMatched = (candidate.terms || [candidate.normalized]).some((term) =>
             normalizedReason.includes(` ${term} `)
@@ -517,10 +535,12 @@ export default function MassUploadPage() {
 
         // 긴 속성명이 잡힌 경우, 그 안에 포함되는 짧은 속성명은 제외한다.
         // 예: "Medical Functions"가 있으면 "Medical"은 제외.
-        const refinedHeaders = matchedHeaders.filter((header) => {
+        const uniqueMatchedHeaders = Array.from(new Set(matchedHeaders));
+
+        const refinedHeaders = uniqueMatchedHeaders.filter((header) => {
           const current = normalizeForMatch(header);
 
-          return !matchedHeaders.some((other) => {
+          return !uniqueMatchedHeaders.some((other) => {
             if (other === header) return false;
             const normalizedOther = normalizeForMatch(other);
             return normalizedOther.length > current.length && normalizedOther.includes(current);

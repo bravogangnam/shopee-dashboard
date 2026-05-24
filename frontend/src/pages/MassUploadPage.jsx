@@ -451,9 +451,9 @@ export default function MassUploadPage() {
       const normalizeForMatch = (value) => String(value || '')
         .trim()
         .toLowerCase()
-        .replace(/[\\s_-]+/g, ' ')
+        .replace(/[\s_-]+/g, ' ')
         .replace(/[^a-z0-9 ]+/g, '')
-        .replace(/\\s+/g, ' ');
+        .replace(/\s+/g, ' ');
 
       const getHeaderMatchTerms = (header) => {
         const normalized = normalizeForMatch(header);
@@ -505,7 +505,7 @@ export default function MassUploadPage() {
         const normalizedReason = ` ${normalizeForMatch(failReason)} `;
         const matchedHeaders = [];
 
-        const attributeNameMatches = Array.from(failReason.matchAll(/Attribute\\s+["“”']([^"“”']+)["“”']/gi))
+        const attributeNameMatches = Array.from(failReason.matchAll(/Attribute\s+["“”']([^"“”']+)["“”']/gi))
           .map((match) => String(match[1] || '').trim())
           .filter(Boolean);
 

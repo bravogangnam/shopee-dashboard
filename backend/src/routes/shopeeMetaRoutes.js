@@ -377,6 +377,39 @@ function extractCandidatesFromAttributeValueMapping(rows, { attributeName, code 
 }
 
 
+
+async function loadRequiredValuesForCategory({ tenantId, categoryId }) {
+  const candidates = [
+    path.join(REQUIRED_VALUES_ROOT, 'shared', categoryId, 'values.json'),
+    path.join(REQUIRED_VALUES_ROOT, `tenant_${tenantId}`, categoryId, 'values.json'),
+  ];
+
+  const merged = new Map();
+  let source = 'none';
+
+  for (const filePath of candidates) {
+    try {
+      const raw = await fs.readFile(filePath, 'utf8');
+      const data = JSON.parse(raw);
+      const items = normalizeRequiredValueItems(data?.items || []);
+
+      items.forEach((item) => {
+        if (!item.attributeName || !item.value) return;
+        merged.set(String(item.attributeName).trim().toLowerCase(), item);
+      });
+
+      source = data?.scope || (filePath.includes('/shared/') ? 'shared' : 'tenant');
+    } catch {
+      // optional
+    }
+  }
+
+  return {
+    source,
+    items: Array.from(merged.values()),
+  };
+}
+
 function normalizeRequiredValueItems(items) {
   if (!Array.isArray(items)) return [];
 
@@ -856,6 +889,15 @@ router.post('/mass-upload/generate-template-files', async (req, res) => {
     const mappingCandidates = Array.isArray(metadata?.analysis?.mappingCandidates)
       ? metadata.analysis.mappingCandidates
       : [];
+
+    const requiredValues = await loadRequiredValuesForCategory({ tenantId, categoryId });
+    const requiredValueByHeader = new Map(
+      (requiredValues.items || []).map((item) => [
+        String(item.attributeName || '').trim().toLowerCase(),
+        item,
+      ])
+    );
+
     const colByHeader = new Map();
     mappingCandidates.forEach((m) => {
       const key = String(m.templateHeader || '').trim().toLowerCase();
@@ -913,6 +955,14 @@ router.post('/mass-upload/generate-template-files', async (req, res) => {
       put(rowNo, col('Height'), row.height);
       put(rowNo, col('Days to ship'), row.daysToShip);
       put(rowNo, col('Brand'), row.brand);
+
+      if (row.first && requiredValueByHeader.size > 0) {
+        requiredValueByHeader.forEach((requiredValue, normalizedHeader) => {
+          const targetColumn = col(normalizedHeader);
+          if (!targetColumn) return;
+          put(rowNo, targetColumn, requiredValue.value);
+        });
+      }
 
       const missing = [];
       if (!row.categoryId) missing.push('category_id');

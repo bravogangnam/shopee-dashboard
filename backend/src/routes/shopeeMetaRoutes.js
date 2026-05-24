@@ -335,6 +335,48 @@ function extractCandidatesFromRows(rows, tokens) {
   return out.slice(0, 100);
 }
 
+function extractCandidatesFromAttributeValueMapping(rows, { attributeName, code }) {
+  if (!Array.isArray(rows) || !rows.length) return [];
+
+  const normalizedName = normalizeToken(attributeName);
+  const normalizedCode = normalizeToken(code);
+  const matchedCols = new Set();
+
+  const codeRow = rows[0] || [];
+  const attrRow = rows[3] || [];
+
+  codeRow.forEach((cell, idx) => {
+    if (normalizedCode && normalizeToken(cell) === normalizedCode) {
+      matchedCols.add(idx);
+    }
+  });
+
+  attrRow.forEach((cell, idx) => {
+    if (normalizedName && normalizeToken(cell) === normalizedName) {
+      matchedCols.add(idx);
+    }
+  });
+
+  const out = [];
+  const seen = new Set();
+
+  matchedCols.forEach((colIdx) => {
+    for (let r = 6; r < rows.length; r += 1) {
+      const value = String(rows[r]?.[colIdx] || '').trim();
+      if (!isCandidateValue(value)) continue;
+
+      const key = value.toLowerCase();
+      if (seen.has(key)) continue;
+
+      seen.add(key);
+      out.push(value);
+    }
+  });
+
+  return out.slice(0, 100);
+}
+
+
 function normalizeRequiredValueItems(items) {
   if (!Array.isArray(items)) return [];
 
@@ -594,7 +636,7 @@ router.get('/mass-upload/required-value-options', async (req, res) => {
     if (!attributeName) continue;
 
     const tokens = [attributeName, code].filter(Boolean);
-    const mappingValues = extractCandidatesFromRows(mappingRows, tokens);
+    const mappingValues = extractCandidatesFromAttributeValueMapping(mappingRows, { attributeName, code });
     const hiddenAttrValues = extractCandidatesFromRows(hiddenAttrRows, tokens);
     const hiddenCatValues = extractCandidatesFromRows(hiddenCatPropsRows, tokens);
 

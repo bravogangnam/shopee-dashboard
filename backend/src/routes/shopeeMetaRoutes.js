@@ -49,6 +49,7 @@ router.use(requireApprovedTenant);
 const getTenantId = (req) => req?.tenantId ?? req?.user?.tenant_id ?? req?.user?.tenantId ?? null;
 
 const TEMPLATE_ROOT = path.join(process.cwd(), 'storage', 'krsc-templates');
+const SHARED_TEMPLATE_ROOT = path.join(TEMPLATE_ROOT, 'shared');
 const MAX_TEMPLATE_SIZE_BYTES = 15 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const MAX_IMAGE_FILES = 200;
@@ -78,12 +79,11 @@ function sanitizeCategoryId(input) {
   return String(input || '').trim().replace(/[^a-zA-Z0-9_-]/g, '');
 }
 
-async function readTenantTemplates(tenantId) {
-  const tenantDir = path.join(TEMPLATE_ROOT, `tenant_${tenantId}`);
+async function readTemplateDirectory(dir, scope) {
   let entries = [];
 
   try {
-    entries = await fs.readdir(tenantDir, { withFileTypes: true });
+    entries = await fs.readdir(dir, { withFileTypes: true });
   } catch (err) {
     if (err?.code === 'ENOENT') return [];
     throw err;
@@ -91,10 +91,16 @@ async function readTenantTemplates(tenantId) {
 
   const templates = await Promise.all(
     entries.filter((entry) => entry.isDirectory()).map(async (entry) => {
-      const metadataPath = path.join(tenantDir, entry.name, 'metadata.json');
+      const metadataPath = path.join(dir, entry.name, 'metadata.json');
+
       try {
         const raw = await fs.readFile(metadataPath, 'utf8');
-        return JSON.parse(raw);
+        const metadata = JSON.parse(raw);
+        return {
+          ...metadata,
+          scope,
+          isShared: scope === 'shared',
+        };
       } catch {
         return null;
       }
@@ -104,6 +110,68 @@ async function readTenantTemplates(tenantId) {
   return templates.filter(Boolean);
 }
 
+async function readTenantTemplates(tenantId) {
+  const tenantDir = path.join(TEMPLATE_ROOT, `tenant_${tenantId}`);
+
+  const sharedTemplates = await readTemplateDirectory(SHARED_TEMPLATE_ROOT, 'shared');
+  const tenantTemplates = await readTemplateDirectory(tenantDir, 'tenant');
+
+  const byCategory = new Map();
+
+  // shared 먼저 넣고, tenant가 있으면 덮어쓰기
+  sharedTemplates.forEach((template) => {
+    if (template?.categoryId) byCategory.set(String(template.categoryId), template);
+  });
+
+  tenantTemplates.forEach((template) => {
+    if (template?.categoryId) byCategory.set(String(template.categoryId), template);
+  });
+
+  return Array.from(byCategory.values());
+}
+
+function getTemplatePathsForCategory({ tenantId, categoryId }) {
+  const tenantDir = path.join(TEMPLATE_ROOT, `tenant_${tenantId}`, categoryId);
+  const sharedDir = path.join(SHARED_TEMPLATE_ROOT, categoryId);
+
+  return {
+    tenant: {
+      templatePath: path.join(tenantDir, 'template.xlsx'),
+      metadataPath: path.join(tenantDir, 'metadata.json'),
+    },
+    shared: {
+      templatePath: path.join(sharedDir, 'template.xlsx'),
+      metadataPath: path.join(sharedDir, 'metadata.json'),
+    },
+  };
+}
+
+async function loadTemplateForCategory({ tenantId, categoryId }) {
+  const paths = getTemplatePathsForCategory({ tenantId, categoryId });
+
+  for (const scope of ['tenant', 'shared']) {
+    const candidate = paths[scope];
+
+    try {
+      const metadata = JSON.parse(await fs.readFile(candidate.metadataPath, 'utf8'));
+      await fs.access(candidate.templatePath);
+
+      return {
+        scope,
+        metadata: {
+          ...metadata,
+          scope,
+          isShared: scope === 'shared',
+        },
+        templatePath: candidate.templatePath,
+      };
+    } catch {
+      // try next
+    }
+  }
+
+  return null;
+}
 
 
 function safeImageExt(name) {
@@ -398,19 +466,14 @@ router.post('/mass-upload/generate-template-files', async (req, res) => {
   const warnings = [];
 
   for (const [categoryId, group] of groups.entries()) {
-    const templateDir = path.join(TEMPLATE_ROOT, `tenant_${tenantId}`, categoryId);
-    const templatePath = path.join(templateDir, 'template.xlsx');
-    const metadataPath = path.join(templateDir, 'metadata.json');
+    const loadedTemplate = await loadTemplateForCategory({ tenantId, categoryId });
 
-    let metadata;
-    try {
-      metadata = JSON.parse(await fs.readFile(metadataPath, 'utf8'));
-      await fs.access(templatePath);
-    } catch {
+    if (!loadedTemplate) {
       warnings.push({ categoryId, rowIndex: null, missing: ['template.xlsx'] });
       continue;
     }
 
+    const { metadata, templatePath } = loadedTemplate;
     const workbook = XLSX.read(await fs.readFile(templatePath), { type: 'buffer' });
     const sheet = workbook.Sheets.Template;
     if (!sheet) {

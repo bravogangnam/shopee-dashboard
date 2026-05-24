@@ -197,6 +197,9 @@ export default function MassUploadPage() {
   const [imageUploadFiles, setImageUploadFiles] = useState([]);
   const [imageUploadMessage, setImageUploadMessage] = useState('');
   const [uploadedImages, setUploadedImages] = useState([]);
+  const [resultAnalysisFile, setResultAnalysisFile] = useState(null);
+  const [resultAnalysisMessage, setResultAnalysisMessage] = useState('');
+  const [resultAnalysisRows, setResultAnalysisRows] = useState([]);
   const [templateFile, setTemplateFile] = useState(null);
   const [templateAnalysis, setTemplateAnalysis] = useState(null);
 
@@ -381,6 +384,146 @@ export default function MassUploadPage() {
     );
   }, [products, metaResults, categoryPreviewRows, templateRegistry]);
 
+
+
+  const analyzeShopeeResultFile = async () => {
+    if (!resultAnalysisFile) {
+      setResultAnalysisMessage('Shopee 결과 파일을 선택하세요.');
+      return;
+    }
+
+    setResultAnalysisMessage('Shopee 결과 파일 분석 중...');
+
+    try {
+      const buffer = await resultAnalysisFile.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const sheetName = workbook.SheetNames.includes('Template') ? 'Template' : workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+
+      if (!sheet) {
+        throw new Error('Template 시트를 찾지 못했습니다.');
+      }
+
+      const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      const headers = (matrix[2] || []).map((cell) => String(cell || '').trim());
+
+      const failReasonIndex = headers.findIndex((header) => header.toLowerCase() === 'fail reason');
+      const categoryIndex = headers.findIndex((header) => header.toLowerCase() === 'category');
+
+      if (failReasonIndex < 0) {
+        throw new Error('Fail Reason 컬럼을 찾지 못했습니다.');
+      }
+
+      const commonHeaders = new Set([
+        'category',
+        'product name',
+        'product description',
+        'parent sku',
+        'variation integration no.',
+        'variation name1',
+        'option for variation 1',
+        'image per variation',
+        'variation name2',
+        'option for variation 2',
+        'global sku price',
+        'stock',
+        'sku',
+        'cover image',
+        'item image 1',
+        'item image 2',
+        'item image 3',
+        'item image 4',
+        'item image 5',
+        'item image 6',
+        'item image 7',
+        'item image 8',
+        'size chart template',
+        'size chart image',
+        'weight',
+        'length',
+        'width',
+        'height',
+        'days to ship',
+        'brand',
+        'fail reason',
+      ]);
+
+      const candidateHeaders = headers
+        .filter(Boolean)
+        .filter((header) => !commonHeaders.has(header.toLowerCase()));
+
+      const byCategory = new Map();
+
+      for (let rowIndex = 6; rowIndex < matrix.length; rowIndex += 1) {
+        const row = matrix[rowIndex] || [];
+        const failReason = String(row[failReasonIndex] || '').trim();
+
+        if (!failReason) continue;
+
+        const categoryId = String(categoryIndex >= 0 ? row[categoryIndex] || '' : '').trim() || '미확정';
+
+        if (!byCategory.has(categoryId)) {
+          byCategory.set(categoryId, {
+            categoryId,
+            failedRows: [],
+            missingAttributes: new Set(),
+            failReasonSamples: [],
+          });
+        }
+
+        const bucket = byCategory.get(categoryId);
+        bucket.failedRows.push(rowIndex + 1);
+
+        if (bucket.failReasonSamples.length < 3) {
+          bucket.failReasonSamples.push(failReason);
+        }
+
+        const lowerReason = failReason.toLowerCase();
+
+        candidateHeaders.forEach((header) => {
+          const normalizedHeader = header.toLowerCase();
+
+          if (normalizedHeader.length >= 3 && lowerReason.includes(normalizedHeader)) {
+            bucket.missingAttributes.add(header);
+          }
+        });
+      }
+
+      const analyzed = Array.from(byCategory.values()).map((bucket) => {
+        const template = templateRegistry[bucket.categoryId] || null;
+        const templateColumns = Array.isArray(template?.analysis?.columns) ? template.analysis.columns : [];
+
+        const attributes = Array.from(bucket.missingAttributes).map((name) => {
+          const col = templateColumns.find((column) =>
+            String(column.header || '').trim().toLowerCase() === String(name || '').trim().toLowerCase()
+          );
+
+          return {
+            name,
+            columnIndex: col?.index || null,
+            requirement: col?.requirement || '',
+            rule: col?.rule || '',
+            description: col?.description || '',
+            code: col?.code || '',
+          };
+        });
+
+        return {
+          categoryId: bucket.categoryId,
+          failedRowCount: bucket.failedRows.length,
+          failedRows: bucket.failedRows,
+          attributes,
+          failReasonSamples: bucket.failReasonSamples,
+        };
+      });
+
+      setResultAnalysisRows(analyzed);
+      setResultAnalysisMessage(`분석 완료: ${analyzed.length}개 category_id`);
+    } catch (err) {
+      setResultAnalysisRows([]);
+      setResultAnalysisMessage(`분석 실패: ${err?.message || '알 수 없는 오류'}`);
+    }
+  };
 
   const uploadImages = async () => {
     if (!imageUploadFiles.length) {
@@ -1069,6 +1212,69 @@ export default function MassUploadPage() {
       </section>
 
 
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <h2>8. Shopee 업로드 결과 오류 분석</h2>
+        <p>
+          Shopee Seller Center에서 받은 Result 파일을 업로드하면 Fail Reason 컬럼을 분석해서
+          category_id별 누락 필수 속성 후보를 자동으로 추출합니다.
+        </p>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            type="file"
+            accept=".xlsx"
+            onChange={(event) => setResultAnalysisFile(event.target.files?.[0] || null)}
+          />
+          <button type="button" onClick={analyzeShopeeResultFile}>결과 파일 분석</button>
+        </div>
+
+        {resultAnalysisMessage ? <p style={{ marginTop: 8 }}>{resultAnalysisMessage}</p> : null}
+
+        {resultAnalysisRows.length > 0 ? (
+          <div style={{ marginTop: 12, overflowX: 'auto' }}>
+            <table style={{ width: '100%', minWidth: 1000, borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>category_id</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>실패 행 수</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>누락 속성 후보</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>Fail Reason 샘플</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resultAnalysisRows.map((row) => (
+                  <tr key={row.categoryId}>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.categoryId}</td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.failedRowCount}</td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>
+                      {row.attributes.length ? (
+                        row.attributes.map((attr) => (
+                          <div key={attr.name} style={{ marginBottom: 6 }}>
+                            <strong>{attr.name}</strong>
+                            {attr.columnIndex ? <span> / col {attr.columnIndex}</span> : null}
+                            {attr.requirement ? <span> / {attr.requirement}</span> : null}
+                            {attr.rule ? <div style={{ fontSize: 12, color: '#666', maxWidth: 500 }}>{attr.rule}</div> : null}
+                          </div>
+                        ))
+                      ) : (
+                        <span>자동 추출된 속성 없음</span>
+                      )}
+                    </td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>
+                      {row.failReasonSamples.map((reason, idx) => (
+                        <div key={`${row.categoryId}_${idx}`} style={{ marginBottom: 6, whiteSpace: 'pre-wrap', maxWidth: 500 }}>
+                          {reason}
+                        </div>
+                      ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </section>
 
     </div>
   );

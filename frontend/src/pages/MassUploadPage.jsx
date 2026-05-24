@@ -203,6 +203,7 @@ export default function MassUploadPage() {
   const [requiredValuesMessage, setRequiredValuesMessage] = useState('');
   const [requiredValuesRegistry, setRequiredValuesRegistry] = useState({});
   const [requiredValueDrafts, setRequiredValueDrafts] = useState({});
+  const [requiredValueOptionsRegistry, setRequiredValueOptionsRegistry] = useState({});
   const [templateFile, setTemplateFile] = useState(null);
   const [templateAnalysis, setTemplateAnalysis] = useState(null);
 
@@ -425,6 +426,40 @@ export default function MassUploadPage() {
         [attributeName]: value,
       },
     }));
+  };
+
+
+  const fetchRequiredValueOptionsForCategories = async (categoryIds) => {
+    const targets = Array.from(new Set((categoryIds || []).map((x) => String(x || '').trim()).filter(Boolean)));
+    if (!targets.length) return;
+
+    const entries = await Promise.all(targets.map(async (categoryId) => {
+      try {
+        const res = await fetch(`/api/shopee-meta/mass-upload/required-value-options?category_id=${encodeURIComponent(categoryId)}`, {
+          credentials: 'include',
+        });
+        const data = await res.json();
+
+        if (!data?.ok) {
+          return [categoryId, { options: [], error: data?.error || 'LOAD_FAILED' }];
+        }
+
+        return [categoryId, {
+          options: Array.isArray(data.options) ? data.options : [],
+          scope: data.scope || '',
+        }];
+      } catch (err) {
+        return [categoryId, { options: [], error: err?.message || 'LOAD_FAILED' }];
+      }
+    }));
+
+    setRequiredValueOptionsRegistry((prev) => {
+      const next = { ...prev };
+      entries.forEach(([categoryId, payload]) => {
+        next[categoryId] = payload;
+      });
+      return next;
+    });
   };
 
   const saveRequiredValuesForCategory = async (row) => {
@@ -673,6 +708,7 @@ export default function MassUploadPage() {
       });
 
       setResultAnalysisRows(analyzed);
+      await fetchRequiredValueOptionsForCategories(analyzed.map((row) => row.categoryId));
       setRequiredValueDrafts((prev) => {
         const next = { ...prev };
 
@@ -701,6 +737,15 @@ export default function MassUploadPage() {
       setResultAnalysisRows([]);
       setResultAnalysisMessage(`분석 실패: ${err?.message || '알 수 없는 오류'}`);
     }
+  };
+
+
+  const getOptionMetaForAttribute = (categoryId, attr) => {
+    const options = requiredValueOptionsRegistry?.[categoryId]?.options || [];
+    const found = options.find((option) =>
+      String(option.attributeName || '').trim().toLowerCase() === String(attr.name || '').trim().toLowerCase()
+    );
+    return found || null;
   };
 
   const uploadImages = async () => {
@@ -1490,16 +1535,76 @@ export default function MassUploadPage() {
                         <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{attr.columnIndex || '-'}</td>
                         <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{attr.requirement || '-'}</td>
                         <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>
-                          <input
-                            type="text"
-                            value={getRequiredValueDraft(row.categoryId, attr.name)}
-                            onChange={(event) => setRequiredValueDraft(row.categoryId, attr.name, event.target.value)}
-                            placeholder="공통 입력값"
-                            style={{ width: '100%', minWidth: 220 }}
-                          />
+                          {(() => {
+                            const optionMeta = getOptionMetaForAttribute(row.categoryId, attr) || {};
+                            const inputKind = optionMeta.inputKind || 'text';
+                            const values = Array.isArray(optionMeta.values) ? optionMeta.values : [];
+                            const draftValue = getRequiredValueDraft(row.categoryId, attr.name);
+                            const listId = `rv_${row.categoryId}_${String(attr.name || '').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+
+                            if (inputKind === 'select' && values.length > 0) {
+                              return (
+                                <>
+                                  <select
+                                    value={draftValue}
+                                    onChange={(event) => setRequiredValueDraft(row.categoryId, attr.name, event.target.value)}
+                                    style={{ width: '100%', minWidth: 220 }}
+                                  >
+                                    <option value="">선택하세요</option>
+                                    {values.map((value) => <option key={value} value={value}>{value}</option>)}
+                                  </select>
+                                  <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>kind: {inputKind} / 후보 {values.length}개</div>
+                                </>
+                              );
+                            }
+
+                            if (inputKind === 'suggest_or_text' && values.length > 0) {
+                              return (
+                                <>
+                                  <input
+                                    type="text"
+                                    list={listId}
+                                    value={draftValue}
+                                    onChange={(event) => setRequiredValueDraft(row.categoryId, attr.name, event.target.value)}
+                                    placeholder="추천값 선택 또는 직접 입력"
+                                    style={{ width: '100%', minWidth: 220 }}
+                                  />
+                                  <datalist id={listId}>
+                                    {values.map((value) => <option key={value} value={value} />)}
+                                  </datalist>
+                                  <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>kind: {inputKind} / 후보 {values.length}개</div>
+                                </>
+                              );
+                            }
+
+                            return (
+                              <>
+                                <input
+                                  type="text"
+                                  value={draftValue}
+                                  onChange={(event) => setRequiredValueDraft(row.categoryId, attr.name, event.target.value)}
+                                  placeholder={inputKind === 'date' ? 'YYYY/MM/DD' : '공통 입력값'}
+                                  style={{ width: '100%', minWidth: 220 }}
+                                />
+                                <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>kind: {inputKind} / 후보 {values.length}개</div>
+                              </>
+                            );
+                          })()}
                         </td>
                         <td style={{ borderBottom: '1px solid #eee', padding: 6, fontSize: 12, color: '#666', maxWidth: 520 }}>
-                          {attr.rule || '-'}
+                          {(() => {
+                            const optionMeta = getOptionMetaForAttribute(row.categoryId, attr) || {};
+                            const values = Array.isArray(optionMeta.values) ? optionMeta.values : [];
+
+                            return (
+                              <>
+                                <div>{attr.rule || '-'}</div>
+                                {values.length > 0 ? (
+                                  <div style={{ marginTop: 4 }}>추천값 미리보기: {values.slice(0, 8).join(', ')}</div>
+                                ) : null}
+                              </>
+                            );
+                          })()}
                         </td>
                       </tr>
                     ))}

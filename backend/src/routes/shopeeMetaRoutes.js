@@ -243,6 +243,74 @@ async function readRequiredValuesForTenant(tenantId) {
   return Array.from(byCategory.values());
 }
 
+
+function toFlatStringRows(matrix) {
+  if (!Array.isArray(matrix)) return [];
+  return matrix
+    .filter((row) => Array.isArray(row))
+    .map((row) => row.map((cell) => String(cell ?? '').trim()));
+}
+
+function normalizeToken(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function inferInputKind(rule) {
+  const text = String(rule || '').toLowerCase();
+  if (text.includes('date in format yyyy/mm/dd')) return 'date';
+  if (text.includes('select dropdown options')) return 'select';
+  if (text.includes('input suggest value or customize value')) return 'suggest_or_text';
+  if (text.includes('input customize value')) return 'text';
+  return 'text';
+}
+
+function isCandidateValue(text) {
+  if (!text) return false;
+  if (text.length > 120) return false;
+  if (/^\d{4}\/\d{2}\/\d{2}$/.test(text)) return true;
+  if (/[A-Za-z0-9]/.test(text) === false) return false;
+
+  const lowered = text.toLowerCase();
+  if (['attribute', 'description', 'requirement', 'mandatory', 'conditional mandatory', 'rule'].includes(lowered)) return false;
+
+  return true;
+}
+
+function extractCandidatesFromRows(rows, tokens) {
+  const tokenSet = new Set((tokens || []).map(normalizeToken).filter(Boolean));
+  if (!tokenSet.size) return [];
+
+  const out = [];
+  const seen = new Set();
+  const tokenList = Array.from(tokenSet);
+
+  rows.forEach((row) => {
+    const normalized = row.map(normalizeToken);
+    const matched = normalized.some((cell) =>
+      tokenSet.has(cell) || tokenList.some((token) => token && cell.includes(token))
+    );
+
+    if (!matched) return;
+
+    row.forEach((cellRaw, idx) => {
+      const cell = String(cellRaw || '').trim();
+      const norm = normalized[idx];
+
+      if (!cell || tokenSet.has(norm)) return;
+      if (tokenList.some((token) => token && norm.includes(token))) return;
+      if (!isCandidateValue(cell)) return;
+
+      const key = cell.toLowerCase();
+      if (seen.has(key)) return;
+
+      seen.add(key);
+      out.push(cell);
+    });
+  });
+
+  return out.slice(0, 100);
+}
+
 function normalizeRequiredValueItems(items) {
   if (!Array.isArray(items)) return [];
 
@@ -441,6 +509,112 @@ router.delete('/mass-upload/images/:jobId', async (req, res) => {
   return sendResult(res, { ok: true });
 });
 
+
+
+
+router.get('/mass-upload/required-value-options', async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return sendResult(res, { ok: false, error: 'TENANT_CONTEXT_REQUIRED', options: [] });
+
+  const categoryId = sanitizeCategoryId(req.query?.category_id);
+  if (!categoryId) return sendResult(res, { ok: false, error: 'CATEGORY_ID_REQUIRED', options: [] });
+
+  let XLSX;
+  try {
+    XLSX = require('xlsx');
+  } catch {
+    return sendResult(res, { ok: false, error: 'XLSX_BACKEND_UNAVAILABLE', options: [] });
+  }
+
+  const loadedTemplate = await loadTemplateForCategory({ tenantId, categoryId });
+  if (!loadedTemplate) {
+    return sendResult(res, { ok: false, error: 'TEMPLATE_NOT_FOUND', categoryId, options: [] });
+  }
+
+  const workbook = XLSX.read(await fs.readFile(loadedTemplate.templatePath), { type: 'buffer' });
+  const templateSheet = workbook.Sheets.Template;
+
+  if (!templateSheet) {
+    return sendResult(res, { ok: false, error: 'TEMPLATE_SHEET_NOT_FOUND', categoryId, options: [] });
+  }
+
+  const templateRows = XLSX.utils.sheet_to_json(templateSheet, { header: 1, defval: '' });
+  const pick = (r, c) => String(templateRows?.[r]?.[c] || '').trim();
+
+  const colCount = Math.max(
+    (templateRows?.[0] || []).length,
+    (templateRows?.[2] || []).length,
+    (templateRows?.[3] || []).length,
+    (templateRows?.[4] || []).length,
+    (templateRows?.[5] || []).length
+  );
+
+  const mappingRows = toFlatStringRows(
+    XLSX.utils.sheet_to_json(workbook.Sheets['Attribute value mapping'] || {}, { header: 1, defval: '' })
+  );
+  const hiddenAttrRows = toFlatStringRows(
+    XLSX.utils.sheet_to_json(workbook.Sheets.HiddenAttr || {}, { header: 1, defval: '' })
+  );
+  const hiddenCatPropsRows = toFlatStringRows(
+    XLSX.utils.sheet_to_json(workbook.Sheets.HiddenCatProps || {}, { header: 1, defval: '' })
+  );
+
+  const options = [];
+
+  for (let idx = 0; idx < colCount; idx += 1) {
+    const code = pick(0, idx);
+    const attributeName = pick(2, idx);
+    const requirement = pick(3, idx);
+    const rule = pick(5, idx);
+
+    if (!attributeName) continue;
+
+    const tokens = [attributeName, code, categoryId].filter(Boolean);
+    const mappingValues = extractCandidatesFromRows(mappingRows, tokens);
+    const hiddenAttrValues = extractCandidatesFromRows(hiddenAttrRows, tokens);
+    const hiddenCatValues = extractCandidatesFromRows(hiddenCatPropsRows, tokens);
+
+    const merged = [];
+    const seen = new Set();
+
+    [mappingValues, hiddenAttrValues, hiddenCatValues].forEach((list) => {
+      list.forEach((value) => {
+        const key = String(value || '').trim().toLowerCase();
+        if (!key || seen.has(key)) return;
+
+        seen.add(key);
+        merged.push(String(value).trim());
+      });
+    });
+
+    const source = mappingValues.length > 0
+      ? 'attribute_value_mapping'
+      : hiddenAttrValues.length > 0
+        ? 'hidden_attr'
+        : hiddenCatValues.length > 0
+          ? 'hidden_cat_props'
+          : 'none';
+
+    options.push({
+      attributeName,
+      normalizedName: normalizeToken(attributeName),
+      inputKind: inferInputKind(rule),
+      columnIndex: idx + 1,
+      code,
+      requirement,
+      rule,
+      values: merged.slice(0, 100),
+      source,
+    });
+  }
+
+  return sendResult(res, {
+    ok: true,
+    categoryId,
+    options,
+    scope: loadedTemplate.scope,
+  });
+});
 
 
 router.get('/mass-upload/required-values', async (req, res) => {

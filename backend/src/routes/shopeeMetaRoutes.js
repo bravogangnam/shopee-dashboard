@@ -266,12 +266,36 @@ function inferInputKind(rule) {
 
 function isCandidateValue(text) {
   if (!text) return false;
-  if (text.length > 120) return false;
-  if (/^\d{4}\/\d{2}\/\d{2}$/.test(text)) return true;
-  if (/[A-Za-z0-9]/.test(text) === false) return false;
 
-  const lowered = text.toLowerCase();
+  const value = String(text || '').trim();
+  if (!value) return false;
+  if (value.length > 120) return false;
+  if (/^\d{4}\/\d{2}\/\d{2}$/.test(value)) return true;
+  if (/[A-Za-z0-9]/.test(value) === false) return false;
+
+  const lowered = value.toLowerCase();
+
   if (['attribute', 'description', 'requirement', 'mandatory', 'conditional mandatory', 'rule'].includes(lowered)) return false;
+
+  // Internal template/code values are not selectable user values.
+  if (/^(ps_|et_)/i.test(value)) return false;
+  if (/^ps_product_global_attribute\.\d+$/i.test(value)) return false;
+  if (/^ps_tmpl_/i.test(value)) return false;
+
+  // Common template labels are not actual option values.
+  if ([
+    'attribute value mapping',
+    'attribute',
+    'attribute name',
+    'attribute id',
+    'category',
+    'category id',
+    'input type',
+    'input validation',
+    'valid value',
+    'suggest value',
+    'input sample',
+  ].includes(lowered)) return false;
 
   return true;
 }
@@ -569,7 +593,7 @@ router.get('/mass-upload/required-value-options', async (req, res) => {
 
     if (!attributeName) continue;
 
-    const tokens = [attributeName, code, categoryId].filter(Boolean);
+    const tokens = [attributeName, code].filter(Boolean);
     const mappingValues = extractCandidatesFromRows(mappingRows, tokens);
     const hiddenAttrValues = extractCandidatesFromRows(hiddenAttrRows, tokens);
     const hiddenCatValues = extractCandidatesFromRows(hiddenCatPropsRows, tokens);

@@ -55,6 +55,7 @@ const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const MAX_IMAGE_FILES = 200;
 const GENERATED_ROOT = path.join(process.cwd(), 'storage', 'krsc-generated');
 const IMAGE_ROOT = path.join(process.cwd(), 'storage', 'mass-upload-images');
+const REQUIRED_VALUES_ROOT = path.join(process.cwd(), 'storage', 'krsc-required-values');
 
 function safeName(value) {
   return String(value || '').replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -188,6 +189,74 @@ function makeImageJobId() {
 
 function imageContentType(fileName) {
   return /\.png$/i.test(String(fileName || '')) ? 'image/png' : 'image/jpeg';
+}
+
+
+async function readRequiredValuesDirectory(dir, scope) {
+  let entries = [];
+
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    if (err?.code === 'ENOENT') return [];
+    throw err;
+  }
+
+  const rows = await Promise.all(
+    entries.filter((entry) => entry.isDirectory()).map(async (entry) => {
+      const valuesPath = path.join(dir, entry.name, 'values.json');
+
+      try {
+        const raw = await fs.readFile(valuesPath, 'utf8');
+        const data = JSON.parse(raw);
+        return {
+          ...data,
+          scope,
+          isShared: scope === 'shared',
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return rows.filter(Boolean);
+}
+
+async function readRequiredValuesForTenant(tenantId) {
+  const sharedDir = path.join(REQUIRED_VALUES_ROOT, 'shared');
+  const tenantDir = path.join(REQUIRED_VALUES_ROOT, `tenant_${tenantId}`);
+
+  const sharedRows = await readRequiredValuesDirectory(sharedDir, 'shared');
+  const tenantRows = await readRequiredValuesDirectory(tenantDir, 'tenant');
+
+  const byCategory = new Map();
+
+  sharedRows.forEach((row) => {
+    if (row?.categoryId) byCategory.set(String(row.categoryId), row);
+  });
+
+  tenantRows.forEach((row) => {
+    if (row?.categoryId) byCategory.set(String(row.categoryId), row);
+  });
+
+  return Array.from(byCategory.values());
+}
+
+function normalizeRequiredValueItems(items) {
+  if (!Array.isArray(items)) return [];
+
+  return items
+    .map((item) => ({
+      attributeName: String(item?.attributeName || '').trim(),
+      value: String(item?.value || '').trim(),
+      columnIndex: item?.columnIndex ?? null,
+      requirement: String(item?.requirement || '').trim(),
+      rule: String(item?.rule || '').trim(),
+      code: String(item?.code || '').trim(),
+      source: String(item?.source || 'manual').trim(),
+    }))
+    .filter((item) => item.attributeName);
 }
 
 function sendResult(res, result) {
@@ -368,6 +437,69 @@ router.delete('/mass-upload/images/:jobId', async (req, res) => {
   if (!jobId) return sendResult(res, { ok: false, error: 'JOB_ID_REQUIRED' });
 
   await fs.rm(path.join(IMAGE_ROOT, `tenant_${tenantId}`, jobId), { recursive: true, force: true });
+
+  return sendResult(res, { ok: true });
+});
+
+
+
+router.get('/mass-upload/required-values', async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return sendResult(res, { ok: false, error: 'TENANT_CONTEXT_REQUIRED', values: [] });
+
+  const values = await readRequiredValuesForTenant(tenantId);
+  return sendResult(res, { ok: true, values });
+});
+
+router.post('/mass-upload/required-values', async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return sendResult(res, { ok: false, error: 'TENANT_CONTEXT_REQUIRED' });
+
+  const categoryId = sanitizeCategoryId(req.body?.categoryId);
+  const categoryPath = String(req.body?.categoryPath || '').trim();
+  const scopeInput = String(req.body?.scope || 'shared').trim().toLowerCase();
+  const scope = scopeInput === 'tenant' ? 'tenant' : 'shared';
+  const items = normalizeRequiredValueItems(req.body?.items);
+
+  if (!categoryId) return sendResult(res, { ok: false, error: 'CATEGORY_ID_REQUIRED' });
+  if (!items.length) return sendResult(res, { ok: false, error: 'REQUIRED_VALUE_ITEMS_REQUIRED' });
+
+  const baseDir = scope === 'tenant'
+    ? path.join(REQUIRED_VALUES_ROOT, `tenant_${tenantId}`, categoryId)
+    : path.join(REQUIRED_VALUES_ROOT, 'shared', categoryId);
+
+  await fs.mkdir(baseDir, { recursive: true });
+
+  const payload = {
+    categoryId,
+    categoryPath,
+    scope,
+    isShared: scope === 'shared',
+    tenantId: Number(tenantId) || tenantId,
+    items,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await fs.writeFile(path.join(baseDir, 'values.json'), `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+
+  return sendResult(res, { ok: true, values: payload });
+});
+
+router.delete('/mass-upload/required-values/:categoryId', async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return sendResult(res, { ok: false, error: 'TENANT_CONTEXT_REQUIRED' });
+
+  const categoryId = sanitizeCategoryId(req.params?.categoryId);
+  const scopeInput = String(req.query?.scope || 'shared').trim().toLowerCase();
+  const scope = scopeInput === 'tenant' ? 'tenant' : 'shared';
+
+  if (!categoryId) return sendResult(res, { ok: false, error: 'CATEGORY_ID_REQUIRED' });
+
+  const targetDir = scope === 'tenant'
+    ? path.join(REQUIRED_VALUES_ROOT, `tenant_${tenantId}`, categoryId)
+    : path.join(REQUIRED_VALUES_ROOT, 'shared', categoryId);
+
+  await fs.rm(targetDir, { recursive: true, force: true });
 
   return sendResult(res, { ok: true });
 });

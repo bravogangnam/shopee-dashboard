@@ -200,6 +200,9 @@ export default function MassUploadPage() {
   const [resultAnalysisFile, setResultAnalysisFile] = useState(null);
   const [resultAnalysisMessage, setResultAnalysisMessage] = useState('');
   const [resultAnalysisRows, setResultAnalysisRows] = useState([]);
+  const [requiredValuesMessage, setRequiredValuesMessage] = useState('');
+  const [requiredValuesRegistry, setRequiredValuesRegistry] = useState({});
+  const [requiredValueDrafts, setRequiredValueDrafts] = useState({});
   const [templateFile, setTemplateFile] = useState(null);
   const [templateAnalysis, setTemplateAnalysis] = useState(null);
 
@@ -385,6 +388,95 @@ export default function MassUploadPage() {
   }, [products, metaResults, categoryPreviewRows, templateRegistry]);
 
 
+
+
+  const refreshRequiredValues = async () => {
+    try {
+      const res = await fetch('/api/shopee-meta/mass-upload/required-values', {
+        credentials: 'include',
+      });
+      const data = await res.json();
+
+      if (!data?.ok) {
+        throw new Error(data?.message || data?.error || 'Required Values 조회 실패');
+      }
+
+      const next = {};
+      (Array.isArray(data.values) ? data.values : []).forEach((row) => {
+        const key = String(row?.categoryId || '').trim();
+        if (key) next[key] = row;
+      });
+
+      setRequiredValuesRegistry(next);
+    } catch (err) {
+      setRequiredValuesMessage(`Required Values 조회 실패: ${err?.message || '알 수 없는 오류'}`);
+    }
+  };
+
+  const getRequiredValueDraft = (categoryId, attributeName) => {
+    return requiredValueDrafts?.[categoryId]?.[attributeName] ?? '';
+  };
+
+  const setRequiredValueDraft = (categoryId, attributeName, value) => {
+    setRequiredValueDrafts((prev) => ({
+      ...prev,
+      [categoryId]: {
+        ...(prev[categoryId] || {}),
+        [attributeName]: value,
+      },
+    }));
+  };
+
+  const saveRequiredValuesForCategory = async (row) => {
+    const categoryId = String(row?.categoryId || '').trim();
+    if (!categoryId || !Array.isArray(row?.attributes) || row.attributes.length === 0) {
+      setRequiredValuesMessage('저장할 Required Values가 없습니다.');
+      return;
+    }
+
+    const items = row.attributes.map((attr) => ({
+      attributeName: attr.name,
+      value: getRequiredValueDraft(categoryId, attr.name),
+      columnIndex: attr.columnIndex || null,
+      requirement: attr.requirement || '',
+      rule: attr.rule || '',
+      code: attr.code || '',
+      source: 'manual',
+    }));
+
+    const nonEmptyItems = items.filter((item) => String(item.value || '').trim());
+
+    if (!nonEmptyItems.length) {
+      setRequiredValuesMessage('값을 하나 이상 입력해야 저장할 수 있습니다.');
+      return;
+    }
+
+    try {
+      setRequiredValuesMessage(`category_id ${categoryId} Required Values 저장 중...`);
+
+      const res = await fetch('/api/shopee-meta/mass-upload/required-values', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          categoryId,
+          categoryPath: categoryRegistryRows.find((x) => String(x.categoryId) === categoryId)?.categoryPath || '',
+          scope: 'shared',
+          items: nonEmptyItems,
+        }),
+      });
+
+      const data = await res.json();
+      if (!data?.ok) {
+        throw new Error(data?.message || data?.error || '저장 실패');
+      }
+
+      await refreshRequiredValues();
+      setRequiredValuesMessage(`category_id ${categoryId} shared Required Values 저장 완료`);
+    } catch (err) {
+      setRequiredValuesMessage(`Required Values 저장 실패: ${err?.message || '알 수 없는 오류'}`);
+    }
+  };
 
   const analyzeShopeeResultFile = async () => {
     if (!resultAnalysisFile) {
@@ -581,6 +673,29 @@ export default function MassUploadPage() {
       });
 
       setResultAnalysisRows(analyzed);
+      setRequiredValueDrafts((prev) => {
+        const next = { ...prev };
+
+        analyzed.forEach((row) => {
+          const categoryId = String(row.categoryId || '').trim();
+          if (!categoryId) return;
+
+          const savedItems = requiredValuesRegistry[categoryId]?.items || [];
+          const savedMap = new Map(savedItems.map((item) => [String(item.attributeName || '').trim(), String(item.value || '')]));
+
+          next[categoryId] = {
+            ...(next[categoryId] || {}),
+          };
+
+          (row.attributes || []).forEach((attr) => {
+            if (next[categoryId][attr.name] == null) {
+              next[categoryId][attr.name] = savedMap.get(attr.name) || '';
+            }
+          });
+        });
+
+        return next;
+      });
       setResultAnalysisMessage(`분석 완료: ${analyzed.length}개 category_id`);
     } catch (err) {
       setResultAnalysisRows([]);
@@ -1337,6 +1452,67 @@ export default function MassUploadPage() {
             </table>
           </div>
         ) : null}
+      </section>
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <h2>9. Required Values 입력/저장</h2>
+        <p>
+          8번 오류 분석에서 추출된 category_id별 누락 속성에 공통값을 입력하고 shared Required Values로 저장합니다.
+          저장된 값은 다음 단계에서 공식 템플릿 생성 시 자동 입력됩니다.
+        </p>
+
+        {requiredValuesMessage ? <p style={{ marginTop: 8 }}>{requiredValuesMessage}</p> : null}
+
+        {resultAnalysisRows.length === 0 ? (
+          <p style={{ marginTop: 8 }}>먼저 8번에서 Shopee Result 파일을 분석하세요.</p>
+        ) : (
+          resultAnalysisRows.map((row) => {
+            const saved = requiredValuesRegistry[row.categoryId] || null;
+            return (
+              <div key={`required_values_${row.categoryId}`} style={{ marginTop: 16, border: '1px solid #eee', borderRadius: 8, padding: 12 }}>
+                <div><strong>category_id:</strong> {row.categoryId}</div>
+                <div><strong>저장 상태:</strong> {saved?.items?.length ? `shared 저장됨 (${saved.items.length}개)` : '저장된 값 없음'}</div>
+
+                <table style={{ width: '100%', minWidth: 1100, borderCollapse: 'collapse', marginTop: 10 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>속성명</th>
+                      <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>컬럼</th>
+                      <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>Requirement</th>
+                      <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>입력값</th>
+                      <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>입력 규칙</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(row.attributes || []).map((attr) => (
+                      <tr key={`${row.categoryId}_${attr.name}`}>
+                        <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{attr.name}</td>
+                        <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{attr.columnIndex || '-'}</td>
+                        <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{attr.requirement || '-'}</td>
+                        <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>
+                          <input
+                            type="text"
+                            value={getRequiredValueDraft(row.categoryId, attr.name)}
+                            onChange={(event) => setRequiredValueDraft(row.categoryId, attr.name, event.target.value)}
+                            placeholder="공통 입력값"
+                            style={{ width: '100%', minWidth: 220 }}
+                          />
+                        </td>
+                        <td style={{ borderBottom: '1px solid #eee', padding: 6, fontSize: 12, color: '#666', maxWidth: 520 }}>
+                          {attr.rule || '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <button type="button" style={{ marginTop: 10 }} onClick={() => saveRequiredValuesForCategory(row)}>
+                  shared Required Values 저장
+                </button>
+              </div>
+            );
+          })
+        )}
       </section>
 
     </div>

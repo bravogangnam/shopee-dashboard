@@ -217,6 +217,7 @@ export default function MassUploadPage() {
   const [categorySearchQueryByProduct, setCategorySearchQueryByProduct] = useState({});
   const [categorySearchResultsByProduct, setCategorySearchResultsByProduct] = useState({});
   const [categorySearchLoadingByProduct, setCategorySearchLoadingByProduct] = useState({});
+  const [autoCategoryCandidates, setAutoCategoryCandidates] = useState({});
   const [templateFile, setTemplateFile] = useState(null);
   const [templateAnalysis, setTemplateAnalysis] = useState(null);
 
@@ -586,6 +587,74 @@ export default function MassUploadPage() {
 
     setMessage(`카테고리 선택 적용 완료: ${productKey} -> ${categoryId}`);
   };
+
+
+  const refreshAutoCategoryCandidates = async (product) => {
+    const productKey = String(product?.productKey || '').trim();
+    if (!productKey) return;
+
+    const queries = [
+      product?.productName,
+      product?.category?.usedItemName,
+      product?.brand?.brandName,
+      String(product?.productName || '').split(' ').slice(0, 3).join(' '),
+    ].map((x) => String(x || '').trim()).filter(Boolean);
+
+    const merged = new Map();
+
+    (Array.isArray(product?.categoryCandidates) ? product.categoryCandidates : []).forEach((candidate) => {
+      const id = String(candidate?.categoryId || '').trim();
+      if (!id) return;
+
+      merged.set(id, {
+        categoryId: id,
+        categoryPath: candidate?.categoryPath || id,
+        source: candidate?.source || 'category_recommend_candidate',
+      });
+    });
+
+    if (product?.category?.categoryId) {
+      const id = String(product.category.categoryId || '').trim();
+      if (id && !merged.has(id)) {
+        merged.set(id, {
+          categoryId: id,
+          categoryPath: product.category.categoryPath || product.category.categoryName || id,
+          source: 'category_recommend_top1',
+        });
+      }
+    }
+
+    for (const q of queries.slice(0, 3)) {
+      try {
+        const res = await fetch(`/api/shopee-meta/mass-upload/category-search?q=${encodeURIComponent(q)}`, {
+          credentials: 'include',
+        });
+        const data = await res.json();
+        const rows = Array.isArray(data?.categories) ? data.categories : [];
+
+        rows.forEach((row) => {
+          const id = String(row?.categoryId || '').trim();
+          if (!id || merged.has(id)) return;
+          merged.set(id, row);
+        });
+      } catch {
+        // ignore candidate fetch failures
+      }
+    }
+
+    setAutoCategoryCandidates((prev) => ({
+      ...prev,
+      [productKey]: Array.from(merged.values()).slice(0, 10),
+    }));
+  };
+
+  useEffect(() => {
+    (metaResults || []).forEach((product) => {
+      const key = String(product?.productKey || '').trim();
+      if (!key || autoCategoryCandidates[key]) return;
+      refreshAutoCategoryCandidates(product);
+    });
+  }, [metaResults]);
 
   const saveCategoryOverride = (productKey) => {
     const draft = getOverrideDraft(productKey);
@@ -1454,6 +1523,25 @@ export default function MassUploadPage() {
                         <div>category source: {effective.category?.source || '-'} / {effective.category?.confidence || '-'}</div>
                         <div>used item name: {p.category?.usedItemName || '-'}</div>
                         <div>brand: {p.brand?.brandName || '-'} / brand_id: {p.brand?.brandId ?? '-'}</div>
+                        <div style={{ marginTop: 8, padding: 8, border: '1px solid #e5e5e5', borderRadius: 6 }}>
+                          <div style={{ fontWeight: 600, marginBottom: 6 }}>카테고리 추천 후보</div>
+                          {((autoCategoryCandidates[productKey] || []).length > 0) ? (
+                            <div style={{ display: 'grid', gap: 6 }}>
+                              {(autoCategoryCandidates[productKey] || []).map((candidate) => (
+                                <div key={`${productKey}_${candidate.categoryId}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, border: '1px solid #eee', borderRadius: 4, padding: 6 }}>
+                                  <div style={{ fontSize: 12 }}>
+                                    <div><strong>{candidate.categoryId}</strong> / {candidate.categoryPath || '-'}</div>
+                                    <div style={{ color: '#666' }}>{categorySourceLabel(candidate.source)}</div>
+                                  </div>
+                                  <button type="button" onClick={() => applyCategorySelection(productKey, candidate)}>선택</button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: 12, color: '#666' }}>자동 후보 없음. 직접 검색 또는 고급 직접 입력을 사용하세요.</div>
+                          )}
+                          <button type="button" style={{ marginTop: 8 }} onClick={() => refreshAutoCategoryCandidates(p)}>후보 새로고침</button>
+                        </div>
                         <div style={{ marginTop: 8, padding: 8, border: '1px solid #ddd', borderRadius: 6, background: '#fafafa' }}>
                           <div style={{ fontWeight: 600, marginBottom: 6 }}>카테고리 수정 (검색/선택)</div>
                           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>

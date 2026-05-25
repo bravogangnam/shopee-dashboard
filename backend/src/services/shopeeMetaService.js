@@ -363,10 +363,22 @@ async function fetchCategoryRecommendTop1({ tenantId, itemName, brandName }) {
         message: resp?.data?.message || resp?.message || null,
       });
 
-      const categoryId = categoryIds.length > 0 ? String(categoryIds[0]) : null;
+      const uniqueCategoryIds = Array.from(new Set(categoryIds.map((x) => String(x)).filter(Boolean)));
+      const recommendCandidates = [];
+
+      for (const cid of uniqueCategoryIds.slice(0, 5)) {
+        const candidatePath = await fetchCategoryDisplayPath({ tenantId, categoryId: cid });
+        recommendCandidates.push({
+          categoryId: cid,
+          categoryPath: candidatePath || cid,
+          source: 'category_recommend_candidate',
+        });
+      }
+
+      const categoryId = uniqueCategoryIds.length > 0 ? String(uniqueCategoryIds[0]) : null;
       if (!categoryId) continue;
 
-      const categoryDisplayPath = await fetchCategoryDisplayPath({ tenantId, categoryId });
+      const categoryDisplayPath = recommendCandidates[0]?.categoryPath || await fetchCategoryDisplayPath({ tenantId, categoryId });
 
       return {
         ok: true,
@@ -378,6 +390,7 @@ async function fetchCategoryRecommendTop1({ tenantId, itemName, brandName }) {
           confidence: 'auto_top1',
           usedItemName: candidate,
         },
+        candidates: recommendCandidates,
       };
     } catch {
       // try next candidate
@@ -739,6 +752,7 @@ async function krscPrepare({ tenantId, products = [] }) {
       productName,
       optionCount,
       category,
+      categoryCandidates: Array.isArray(categoryResult?.candidates) ? categoryResult.candidates : [],
       brand,
       requiredAttributes,
       values: {

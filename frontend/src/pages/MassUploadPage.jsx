@@ -180,6 +180,13 @@ function validateProduct(product) {
 
 const badge = (s) => s === 'ready' ? { text: '준비 완료', style: { background: '#e8f7ed', color: '#1b7f3b' } } : s === 'review' ? { text: '검수 필요', style: { background: '#fff7e8', color: '#a46300' } } : { text: '오류', style: { background: '#fdecec', color: '#b42318' } };
 
+const categorySourceLabel = (source) => {
+  if (source === 'global_catalog_shared') return 'shared catalog';
+  if (source === 'global_catalog_tenant') return 'tenant catalog';
+  if (source === 'template_registry_fallback') return 'template fallback';
+  return source || '-';
+};
+
 export default function MassUploadPage() {
   const CATEGORY_OVERRIDE_KEY = 'krsc_category_overrides_v1';
   const [products, setProducts] = useState([]);
@@ -207,6 +214,9 @@ export default function MassUploadPage() {
   const [requiredValueOptionsRegistry, setRequiredValueOptionsRegistry] = useState({});
   const [categoryOverrides, setCategoryOverrides] = useState({});
   const [categoryOverrideDrafts, setCategoryOverrideDrafts] = useState({});
+  const [categorySearchQueryByProduct, setCategorySearchQueryByProduct] = useState({});
+  const [categorySearchResultsByProduct, setCategorySearchResultsByProduct] = useState({});
+  const [categorySearchLoadingByProduct, setCategorySearchLoadingByProduct] = useState({});
   const [templateFile, setTemplateFile] = useState(null);
   const [templateAnalysis, setTemplateAnalysis] = useState(null);
 
@@ -509,6 +519,72 @@ export default function MassUploadPage() {
         [field]: value,
       },
     }));
+  };
+
+
+  const setCategorySearchQuery = (productKey, value) => {
+    setCategorySearchQueryByProduct((prev) => ({
+      ...prev,
+      [productKey]: value,
+    }));
+  };
+
+  const searchCategoriesForProduct = async (productKey) => {
+    const query = String(categorySearchQueryByProduct?.[productKey] || '').trim();
+
+    if (!query) {
+      setCategorySearchResultsByProduct((prev) => ({ ...prev, [productKey]: [] }));
+      return;
+    }
+
+    setCategorySearchLoadingByProduct((prev) => ({ ...prev, [productKey]: true }));
+
+    try {
+      const res = await fetch(`/api/shopee-meta/mass-upload/category-search?q=${encodeURIComponent(query)}`, {
+        credentials: 'include',
+      });
+      const data = await res.json();
+
+      if (!data?.ok) {
+        throw new Error(data?.error || 'CATEGORY_SEARCH_FAILED');
+      }
+
+      setCategorySearchResultsByProduct((prev) => ({
+        ...prev,
+        [productKey]: Array.isArray(data.categories) ? data.categories : [],
+      }));
+    } catch (err) {
+      setCategorySearchResultsByProduct((prev) => ({ ...prev, [productKey]: [] }));
+      setMessage(`카테고리 검색 실패: ${err?.message || '알 수 없는 오류'}`);
+    } finally {
+      setCategorySearchLoadingByProduct((prev) => ({ ...prev, [productKey]: false }));
+    }
+  };
+
+  const applyCategorySelection = (productKey, category) => {
+    const categoryId = String(category?.categoryId || '').trim();
+    if (!categoryId) return;
+
+    const categoryPath = String(category?.categoryPath || '').trim();
+
+    const next = {
+      ...categoryOverrides,
+      [productKey]: {
+        categoryId,
+        categoryPath,
+        source: 'manual_selected',
+      },
+    };
+
+    setCategoryOverrides(next);
+    localStorage.setItem(CATEGORY_OVERRIDE_KEY, JSON.stringify(next));
+
+    setCategoryOverrideDrafts((prev) => ({
+      ...prev,
+      [productKey]: { categoryId, categoryPath },
+    }));
+
+    setMessage(`카테고리 선택 적용 완료: ${productKey} -> ${categoryId}`);
   };
 
   const saveCategoryOverride = (productKey) => {
@@ -1379,25 +1455,56 @@ export default function MassUploadPage() {
                         <div>used item name: {p.category?.usedItemName || '-'}</div>
                         <div>brand: {p.brand?.brandName || '-'} / brand_id: {p.brand?.brandId ?? '-'}</div>
                         <div style={{ marginTop: 8, padding: 8, border: '1px solid #ddd', borderRadius: 6, background: '#fafafa' }}>
-                          <div style={{ fontWeight: 600, marginBottom: 6 }}>카테고리 수정</div>
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <div style={{ fontWeight: 600, marginBottom: 6 }}>카테고리 수정 (검색/선택)</div>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                             <input
                               type="text"
-                              value={draft.categoryId}
-                              onChange={(event) => setOverrideDraft(productKey, 'categoryId', event.target.value)}
-                              placeholder="override category_id"
-                              style={{ minWidth: 220 }}
+                              value={categorySearchQueryByProduct?.[productKey] || ''}
+                              onChange={(event) => setCategorySearchQuery(productKey, event.target.value)}
+                              placeholder="예: blood glucose, dental floss, photo paper"
+                              style={{ minWidth: 360, flex: 1 }}
                             />
-                            <input
-                              type="text"
-                              value={draft.categoryPath}
-                              onChange={(event) => setOverrideDraft(productKey, 'categoryPath', event.target.value)}
-                              placeholder="override categoryPath 선택"
-                              style={{ minWidth: 420, flex: 1 }}
-                            />
-                            <button type="button" onClick={() => saveCategoryOverride(productKey)}>저장</button>
+                            <button type="button" onClick={() => searchCategoriesForProduct(productKey)}>검색</button>
                             <button type="button" onClick={() => resetCategoryOverride(productKey)}>초기화</button>
                           </div>
+
+                          {categorySearchLoadingByProduct?.[productKey] ? <div style={{ marginTop: 6, fontSize: 12 }}>검색 중...</div> : null}
+
+                          {(categorySearchResultsByProduct?.[productKey] || []).length > 0 ? (
+                            <div style={{ marginTop: 8, maxHeight: 180, overflow: 'auto', border: '1px solid #eee', borderRadius: 6, background: '#fff' }}>
+                              {(categorySearchResultsByProduct?.[productKey] || []).map((category) => (
+                                <div key={`${productKey}_${category.categoryId}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: 8, borderBottom: '1px solid #f2f2f2' }}>
+                                  <div style={{ fontSize: 12 }}>
+                                    <div><strong>{category.categoryId}</strong></div>
+                                    <div>{category.categoryPath || '-'}</div>
+                                    <div style={{ marginTop: 2, color: '#666' }}>{categorySourceLabel(category.source)}</div>
+                                  </div>
+                                  <button type="button" onClick={() => applyCategorySelection(productKey, category)}>선택</button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+
+                          <details style={{ marginTop: 8 }}>
+                            <summary>고급 직접 입력</summary>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                              <input
+                                type="text"
+                                value={draft.categoryId}
+                                onChange={(event) => setOverrideDraft(productKey, 'categoryId', event.target.value)}
+                                placeholder="override category_id"
+                                style={{ minWidth: 220 }}
+                              />
+                              <input
+                                type="text"
+                                value={draft.categoryPath}
+                                onChange={(event) => setOverrideDraft(productKey, 'categoryPath', event.target.value)}
+                                placeholder="override categoryPath 선택"
+                                style={{ minWidth: 420, flex: 1 }}
+                              />
+                              <button type="button" onClick={() => saveCategoryOverride(productKey)}>직접입력 저장</button>
+                            </div>
+                          </details>
                         </div>
                       </>
                     );

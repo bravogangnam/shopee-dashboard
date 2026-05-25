@@ -56,6 +56,7 @@ const MAX_IMAGE_FILES = 200;
 const GENERATED_ROOT = path.join(process.cwd(), 'storage', 'krsc-generated');
 const IMAGE_ROOT = path.join(process.cwd(), 'storage', 'mass-upload-images');
 const REQUIRED_VALUES_ROOT = path.join(process.cwd(), 'storage', 'krsc-required-values');
+const CATEGORY_CATALOG_ROOT = path.join(process.cwd(), 'storage', 'krsc-category-catalog');
 
 function safeName(value) {
   return String(value || '').replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -426,6 +427,141 @@ function normalizeRequiredValueItems(items) {
     .filter((item) => item.attributeName);
 }
 
+
+function normalizeCategorySearchText(value) {
+  return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function scoreCategoryCatalogMatch(query, category) {
+  const q = normalizeCategorySearchText(query);
+  if (!q) return 0;
+
+  const categoryId = normalizeCategorySearchText(category?.categoryId);
+  const categoryPath = normalizeCategorySearchText(category?.categoryPath || category?.categoryName || '');
+  const haystack = `${categoryId} ${categoryPath}`.trim();
+
+  if (!haystack) return 0;
+  if (haystack === q) return 1000;
+  if (categoryId === q) return 950;
+  if (categoryPath.includes(q)) return 800;
+
+  const terms = q.split(' ').filter(Boolean);
+  if (!terms.length) return 0;
+
+  let matched = 0;
+  terms.forEach((term) => {
+    if (haystack.includes(term)) matched += 1;
+  });
+
+  if (!matched) return 0;
+  return 100 + matched * 20;
+}
+
+async function readCategoryCatalog(scope, tenantId) {
+  const catalogPath = scope === 'tenant'
+    ? path.join(CATEGORY_CATALOG_ROOT, `tenant_${tenantId}`, 'catalog.json')
+    : path.join(CATEGORY_CATALOG_ROOT, 'shared', 'catalog.json');
+
+  try {
+    const raw = await fs.readFile(catalogPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    if (err?.code === 'ENOENT') return [];
+    throw err;
+  }
+}
+
+async function writeCategoryCatalog(scope, tenantId, rows) {
+  const dir = scope === 'tenant'
+    ? path.join(CATEGORY_CATALOG_ROOT, `tenant_${tenantId}`)
+    : path.join(CATEGORY_CATALOG_ROOT, 'shared');
+
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, 'catalog.json'), `${JSON.stringify(rows, null, 2)}\n`, 'utf8');
+}
+
+async function upsertCategoryCatalog({ tenantId, scope, categoryId, categoryPath, templateRef }) {
+  const key = String(categoryId || '').trim();
+  if (!key) return;
+
+  const now = new Date().toISOString();
+  const rows = await readCategoryCatalog(scope, tenantId);
+  const byId = new Map(rows.map((row) => [String(row?.categoryId || '').trim(), row]));
+
+  const existing = byId.get(key) || null;
+  const refs = Array.isArray(existing?.templateRefs) ? [...existing.templateRefs] : [];
+
+  if (templateRef?.fileName) {
+    const refKey = `${String(templateRef.categoryId || '')}|${String(templateRef.fileName || '')}|${String(templateRef.uploadedAt || '')}`;
+    const exists = refs.some((ref) =>
+      `${String(ref?.categoryId || '')}|${String(ref?.fileName || '')}|${String(ref?.uploadedAt || '')}` === refKey
+    );
+    if (!exists) refs.push(templateRef);
+  }
+
+  byId.set(key, {
+    categoryId: key,
+    categoryPath: String(categoryPath || '').trim() || existing?.categoryPath || key,
+    source: 'template_upload',
+    scope,
+    firstSeenAt: existing?.firstSeenAt || now,
+    lastSeenAt: now,
+    templateRefs: refs.slice(-50),
+  });
+
+  await writeCategoryCatalog(scope, tenantId, Array.from(byId.values()));
+}
+
+async function searchCategoryCatalog({ tenantId, q }) {
+  const query = String(q || '').trim();
+  if (!query) return [];
+
+  const sharedRows = await readCategoryCatalog('shared', tenantId);
+  const tenantRows = await readCategoryCatalog('tenant', tenantId);
+
+  const combined = [];
+
+  sharedRows.forEach((row) => {
+    combined.push({
+      ...row,
+      source: 'global_catalog_shared',
+      sourcePriority: 1,
+      matchedBy: 'catalog',
+    });
+  });
+
+  tenantRows.forEach((row) => {
+    combined.push({
+      ...row,
+      source: 'global_catalog_tenant',
+      sourcePriority: 2,
+      matchedBy: 'catalog',
+    });
+  });
+
+  const seen = new Set();
+
+  return combined
+    .map((row) => ({ row, score: scoreCategoryCatalogMatch(query, row) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => (a.row.sourcePriority - b.row.sourcePriority) || (b.score - a.score))
+    .map((entry) => entry.row)
+    .filter((row) => {
+      const key = String(row.categoryId || '').trim();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((row) => ({
+      categoryId: String(row.categoryId || '').trim(),
+      categoryPath: String(row.categoryPath || row.categoryName || row.categoryId || '').trim(),
+      source: row.source,
+      sourcePriority: row.sourcePriority,
+      matchedBy: row.matchedBy,
+    }));
+}
+
 function sendResult(res, result) {
   return res.json(sanitizeObjectForMetaResponse(result || {}));
 }
@@ -492,7 +628,26 @@ router.post('/mass-upload/templates', async (req, res) => {
 
   await fs.writeFile(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
 
-  return sendResult(res, { ok: true, template: metadata });
+  const catalogWarnings = [];
+  const templateRef = {
+    categoryId,
+    fileName,
+    uploadedAt: metadata.uploadedAt,
+  };
+
+  try {
+    await upsertCategoryCatalog({ tenantId, scope: 'shared', categoryId, categoryPath, templateRef });
+  } catch (err) {
+    catalogWarnings.push({ scope: 'shared', message: err?.message || 'catalog upsert failed' });
+  }
+
+  try {
+    await upsertCategoryCatalog({ tenantId, scope: 'tenant', categoryId, categoryPath, templateRef });
+  } catch (err) {
+    catalogWarnings.push({ scope: 'tenant', message: err?.message || 'catalog upsert failed' });
+  }
+
+  return sendResult(res, { ok: true, template: metadata, warnings: catalogWarnings });
 });
 
 router.delete('/mass-upload/templates/:categoryId', async (req, res) => {
@@ -609,6 +764,38 @@ router.delete('/mass-upload/images/:jobId', async (req, res) => {
 });
 
 
+
+
+
+router.get('/mass-upload/category-search', async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return sendResult(res, { ok: false, error: 'TENANT_CONTEXT_REQUIRED', categories: [] });
+
+  const q = String(req.query?.q || '').trim();
+  if (!q) return sendResult(res, { ok: true, categories: [] });
+
+  const catalogMatches = await searchCategoryCatalog({ tenantId, q });
+  const seen = new Set(catalogMatches.map((row) => String(row.categoryId || '').trim()));
+
+  const templates = await readTenantTemplates(tenantId);
+  const fallback = templates
+    .map((template) => ({
+      categoryId: String(template?.categoryId || '').trim(),
+      categoryPath: String(template?.categoryPath || template?.categoryName || template?.categoryId || '').trim(),
+      source: 'template_registry_fallback',
+      sourcePriority: 3,
+      matchedBy: 'template_registry',
+    }))
+    .filter((row) => row.categoryId && !seen.has(row.categoryId))
+    .map((row) => ({ row, score: scoreCategoryCatalogMatch(q, row) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((entry) => entry.row);
+
+  const categories = [...catalogMatches, ...fallback].slice(0, 50);
+
+  return sendResult(res, { ok: true, categories });
+});
 
 
 router.get('/mass-upload/required-value-options', async (req, res) => {

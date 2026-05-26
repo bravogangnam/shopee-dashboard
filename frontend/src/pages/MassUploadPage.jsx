@@ -1648,10 +1648,6 @@ export default function MassUploadPage() {
             등록용 엑셀 테이블에서는 이미지 URL을 입력하지 않습니다. 이미지 업로드 후 생성 전 최종 검사에서 매칭 상태를 확인하세요.
           </div>
         </div>
-        <p>
-          대표이미지는 첫 번째 옵션 SKU-m1, SKU-m2 형식으로 올리고,
-          옵션이미지는 각 옵션 SKU 파일명으로 올립니다. 이미지는 리사이즈/압축 없이 원본 그대로 서버에 저장됩니다.
-        </p>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             type="text"

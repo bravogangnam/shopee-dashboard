@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 
-const DISPLAY_HEADERS = ['sku', '브랜드', '상품명', '옵션명', '상품설명', '대표이미지', '무게', '가격', '재고', '가로', '세로', '높이', '옵션이미지'];
+const DISPLAY_HEADERS = ['sku', '브랜드', '상품명', '옵션명', '상품설명', '무게', '가격', '재고', '가로', '세로', '높이'];
 const HEADER_ALIASES = { 브랜드:'brand',brand:'brand',상품명:'productName',productname:'productName',product_name:'productName',상품설명:'description',description:'description',대표이미지:'representativeImages',representativeimages:'representativeImages',representative_images:'representativeImages',옵션명:'optionName',optionname:'optionName',option_name:'optionName',sku:'sku',가격:'price',price:'price',재고:'stock',stock:'stock',무게:'weight',weight:'weight',가로:'length',length:'length',세로:'width',width:'width',높이:'height',height:'height',옵션이미지:'optionImage',optionimage:'optionImage',option_image:'optionImage' };
 const INTERNAL_TO_DISPLAY = { sku:'sku', brand:'브랜드', productName:'상품명', optionName:'옵션명', description:'상품설명', representativeImages:'대표이미지', weight:'무게', price:'가격', stock:'재고', length:'가로', width:'세로', height:'높이', optionImage:'옵션이미지' };
 
@@ -166,10 +166,6 @@ function validateProduct(product) {
   const errors = []; const reviews = [];
   if (!String(product.productName || '').trim()) errors.push('상품명 필수');
   if (!String(product.description || '').trim()) reviews.push('상품설명 없음');
-  if ((product.representativeImages || []).length === 0) reviews.push('대표이미지 없음');
-  if ((product.representativeImages || []).length > 9) errors.push('대표이미지 9장 초과');
-  const anyImg = (product.options || []).some((o) => String(o.optionImage || '').trim());
-  if (anyImg && (product.options || []).some((o) => !String(o.optionImage || '').trim())) errors.push('옵션이미지 일부 누락');
   (product.options || []).forEach((o, idx) => {
     const p = `옵션 ${idx + 1}`;
     if (!String(o.sku || '').trim()) errors.push(`${p}: sku 필수`);
@@ -1666,6 +1662,9 @@ export default function MassUploadPage() {
 
       <section className="card" style={{ marginTop: 16, overflowX: 'auto' }}>
         <h2>등록용 엑셀 테이블</h2>
+        <p style={{ marginTop: 6, fontSize: 13, color: '#475467' }}>
+          이미지는 이 표에서 입력하지 않습니다. 이미지 업로드 영역에서 SKU 파일명 기준으로 업로드하면 생성 시 자동 매칭됩니다.
+        </p>
         <table style={{ width: '100%', minWidth: 1300, borderCollapse: 'collapse' }}>
           <thead>
             <tr>{visibleHeaders.map((h) => <th key={h} style={{ borderBottom: '1px solid #ddd', padding: 6 }}>{h}</th>)}<th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>상태</th></tr>

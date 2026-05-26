@@ -1618,6 +1618,36 @@ export default function MassUploadPage() {
 
       <section className="card" style={{ marginTop: 16 }}>
         <h2>이미지 파일 업로드 / SKU 자동 매칭</h2>
+
+        <div style={{ border: '1px solid #d9e8ff', background: '#f5f9ff', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>이미지 파일명 규칙</div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>대표이미지 / 상품 전체 이미지</div>
+              <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+                첫 옵션 SKU 기준으로 올립니다.<br />
+                예: <code>GS02354-m.jpg</code><br />
+                추가 대표이미지: <code>GS02354-m1.jpg</code>, <code>GS02354-m2.jpg</code>, <code>GS02354-m3.jpg</code><br />
+                단품 또는 옵션 1개 상품은 대표이미지만 있어도 됩니다.
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>옵션이미지 / 옵션별 이미지</div>
+              <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+                각 옵션 SKU 파일명으로 올립니다.<br />
+                예: <code>GS02354.jpg</code>, <code>GS02355.jpg</code>, <code>GS02356.jpg</code><br />
+                옵션이미지를 사용할 경우 모든 옵션에 넣어야 합니다.<br />
+                일부 옵션에만 넣을 거면 옵션이미지는 모두 비우고 대표이미지만 사용하세요.
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 10, fontSize: 13, color: '#475467' }}>
+            등록용 엑셀 테이블에서는 이미지 URL을 입력하지 않습니다. 이미지 업로드 후 생성 전 최종 검사에서 매칭 상태를 확인하세요.
+          </div>
+        </div>
         <p>
           대표이미지는 첫 번째 옵션 SKU-m1, SKU-m2 형식으로 올리고,
           옵션이미지는 각 옵션 SKU 파일명으로 올립니다. 이미지는 리사이즈/압축 없이 원본 그대로 서버에 저장됩니다.

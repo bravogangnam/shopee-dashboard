@@ -1611,7 +1611,7 @@ export default function MassUploadPage() {
   };
 
   return (
-    <div className="page">
+    <div className="mass-upload-page page">
       <header className="page-header">
         <h1>대량등록</h1>
         <p>등록용 엑셀을 업로드하면 Shopee 공식 템플릿 생성용 데이터로 검증합니다.</p>

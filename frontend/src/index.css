@@ -1,0 +1,107 @@
+
+/* Mass Upload readability polish */
+.mass-upload-page,
+.mass-upload-page * {
+  box-sizing: border-box;
+}
+
+.mass-upload-page {
+  line-height: 1.55;
+  color: #1f2933;
+}
+
+.mass-upload-page .card {
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.mass-upload-page h1 {
+  font-size: 26px;
+  line-height: 1.25;
+  margin-bottom: 8px;
+}
+
+.mass-upload-page h2 {
+  font-size: 21px;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: #111827;
+}
+
+.mass-upload-page p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #475467;
+}
+
+.mass-upload-page details.card > summary {
+  padding: 4px 0 12px;
+}
+
+.mass-upload-page details.card > summary h2 {
+  margin: 0;
+}
+
+.mass-upload-page details.card > summary span {
+  background: #f2f4f7;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  padding: 4px 10px;
+  color: #475467 !important;
+  font-size: 12px !important;
+  white-space: nowrap;
+}
+
+.mass-upload-page table th {
+  font-size: 13px;
+  font-weight: 700;
+  color: #344054;
+  background: #f8fafc;
+}
+
+.mass-upload-page table td {
+  font-size: 13px;
+  color: #344054;
+}
+
+.mass-upload-page table th,
+.mass-upload-page table td {
+  padding: 8px !important;
+}
+
+.mass-upload-page input[readonly] {
+  background: #fafafa;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: #344054;
+  font-size: 13px;
+}
+
+.mass-upload-page input,
+.mass-upload-page textarea,
+.mass-upload-page select {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.mass-upload-page button {
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+}
+
+.mass-upload-page code {
+  background: #eef4ff;
+  border: 1px solid #d6e4ff;
+  border-radius: 5px;
+  padding: 1px 5px;
+  font-size: 12px;
+  color: #1849a9;
+}
+
+.mass-upload-page summary {
+  user-select: none;
+}

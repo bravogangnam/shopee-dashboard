@@ -335,7 +335,7 @@ export default function MassUploadPage() {
     if (productCount === 0) {
       nextAction = '상품 엑셀을 업로드하거나 붙여넣기 적용하세요.';
     } else if (!effectiveRows.length) {
-      nextAction = '카테고리 매핑 시작를 눌러 카테고리를 확인하세요.';
+      nextAction = '카테고리 매핑 시작 버튼을 눌러 카테고리를 확인하세요.';
     } else if (requiredCategoryIds.length > registeredTemplateCount) {
       nextAction = 'category_id별 공식 템플릿을 등록하세요.';
     } else if (preflightErrorCount > 0) {

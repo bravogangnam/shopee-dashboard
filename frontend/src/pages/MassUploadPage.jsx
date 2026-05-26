@@ -335,7 +335,7 @@ export default function MassUploadPage() {
     if (productCount === 0) {
       nextAction = '상품 엑셀을 업로드하거나 붙여넣기 적용하세요.';
     } else if (!effectiveRows.length) {
-      nextAction = 'KRSC 템플릿 매핑 준비를 눌러 카테고리를 확인하세요.';
+      nextAction = '카테고리 매핑 시작를 눌러 카테고리를 확인하세요.';
     } else if (requiredCategoryIds.length > registeredTemplateCount) {
       nextAction = 'category_id별 공식 템플릿을 등록하세요.';
     } else if (preflightErrorCount > 0) {
@@ -345,7 +345,7 @@ export default function MassUploadPage() {
     } else if (preflightStatus === '검사 전') {
       nextAction = '생성 전 최종 검사를 눌러 마지막 상태를 확인하세요.';
     } else {
-      nextAction = '공식 템플릿 xlsx 생성이 가능합니다.';
+      nextAction = 'Shopee 업로드용 xlsx 생성이 가능합니다.';
     }
     return { productCount, optionCount, confirmedCategoryCount, requiredCategoryCount: requiredCategoryIds.length, registeredTemplateCount, requiredValuesSavedCount, imageCount, preflightStatus, preflightErrorCount, preflightWarnCount, nextAction };
   }, [products, effectiveMetaResults, templateRegistry, requiredValuesRegistry, uploadedImages, preflightSummary]);
@@ -862,7 +862,7 @@ export default function MassUploadPage() {
       }
 
       await refreshRequiredValues();
-      setRequiredValuesMessage(`category_id ${categoryId} shared Required Values 저장 완료`);
+      setRequiredValuesMessage(`category_id ${categoryId} 필수값 저장 완료`);
     } catch (err) {
       setRequiredValuesMessage(`Required Values 저장 실패: ${err?.message || '알 수 없는 오류'}`);
     }
@@ -874,7 +874,7 @@ export default function MassUploadPage() {
       return;
     }
 
-    setResultAnalysisMessage('Shopee 결과 파일 분석 중...');
+    setResultAnalysisMessage('Shopee 오류 Result 분석 중...');
 
     try {
       const buffer = await resultAnalysisFile.arrayBuffer();
@@ -1152,7 +1152,7 @@ export default function MassUploadPage() {
   };
 
   const generateTemplateFiles = async () => {
-    setGenerateMessage('공식 템플릿 xlsx 생성 중...');
+    setGenerateMessage('Shopee 업로드용 xlsx 생성 중...');
     setGeneratedFiles([]);
     setGenerateWarnings([]);
 
@@ -1570,7 +1570,7 @@ export default function MassUploadPage() {
 
   const runKrscPrepare = async () => {
     setMetaResults([]);
-    setMessage('KRSC 템플릿 매핑 준비 중...');
+    setMessage('카테고리 매핑 시작 중...');
     const body = { products: products.map((p) => ({ productKey: p.id, productName: p.productName, description: p.description || p.productName, brand: p.brand, optionCount: p.options.length })) };
     try {
       const res = await fetch('/api/shopee-meta/mass-upload/krsc-prepare', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(body) });
@@ -1585,9 +1585,9 @@ export default function MassUploadPage() {
             : [];
 
       setMetaResults(resultProducts);
-      setMessage(`KRSC 템플릿 매핑 준비 완료: ${resultProducts.length}건`);
+      setMessage(`카테고리 매핑 시작 완료: ${resultProducts.length}건`);
     } catch {
-      setMessage('KRSC 템플릿 매핑 준비 실패');
+      setMessage('카테고리 매핑 시작 실패');
     }
   };
 
@@ -1621,7 +1621,7 @@ export default function MassUploadPage() {
       <details className="card" style={{ marginTop: 16 }} open>
         <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <h2 style={{ margin: 0 }}>진행 요약</h2>
-          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+          <span style={{ fontSize: 13, color: '#667085' }}>보기</span>
         </summary>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginBottom: 10 }}>
@@ -1661,7 +1661,7 @@ export default function MassUploadPage() {
       <details className="card" style={{ marginTop: 16 }} open>
         <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <h2 style={{ margin: 0 }}>파일 업로드</h2>
-          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+          <span style={{ fontSize: 13, color: '#667085' }}>보기</span>
         </summary>
         <p>지원 파일: .xlsx, .csv, .tsv, .txt</p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -1695,7 +1695,7 @@ export default function MassUploadPage() {
       <details className="card" style={{ marginTop: 16 }}>
         <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <h2 style={{ margin: 0 }}>이미지 파일 업로드 / SKU 자동 매칭</h2>
-          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+          <span style={{ fontSize: 13, color: '#667085' }}>보기</span>
         </summary>
 
         <div style={{ border: '1px solid #d9e8ff', background: '#f5f9ff', borderRadius: 8, padding: 12, marginBottom: 12 }}>
@@ -1705,20 +1705,20 @@ export default function MassUploadPage() {
             <div>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>대표이미지 / 상품 전체 이미지</div>
               <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-                첫 옵션 SKU 기준으로 올립니다.<br />
+                대표이미지는 첫 번째 옵션 SKU에 -m을 붙여 올립니다.<br />
                 예: <code>GS02354-m.jpg</code><br />
                 추가 대표이미지: <code>GS02354-m1.jpg</code>, <code>GS02354-m2.jpg</code>, <code>GS02354-m3.jpg</code><br />
-                단품 또는 옵션 1개 상품은 대표이미지만 있어도 됩니다.
+                단품이나 옵션 1개 상품은 대표이미지만 있어도 됩니다.
               </div>
             </div>
 
             <div>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>옵션이미지 / 옵션별 이미지</div>
               <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-                각 옵션 SKU 파일명으로 올립니다.<br />
+                옵션별 이미지가 필요하면 각 옵션 SKU 파일명으로 올립니다.<br />
                 예: <code>GS02354.jpg</code>, <code>GS02355.jpg</code>, <code>GS02356.jpg</code><br />
-                옵션이미지를 사용할 경우 모든 옵션에 넣어야 합니다.<br />
-                일부 옵션에만 넣을 거면 옵션이미지는 모두 비우고 대표이미지만 사용하세요.
+                옵션이미지를 사용할 거면 모든 옵션에 넣어야 합니다.<br />
+                일부 옵션에만 넣을 거라면 옵션이미지는 모두 비우고 대표이미지만 사용하세요.
               </div>
             </div>
           </div>
@@ -1768,10 +1768,10 @@ export default function MassUploadPage() {
       <details className="card" style={{ marginTop: 16 }} open>
         <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <h2 style={{ margin: 0 }}>등록용 엑셀 테이블</h2>
-          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+          <span style={{ fontSize: 13, color: '#667085' }}>보기</span>
         </summary>
         <p style={{ marginTop: 6, fontSize: 13, color: '#475467' }}>
-          이미지는 이 표에서 입력하지 않습니다. 이미지 업로드 영역에서 SKU 파일명 기준으로 업로드하면 생성 시 자동 매칭됩니다.
+          이미지는 이 표에 입력하지 않습니다. 아래 이미지 업로드 영역에 SKU 파일명으로 올리면 자동으로 매칭됩니다.
         </p>
         <table style={{ width: '100%', minWidth: 1300, borderCollapse: 'collapse' }}>
           <thead>
@@ -1785,11 +1785,11 @@ export default function MassUploadPage() {
 
       <details className="card" style={{ marginTop: 16 }}>
         <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-          <h2 style={{ margin: 0 }}>4. KRSC 글로벌 상품정보 매핑 준비</h2>
-          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+          <h2 style={{ margin: 0 }}>4. 카테고리/브랜드 자동 매핑</h2>
+          <span style={{ fontSize: 13, color: '#667085' }}>보기</span>
         </summary>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button type="button" onClick={runKrscPrepare}>KRSC 템플릿 매핑 준비</button>
+          <button type="button" onClick={runKrscPrepare}>카테고리 매핑 시작</button>
           <span>Days to ship: 1 고정</span>
         </div>
         {message && message.startsWith('KRSC') ? (
@@ -1920,13 +1920,13 @@ export default function MassUploadPage() {
 
       <details className="card" style={{ marginTop: 16 }}>
         <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-          <h2 style={{ margin: 0 }}>5. category_id별 공식 템플릿 레지스트리</h2>
-          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+          <h2 style={{ margin: 0 }}>5. 공식 템플릿 등록</h2>
+          <span style={{ fontSize: 13, color: '#667085' }}>보기</span>
         </summary>
         <p>
-          Shopee OpenAPI에는 KRSC Mass Upload 공식 템플릿 다운로드/생성 API가 없습니다.
-          공식 템플릿은 Seller Center에서 아래 카테고리 경로를 찾아 다운로드한 뒤, 해당 category_id 행에서 등록/갱신하세요. 새 카테고리 템플릿도 선택 즉시 자동 분석 후 서버에 저장됩니다.
-          서버에 저장된 category_id 템플릿은 다음 대량등록부터 자동으로 불러옵니다. 새 템플릿을 다시 올리면 기존 템플릿을 덮어쓰고 재분석합니다.
+          카테고리별 공식 템플릿은 Shopee Seller Center에서 직접 다운로드해야 합니다.
+          다운로드한 템플릿을 해당 category_id 행에 등록하면 서버가 자동으로 분석하고 저장합니다.
+          한 번 등록한 템플릿은 다음 대량등록부터 자동으로 사용됩니다. 새 파일을 올리면 기존 템플릿을 덮어쓰고 다시 분석합니다.
         </p>
 
         {categoryRegistryRows.length > 0 ? (
@@ -1993,30 +1993,30 @@ export default function MassUploadPage() {
             </table>
           </div>
         ) : (
-          <p style={{ marginTop: 8 }}>KRSC 매핑 결과가 생성되면 category_id별 템플릿 상태가 표시됩니다.</p>
+          <p style={{ marginTop: 8 }}>카테고리 매핑이 끝나면 필요한 템플릿 상태가 여기에 표시됩니다.</p>
         )}
 
         {loadingTemplates ? <p style={{ marginTop: 8 }}>서버 템플릿 상태 조회 중...</p> : null}
         {templateMessage ? <p style={{ marginTop: 8 }}>{templateMessage}</p> : null}
 
         <p style={{ marginTop: 8 }}>
-          최종 Excel 생성은 category_id별 공식 템플릿 등록/분석 후 진행됩니다.
+          필요한 공식 템플릿이 모두 등록되면 최종 xlsx를 만들 수 있습니다.
         </p>
       </details>
 
       <details className="card" style={{ marginTop: 16 }}>
         <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-          <h2 style={{ margin: 0 }}>6. 공식 템플릿 입력 미리보기</h2>
-          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+          <h2 style={{ margin: 0 }}>6. 입력값 미리보기</h2>
+          <span style={{ fontSize: 13, color: '#667085' }}>보기</span>
         </summary>
         <p>
-          서버에 저장된 공식 템플릿 분석 결과를 기준으로 Template 시트에 입력될 데이터를 미리 보여줍니다.
-          같은 상품의 두 번째 옵션 행부터 Product Name / Product Description / Cover image는 비워질 수 있습니다.
+          생성될 xlsx에 들어갈 값을 미리 확인합니다.
+          같은 상품의 두 번째 옵션부터는 상품명/설명/대표이미지가 비어 보일 수 있습니다.
         </p>
-        <p>카테고리별 추가 필수 속성은 Required Values 단계에서 처리합니다.</p>
+        <p>추가 필수값은 9번 필수값 입력/저장에서 처리합니다.</p>
 
         {categoryPreviewRows.length === 0 ? (
-          <p style={{ marginTop: 8 }}>미리보기 대상 데이터가 없습니다. 등록용 엑셀 읽기 및 KRSC 매핑 준비를 먼저 진행하세요.</p>
+          <p style={{ marginTop: 8 }}>아직 미리볼 데이터가 없습니다. 상품 엑셀을 읽고 4번 카테고리 매핑을 먼저 진행하세요.</p>
         ) : (
           categoryPreviewRows.map((group) => (
             <div key={`preview_${group.categoryId}`} style={{ marginTop: 16, border: '1px solid #eee', borderRadius: 8, padding: 12 }}>
@@ -2060,10 +2060,10 @@ export default function MassUploadPage() {
 
       <details className="card" style={{ marginTop: 16 }}>
         <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-          <h2 style={{ margin: 0 }}>7. 공식 템플릿 xlsx 생성</h2>
-          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+          <h2 style={{ margin: 0 }}>7. Shopee 업로드용 xlsx 생성</h2>
+          <span style={{ fontSize: 13, color: '#667085' }}>보기</span>
         </summary>
-        <p>서버에 저장된 공식 template.xlsx를 복사해서 Template 시트 7행부터 데이터를 입력합니다.</p>
+        <p>등록된 공식 템플릿에 준비된 상품 데이터를 넣어 Shopee 업로드용 xlsx를 만듭니다.</p>
 
         <div style={{ marginBottom: 8 }}>
           <button type="button" onClick={runPreflightCheck}>생성 전 최종 검사</button>
@@ -2207,11 +2207,11 @@ export default function MassUploadPage() {
 
 
         <button type="button" onClick={generateTemplateFiles} disabled={!canGenerateTemplateFiles}>
-          공식 템플릿 xlsx 생성
+          Shopee 업로드용 xlsx 생성
         </button>
 
         {!canGenerateTemplateFiles ? (
-          <p style={{ marginTop: 6 }}>생성 조건: 등록용 상품/매핑 결과 존재 + category_id별 서버 템플릿 등록 완료</p>
+          <p style={{ marginTop: 6 }}>생성 조건: 상품 데이터, 카테고리 매핑, 공식 템플릿 등록이 모두 필요합니다.</p>
         ) : null}
 
         {generateMessage ? <p style={{ marginTop: 6 }}>{generateMessage}</p> : null}
@@ -2252,8 +2252,8 @@ export default function MassUploadPage() {
 
       <details className="card" style={{ marginTop: 16 }}>
         <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-          <h2 style={{ margin: 0 }}>8. Shopee 업로드 결과 오류 분석</h2>
-          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+          <h2 style={{ margin: 0 }}>8. Shopee 업로드 오류 분석</h2>
+          <span style={{ fontSize: 13, color: '#667085' }}>보기</span>
         </summary>
         <p>
           Shopee Seller Center에서 받은 Result 파일을 업로드하면 Fail Reason 컬럼을 분석해서
@@ -2266,7 +2266,7 @@ export default function MassUploadPage() {
             accept=".xlsx"
             onChange={(event) => setResultAnalysisFile(event.target.files?.[0] || null)}
           />
-          <button type="button" onClick={analyzeShopeeResultFile}>결과 파일 분석</button>
+          <button type="button" onClick={analyzeShopeeResultFile}>오류 Result 분석</button>
         </div>
 
         {resultAnalysisMessage ? <p style={{ marginTop: 8 }}>{resultAnalysisMessage}</p> : null}
@@ -2318,8 +2318,8 @@ export default function MassUploadPage() {
 
       <details className="card" style={{ marginTop: 16 }}>
         <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-          <h2 style={{ margin: 0 }}>9. Required Values 입력/저장</h2>
-          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+          <h2 style={{ margin: 0 }}>9. 필수값 입력/저장</h2>
+          <span style={{ fontSize: 13, color: '#667085' }}>보기</span>
         </summary>
         <p>
           8번 오류 분석에서 추출된 category_id별 누락 속성에 공통값을 입력하고 shared Required Values로 저장합니다.
@@ -2329,7 +2329,7 @@ export default function MassUploadPage() {
         {requiredValuesMessage ? <p style={{ marginTop: 8 }}>{requiredValuesMessage}</p> : null}
 
         {resultAnalysisRows.length === 0 ? (
-          <p style={{ marginTop: 8 }}>먼저 8번에서 Shopee Result 파일을 분석하세요.</p>
+          <p style={{ marginTop: 8 }}>먼저 8번에서 Shopee Result 파일을 분석하세요. 누락값이 나오면 여기에서 저장합니다.</p>
         ) : (
           resultAnalysisRows.map((row) => {
             const saved = requiredValuesRegistry[row.categoryId] || null;
@@ -2432,7 +2432,7 @@ export default function MassUploadPage() {
                 </table>
 
                 <button type="button" style={{ marginTop: 10 }} onClick={() => saveRequiredValuesForCategory(row)}>
-                  shared Required Values 저장
+                  필수값 저장
                 </button>
               </div>
             );

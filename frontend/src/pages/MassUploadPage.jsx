@@ -316,6 +316,39 @@ export default function MassUploadPage() {
     });
   }, [metaResults]);
 
+  const massUploadProgressSummary = useMemo(() => {
+    const productCount = products.length;
+    const optionCount = products.reduce((sum, product) => sum + (Array.isArray(product.options) ? product.options.length : 0), 0);
+    const effectiveRows = Array.isArray(effectiveMetaResults) ? effectiveMetaResults : [];
+    const confirmedCategoryCount = effectiveRows.filter((row) => String(row?.category?.categoryId || '').trim()).length;
+    const requiredCategoryIds = Array.from(new Set(effectiveRows.map((row) => String(row?.category?.categoryId || '').trim()).filter(Boolean)));
+    const registeredTemplateCount = requiredCategoryIds.filter((categoryId) => Boolean(templateRegistry?.[categoryId]?.fileName)).length;
+    const requiredValuesSavedCount = requiredCategoryIds.filter((categoryId) => {
+      const saved = requiredValuesRegistry?.[categoryId]?.items || [];
+      return Array.isArray(saved) && saved.length > 0;
+    }).length;
+    const imageCount = Array.isArray(uploadedImages) ? uploadedImages.length : 0;
+    const preflightStatus = preflightSummary?.summary || '검사 전';
+    const preflightErrorCount = Number(preflightSummary?.errorCount || 0);
+    const preflightWarnCount = Number(preflightSummary?.warnCount || 0);
+    let nextAction = '상품 엑셀을 업로드하거나 붙여넣기 적용하세요.';
+    if (productCount === 0) {
+      nextAction = '상품 엑셀을 업로드하거나 붙여넣기 적용하세요.';
+    } else if (!effectiveRows.length) {
+      nextAction = 'KRSC 템플릿 매핑 준비를 눌러 카테고리를 확인하세요.';
+    } else if (requiredCategoryIds.length > registeredTemplateCount) {
+      nextAction = 'category_id별 공식 템플릿을 등록하세요.';
+    } else if (preflightErrorCount > 0) {
+      nextAction = '생성 전 최종 검사 오류를 먼저 수정하세요.';
+    } else if (preflightWarnCount > 0) {
+      nextAction = '경고를 확인한 뒤 필요하면 공식 템플릿 xlsx를 생성하세요.';
+    } else if (preflightStatus === '검사 전') {
+      nextAction = '생성 전 최종 검사를 눌러 마지막 상태를 확인하세요.';
+    } else {
+      nextAction = '공식 템플릿 xlsx 생성이 가능합니다.';
+    }
+    return { productCount, optionCount, confirmedCategoryCount, requiredCategoryCount: requiredCategoryIds.length, registeredTemplateCount, requiredValuesSavedCount, imageCount, preflightStatus, preflightErrorCount, preflightWarnCount, nextAction };
+  }, [products, effectiveMetaResults, templateRegistry, requiredValuesRegistry, uploadedImages, preflightSummary]);
   const displayRows = useMemo(() => {
     const out = [];
     products.forEach((p, pi) => {
@@ -1585,6 +1618,48 @@ export default function MassUploadPage() {
         <p><strong>기준: KRSC 글로벌 프로덕트 대량등록</strong></p>
       </header>
 
+      <section className="card">
+        <h2>진행 요약</h2>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginBottom: 10 }}>
+          <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 10, background: '#fff' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>상품</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{massUploadProgressSummary.productCount}</div>
+          </div>
+          <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 10, background: '#fff' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>옵션</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{massUploadProgressSummary.optionCount}</div>
+          </div>
+          <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 10, background: '#fff' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>카테고리 확정</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{massUploadProgressSummary.confirmedCategoryCount}/{massUploadProgressSummary.productCount}</div>
+          </div>
+          <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 10, background: '#fff' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>템플릿 등록</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{massUploadProgressSummary.registeredTemplateCount}/{massUploadProgressSummary.requiredCategoryCount}</div>
+          </div>
+          <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 10, background: '#fff' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>Required Values</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{massUploadProgressSummary.requiredValuesSavedCount}</div>
+          </div>
+          <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 10, background: '#fff' }}>
+            <div style={{ fontSize: 12, color: '#667085' }}>이미지 업로드</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{massUploadProgressSummary.imageCount}</div>
+          </div>
+        </div>
+
+        <div style={{ border: '1px solid #d9e8ff', background: '#f5f9ff', borderRadius: 8, padding: 10, marginBottom: 8 }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>다음 할 일</div>
+          <div style={{ fontSize: 14 }}>{massUploadProgressSummary.nextAction}</div>
+        </div>
+
+        <div style={{ fontSize: 13, color: '#667085' }}>
+          생성 전 최종 검사: {massUploadProgressSummary.preflightStatus}
+          {massUploadProgressSummary.preflightErrorCount || massUploadProgressSummary.preflightWarnCount
+            ? ` / 오류 ${massUploadProgressSummary.preflightErrorCount} / 경고 ${massUploadProgressSummary.preflightWarnCount}`
+            : ''}
+        </div>
+      </section>
       <section className="card" style={{ marginTop: 16 }}>
         <h2>파일 업로드</h2>
         <p>지원 파일: .xlsx, .csv, .tsv, .txt</p>

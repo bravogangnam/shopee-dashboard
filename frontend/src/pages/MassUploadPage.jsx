@@ -511,6 +511,56 @@ export default function MassUploadPage() {
 
 
 
+
+  const preflightGroupedByProduct = useMemo(() => {
+    const groups = new Map();
+
+    (preflightRows || []).forEach((row, idx) => {
+      const productName = String(row?.productName || '(상품명 없음)');
+
+      if (!groups.has(productName)) {
+        groups.set(productName, {
+          productName,
+          rows: [],
+          categoryRows: [],
+          requiredRows: [],
+          imageRows: [],
+          basicRows: [],
+          counts: { error: 0, warn: 0, ok: 0 },
+        });
+      }
+
+      const group = groups.get(productName);
+      const nextRow = { ...row, _idx: idx };
+      const item = String(row?.item || '');
+      const message = String(row?.message || '');
+
+      group.rows.push(nextRow);
+
+      if (row.status === 'error') group.counts.error += 1;
+      else if (row.status === 'warn') group.counts.warn += 1;
+      else group.counts.ok += 1;
+
+      if (item === '카테고리') {
+        group.categoryRows.push(nextRow);
+      } else if (item === 'Required Values') {
+        group.requiredRows.push(nextRow);
+      } else if (
+        item.includes('대표이미지')
+        || item.includes('옵션이미지')
+        || item.includes('이미지 URL')
+        || item.includes('외부 URL')
+        || message.includes('옵션이미지가 일부 옵션에만 있습니다')
+      ) {
+        group.imageRows.push(nextRow);
+      } else {
+        group.basicRows.push(nextRow);
+      }
+    });
+
+    return Array.from(groups.values());
+  }, [preflightRows]);
+
   const getOverrideDraft = (productKey) => {
     return categoryOverrideDrafts?.[productKey] || { categoryId: '', categoryPath: '' };
   };
@@ -1901,38 +1951,138 @@ export default function MassUploadPage() {
         </div>
 
         {preflightSummary ? (
-          <div style={{ marginBottom: 8, padding: 8, border: '1px solid #eee', borderRadius: 6 }}>
-            <strong>{preflightSummary.summary}</strong>
-            <div style={{ fontSize: 12, marginTop: 4 }}>
-              오류 {preflightSummary.errorCount} / 경고 {preflightSummary.warnCount} / 통과 {preflightSummary.okCount}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(120px, 1fr))', gap: 8, marginBottom: 8 }}>
+              <div style={{ border: '1px solid #f4c7c3', background: '#fef3f2', borderRadius: 8, padding: '10px 12px' }}>
+                <div style={{ fontSize: 12, color: '#b42318' }}>오류</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#b42318' }}>{preflightSummary.errorCount}</div>
+              </div>
+              <div style={{ border: '1px solid #f7d9a8', background: '#fffaeb', borderRadius: 8, padding: '10px 12px' }}>
+                <div style={{ fontSize: 12, color: '#a46300' }}>경고</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#a46300' }}>{preflightSummary.warnCount}</div>
+              </div>
+              <div style={{ border: '1px solid #b7e4c7', background: '#ecfdf3', borderRadius: 8, padding: '10px 12px' }}>
+                <div style={{ fontSize: 12, color: '#1b7f3b' }}>통과</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#1b7f3b' }}>{preflightSummary.okCount}</div>
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: '10px 12px',
+                borderRadius: 8,
+                fontWeight: 700,
+                border: `1px solid ${preflightSummary.errorCount > 0 ? '#f4c7c3' : preflightSummary.warnCount > 0 ? '#f7d9a8' : '#b7e4c7'}`,
+                background: preflightSummary.errorCount > 0 ? '#fef3f2' : preflightSummary.warnCount > 0 ? '#fffaeb' : '#ecfdf3',
+                color: preflightSummary.errorCount > 0 ? '#b42318' : preflightSummary.warnCount > 0 ? '#a46300' : '#1b7f3b',
+              }}
+            >
+              {preflightSummary.summary}
             </div>
           </div>
         ) : null}
 
-        {preflightRows.length > 0 ? (
-          <div style={{ marginBottom: 10, overflowX: 'auto' }}>
-            <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>상품명</th>
-                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>SKU</th>
-                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>항목</th>
-                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>상태</th>
-                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>메시지</th>
-                </tr>
-              </thead>
-              <tbody>
-                {preflightRows.map((row, idx) => (
-                  <tr key={`preflight_${idx}`}>
-                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.productName}</td>
-                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.sku}</td>
-                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.item}</td>
-                    <td style={{ borderBottom: '1px solid #eee', padding: 6, color: row.status === 'error' ? '#b42318' : row.status === 'warn' ? '#a46300' : '#1b7f3b' }}>{row.status}</td>
-                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.message}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {preflightGroupedByProduct.length > 0 ? (
+          <div style={{ marginBottom: 10, display: 'grid', gap: 10 }}>
+            {preflightGroupedByProduct.map((group) => {
+              const cardStatus = group.counts.error > 0 ? 'error' : group.counts.warn > 0 ? 'warn' : 'ok';
+              const cardColor = cardStatus === 'error' ? '#b42318' : cardStatus === 'warn' ? '#a46300' : '#1b7f3b';
+              const cardBg = cardStatus === 'error' ? '#fef3f2' : cardStatus === 'warn' ? '#fffaeb' : '#ecfdf3';
+
+              const renderRows = (rows, isImageSection = false) => {
+                if (!rows.length) return <div style={{ fontSize: 12, color: '#667085' }}>없음</div>;
+
+                return rows.map((row) => {
+                  const message = String(row.message || '');
+                  const isPartialOptionImage = isImageSection && message.includes('옵션이미지가 일부 옵션에만 있습니다');
+
+                  if (isPartialOptionImage) {
+                    const matched = (message.match(/매칭:\s*([^/]+)/) || [])[1]?.trim() || '-';
+                    const missing = (message.match(/누락:\s*(.+)$/) || [])[1]?.trim() || '-';
+
+                    return (
+                      <div key={`group_row_${row._idx}`} style={{ border: '1px solid #f7d9a8', background: '#fff8e1', borderRadius: 6, padding: 8, marginBottom: 6 }}>
+                        <div style={{ fontWeight: 700, color: '#a46300', marginBottom: 4 }}>옵션이미지 일부만 있음</div>
+                        <div style={{ fontSize: 12, lineHeight: 1.45 }}>
+                          <div>- 매칭: {matched}</div>
+                          <div>- 누락: {missing}</div>
+                          <div>- 해결: 모든 옵션에 이미지를 넣거나 옵션이미지를 모두 제거하세요.</div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={`group_row_${row._idx}`} style={{ display: 'grid', gridTemplateColumns: '84px 110px 1fr', gap: 8, fontSize: 12, padding: '4px 0', borderBottom: '1px solid #f2f4f7' }}>
+                      <span style={{ color: row.status === 'error' ? '#b42318' : row.status === 'warn' ? '#a46300' : '#1b7f3b', fontWeight: 600 }}>{row.status}</span>
+                      <span style={{ color: '#344054' }}>{row.item}</span>
+                      <span style={{ color: '#475467', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>[SKU: {row.sku}] {row.message}</span>
+                    </div>
+                  );
+                });
+              };
+
+              return (
+                <details key={`preflight_group_${group.productName}`} style={{ border: `1px solid ${cardColor}33`, borderRadius: 8, background: '#fff' }}>
+                  <summary style={{ cursor: 'pointer', listStyle: 'none', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: cardBg, borderRadius: 8 }}>
+                    <div>
+                      <strong>{group.productName}</strong>
+                      <div style={{ fontSize: 12, color: '#475467', marginTop: 2 }}>오류 {group.counts.error} / 경고 {group.counts.warn} / 통과 {group.counts.ok}</div>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: cardColor, border: `1px solid ${cardColor}55`, borderRadius: 999, padding: '2px 8px', background: '#fff' }}>
+                      {cardStatus === 'error' ? '수정 필요' : cardStatus === 'warn' ? '확인 필요' : '정상'}
+                    </span>
+                  </summary>
+
+                  <div style={{ padding: 12 }}>
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>A. 카테고리 / 템플릿</div>
+                      {renderRows(group.categoryRows)}
+                    </div>
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>B. 필수값</div>
+                      {renderRows(group.requiredRows)}
+                    </div>
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>C. 이미지</div>
+                      {renderRows(group.imageRows, true)}
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>D. 기본 상품값</div>
+                      {renderRows(group.basicRows)}
+                    </div>
+                  </div>
+                </details>
+              );
+            })}
+
+            <details style={{ marginTop: 4 }}>
+              <summary style={{ cursor: 'pointer', fontSize: 12, color: '#475467' }}>전체 상세 테이블 보기</summary>
+              <div style={{ marginTop: 8, overflowX: 'auto' }}>
+                <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>상품명</th>
+                      <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>SKU</th>
+                      <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>항목</th>
+                      <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>상태</th>
+                      <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>메시지</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preflightRows.map((row, idx) => (
+                      <tr key={`preflight_${idx}`}>
+                        <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.productName}</td>
+                        <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.sku}</td>
+                        <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.item}</td>
+                        <td style={{ borderBottom: '1px solid #eee', padding: 6, color: row.status === 'error' ? '#b42318' : row.status === 'warn' ? '#a46300' : '#1b7f3b' }}>{row.status}</td>
+                        <td style={{ borderBottom: '1px solid #eee', padding: 6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{row.message}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
           </div>
         ) : null}
 

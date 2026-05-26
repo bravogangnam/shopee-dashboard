@@ -1618,8 +1618,11 @@ export default function MassUploadPage() {
         <p><strong>기준: KRSC 글로벌 프로덕트 대량등록</strong></p>
       </header>
 
-      <section className="card">
-        <h2>진행 요약</h2>
+      <details className="card" style={{ marginTop: 16 }} open>
+        <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <h2 style={{ margin: 0 }}>진행 요약</h2>
+          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+        </summary>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginBottom: 10 }}>
           <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 10, background: '#fff' }}>
@@ -1648,20 +1651,18 @@ export default function MassUploadPage() {
           </div>
         </div>
 
-        <div style={{ border: '1px solid #d9e8ff', background: '#f5f9ff', borderRadius: 8, padding: 10, marginBottom: 8 }}>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>다음 할 일</div>
-          <div style={{ fontSize: 14 }}>{massUploadProgressSummary.nextAction}</div>
-        </div>
-
         <div style={{ fontSize: 13, color: '#667085' }}>
           생성 전 최종 검사: {massUploadProgressSummary.preflightStatus}
           {massUploadProgressSummary.preflightErrorCount || massUploadProgressSummary.preflightWarnCount
             ? ` / 오류 ${massUploadProgressSummary.preflightErrorCount} / 경고 ${massUploadProgressSummary.preflightWarnCount}`
             : ''}
         </div>
-      </section>
-      <section className="card" style={{ marginTop: 16 }}>
-        <h2>파일 업로드</h2>
+      </details>
+      <details className="card" style={{ marginTop: 16 }} open>
+        <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <h2 style={{ margin: 0 }}>파일 업로드</h2>
+          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+        </summary>
         <p>지원 파일: .xlsx, .csv, .tsv, .txt</p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <label style={{ border: '1px solid #ddd', borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}>
@@ -1689,10 +1690,13 @@ export default function MassUploadPage() {
           <summary>붙여넣기 입력 열기</summary>
           <textarea rows={4} value={pasteText} onChange={(e) => setPasteText(e.target.value)} style={{ width: '100%' }} />
         </details>
-      </section>
+      </details>
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <h2>이미지 파일 업로드 / SKU 자동 매칭</h2>
+      <details className="card" style={{ marginTop: 16 }}>
+        <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <h2 style={{ margin: 0 }}>이미지 파일 업로드 / SKU 자동 매칭</h2>
+          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+        </summary>
 
         <div style={{ border: '1px solid #d9e8ff', background: '#f5f9ff', borderRadius: 8, padding: 12, marginBottom: 12 }}>
           <div style={{ fontWeight: 700, marginBottom: 8 }}>이미지 파일명 규칙</div>
@@ -1752,7 +1756,7 @@ export default function MassUploadPage() {
             })}
           </div>
         ) : null}
-      </section>
+      </details>
 
       <section className="card" style={{ marginTop: 16 }}>
         <h2>요약</h2>
@@ -1761,8 +1765,11 @@ export default function MassUploadPage() {
         </div>
       </section>
 
-      <section className="card" style={{ marginTop: 16, overflowX: 'auto' }}>
-        <h2>등록용 엑셀 테이블</h2>
+      <details className="card" style={{ marginTop: 16 }} open>
+        <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <h2 style={{ margin: 0 }}>등록용 엑셀 테이블</h2>
+          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+        </summary>
         <p style={{ marginTop: 6, fontSize: 13, color: '#475467' }}>
           이미지는 이 표에서 입력하지 않습니다. 이미지 업로드 영역에서 SKU 파일명 기준으로 업로드하면 생성 시 자동 매칭됩니다.
         </p>
@@ -1774,10 +1781,13 @@ export default function MassUploadPage() {
             {displayRows.map((r, idx) => { const b = badge(r.status); return <tr key={idx}>{visibleHeaders.map((h) => <td key={h} style={{ borderBottom: '1px solid #eee', padding: 6 }}><input value={r[h] || ''} readOnly style={{ minWidth: 100 }} /></td>)}<td style={{ borderBottom: '1px solid #eee', padding: 6 }}><span style={{ padding: '2px 8px', borderRadius: 999, ...b.style }}>{b.text}</span></td></tr>; })}
           </tbody>
         </table>
-      </section>
+      </details>
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <h2>4. KRSC 글로벌 상품정보 매핑 준비</h2>
+      <details className="card" style={{ marginTop: 16 }}>
+        <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <h2 style={{ margin: 0 }}>4. KRSC 글로벌 상품정보 매핑 준비</h2>
+          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+        </summary>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button type="button" onClick={runKrscPrepare}>KRSC 템플릿 매핑 준비</button>
           <span>Days to ship: 1 고정</span>
@@ -1906,10 +1916,13 @@ export default function MassUploadPage() {
             </div>
           ) : null}
         </div>
-      </section>
+      </details>
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <h2>5. category_id별 공식 템플릿 레지스트리</h2>
+      <details className="card" style={{ marginTop: 16 }}>
+        <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <h2 style={{ margin: 0 }}>5. category_id별 공식 템플릿 레지스트리</h2>
+          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+        </summary>
         <p>
           Shopee OpenAPI에는 KRSC Mass Upload 공식 템플릿 다운로드/생성 API가 없습니다.
           공식 템플릿은 Seller Center에서 아래 카테고리 경로를 찾아 다운로드한 뒤, 해당 category_id 행에서 등록/갱신하세요. 새 카테고리 템플릿도 선택 즉시 자동 분석 후 서버에 저장됩니다.
@@ -1989,10 +2002,13 @@ export default function MassUploadPage() {
         <p style={{ marginTop: 8 }}>
           최종 Excel 생성은 category_id별 공식 템플릿 등록/분석 후 진행됩니다.
         </p>
-      </section>
+      </details>
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <h2>6. 공식 템플릿 입력 미리보기</h2>
+      <details className="card" style={{ marginTop: 16 }}>
+        <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <h2 style={{ margin: 0 }}>6. 공식 템플릿 입력 미리보기</h2>
+          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+        </summary>
         <p>
           서버에 저장된 공식 템플릿 분석 결과를 기준으로 Template 시트에 입력될 데이터를 미리 보여줍니다.
           같은 상품의 두 번째 옵션 행부터 Product Name / Product Description / Cover image는 비워질 수 있습니다.
@@ -2040,10 +2056,13 @@ export default function MassUploadPage() {
             </div>
           ))
         )}
-      </section>
+      </details>
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <h2>7. 공식 템플릿 xlsx 생성</h2>
+      <details className="card" style={{ marginTop: 16 }}>
+        <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <h2 style={{ margin: 0 }}>7. 공식 템플릿 xlsx 생성</h2>
+          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+        </summary>
         <p>서버에 저장된 공식 template.xlsx를 복사해서 Template 시트 7행부터 데이터를 입력합니다.</p>
 
         <div style={{ marginBottom: 8 }}>
@@ -2227,12 +2246,15 @@ export default function MassUploadPage() {
             </table>
           </div>
         ) : null}
-      </section>
+      </details>
 
 
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <h2>8. Shopee 업로드 결과 오류 분석</h2>
+      <details className="card" style={{ marginTop: 16 }}>
+        <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <h2 style={{ margin: 0 }}>8. Shopee 업로드 결과 오류 분석</h2>
+          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+        </summary>
         <p>
           Shopee Seller Center에서 받은 Result 파일을 업로드하면 Fail Reason 컬럼을 분석해서
           category_id별 누락 필수 속성 후보를 자동으로 추출합니다.
@@ -2292,10 +2314,13 @@ export default function MassUploadPage() {
             </table>
           </div>
         ) : null}
-      </section>
+      </details>
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <h2>9. Required Values 입력/저장</h2>
+      <details className="card" style={{ marginTop: 16 }}>
+        <summary style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <h2 style={{ margin: 0 }}>9. Required Values 입력/저장</h2>
+          <span style={{ fontSize: 13, color: '#667085' }}>접기/펼치기</span>
+        </summary>
         <p>
           8번 오류 분석에서 추출된 category_id별 누락 속성에 공통값을 입력하고 shared Required Values로 저장합니다.
           저장된 값은 다음 단계에서 공식 템플릿 생성 시 자동 입력됩니다.
@@ -2413,7 +2438,7 @@ export default function MassUploadPage() {
             );
           })
         )}
-      </section>
+      </details>
 
     </div>
   );

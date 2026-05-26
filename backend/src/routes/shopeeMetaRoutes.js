@@ -1161,9 +1161,10 @@ router.post('/mass-upload/generate-template-files', async (req, res) => {
       put(rowNo, col('Days to ship'), row.daysToShip);
       put(rowNo, col('Brand'), row.brand);
 
-      if (row.first && requiredValueByHeader.size > 0) {
+      if (requiredValueByHeader.size > 0) {
         requiredValueByHeader.forEach((requiredValue, normalizedHeader) => {
-          const targetColumn = col(normalizedHeader);
+          const explicitColumn = Number(requiredValue?.columnIndex || 0);
+          const targetColumn = explicitColumn > 0 ? explicitColumn : col(normalizedHeader);
           if (!targetColumn) return;
           put(rowNo, targetColumn, requiredValue.value);
         });

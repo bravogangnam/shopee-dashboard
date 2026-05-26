@@ -3062,3 +3062,187 @@ label {
   border-color: #93c5fd;
   background: #eff6ff;
 }
+
+/* Mass Upload stronger stage/readability polish */
+.mass-upload-page {
+  background: #f6f7fb;
+  padding: 18px;
+  line-height: 1.6;
+  color: #172033;
+}
+
+.mass-upload-page > header {
+  background: #ffffff;
+  border: 1px solid #e6eaf0;
+  border-radius: 16px;
+  padding: 18px 20px;
+  margin-bottom: 18px;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
+}
+
+.mass-upload-page > header h1 {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #101828;
+}
+
+.mass-upload-page .card,
+.mass-upload-page details.card {
+  background: #ffffff;
+  border: 1px solid #dfe5ee;
+  border-left: 5px solid #2563eb;
+  border-radius: 16px;
+  padding: 18px 20px;
+  margin-top: 16px;
+  box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
+}
+
+.mass-upload-page details.card:not([open]) {
+  padding-bottom: 14px;
+  background: #ffffff;
+}
+
+.mass-upload-page details.card > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 0 14px 0 !important;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.mass-upload-page details.card:not([open]) > summary {
+  padding-bottom: 0 !important;
+  border-bottom: 0;
+}
+
+.mass-upload-page details.card > summary::-webkit-details-marker {
+  display: none;
+}
+
+.mass-upload-page details.card > summary h2,
+.mass-upload-page .card > h2 {
+  font-size: 22px !important;
+  font-weight: 800;
+  line-height: 1.3;
+  color: #111827;
+  letter-spacing: -0.02em;
+  margin: 0 !important;
+}
+
+.mass-upload-page details.card > summary h2::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 8px;
+  color: #2563eb;
+  font-size: 18px;
+  transform: translateY(-1px);
+}
+
+.mass-upload-page details.card[open] > summary h2::before {
+  content: "▾";
+}
+
+.mass-upload-page details.card > summary span {
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+  border: 1px solid #bfdbfe !important;
+  border-radius: 999px !important;
+  padding: 5px 10px !important;
+  font-size: 12px !important;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.mass-upload-page p,
+.mass-upload-page li,
+.mass-upload-page div {
+  font-size: 14px;
+}
+
+.mass-upload-page p {
+  color: #475467;
+  line-height: 1.65;
+}
+
+.mass-upload-page button {
+  border-radius: 9px !important;
+  padding: 8px 13px !important;
+  font-size: 13px !important;
+  font-weight: 700;
+}
+
+.mass-upload-page input,
+.mass-upload-page select,
+.mass-upload-page textarea {
+  border-radius: 8px !important;
+  border: 1px solid #cfd8e3 !important;
+  padding: 8px 10px !important;
+  font-size: 14px !important;
+  line-height: 1.4;
+}
+
+.mass-upload-page input[readonly] {
+  background: #f8fafc !important;
+  color: #344054;
+}
+
+.mass-upload-page table {
+  border-collapse: separate !important;
+  border-spacing: 0;
+}
+
+.mass-upload-page table th {
+  background: #f1f5f9 !important;
+  color: #1f2937 !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  padding: 10px 8px !important;
+  border-bottom: 1px solid #d9e2ec !important;
+}
+
+.mass-upload-page table td {
+  font-size: 13px !important;
+  padding: 9px 8px !important;
+  border-bottom: 1px solid #edf0f5 !important;
+  vertical-align: top;
+}
+
+.mass-upload-page table tr:hover td {
+  background: #fafcff;
+}
+
+.mass-upload-page code {
+  background: #eaf2ff;
+  border: 1px solid #c7dcff;
+  border-radius: 6px;
+  padding: 2px 6px;
+  color: #174ea6;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* Summary cards at the top */
+.mass-upload-page details.card:first-of-type {
+  border-left-color: #0ea5e9;
+}
+
+.mass-upload-page details.card:first-of-type [style*="grid"] > div {
+  min-height: 72px;
+}
+
+/* Image guide box */
+.mass-upload-page h2 + div[style*="d9e8ff"],
+.mass-upload-page div[style*="f5f9ff"] {
+  border-radius: 14px !important;
+}
+
+/* Keep long product names readable */
+.mass-upload-page summary strong,
+.mass-upload-page td,
+.mass-upload-page span {
+  word-break: break-word;
+}

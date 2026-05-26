@@ -1133,7 +1133,59 @@ export default function MassUploadPage() {
         else rows.push({ productName, sku: '-', item: 'Required Values', status: 'ok', message: `저장값 ${saved.length}개 / 생성 시 적용 예정` });
       }
 
-      (product.options || []).forEach((opt, oi) => {
+      const escapeRegExp = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+      const getUploadedImageMatches = (skuValue) => {
+        const normalizedSku = String(skuValue || '').trim();
+        if (!normalizedSku) return { representativeImages: [], optionImages: [] };
+
+        const lowerSku = normalizedSku.toLowerCase();
+        const representativePattern = new RegExp(`^${escapeRegExp(normalizedSku)}-m\\d*$`, 'i');
+
+        const representativeImages = [];
+        const optionImages = [];
+
+        uploadedImages.forEach((img) => {
+          const stem = String(img.stem || '').trim();
+          if (!stem) return;
+
+          if (stem.toLowerCase() === lowerSku) {
+            optionImages.push(img);
+            return;
+          }
+
+          if (representativePattern.test(stem)) {
+            representativeImages.push(img);
+          }
+        });
+
+        return { representativeImages, optionImages };
+      };
+
+      const optionRows = Array.isArray(product.options) ? product.options : [];
+      const optionImageStatus = optionRows.map((opt) => {
+        const skuValue = String(opt.sku || '').trim();
+        const matches = getUploadedImageMatches(skuValue);
+        return {
+          sku: skuValue,
+          hasOptionImage: matches.optionImages.length > 0,
+        };
+      });
+
+      const optionImageMatched = optionImageStatus.filter((row) => row.sku && row.hasOptionImage).map((row) => row.sku);
+      const optionImageMissing = optionImageStatus.filter((row) => row.sku && !row.hasOptionImage).map((row) => row.sku);
+
+      if (optionImageMatched.length > 0 && optionImageMissing.length > 0) {
+        rows.push({
+          productName,
+          sku: '-',
+          item: '옵션이미지',
+          status: 'warn',
+          message: `옵션이미지가 일부 옵션에만 있습니다. 전체 옵션에 넣거나 모두 비우세요. 매칭: ${optionImageMatched.join(', ')} / 누락: ${optionImageMissing.join(', ')}`,
+        });
+      }
+
+      optionRows.forEach((opt, oi) => {
         const sku = String(opt.sku || '').trim() || '-';
 
         if (!String(opt.sku || '').trim()) rows.push({ productName, sku, item: 'SKU', status: 'error', message: '누락' });
@@ -1142,15 +1194,27 @@ export default function MassUploadPage() {
         if (!String(opt.weight || '').trim()) rows.push({ productName, sku, item: '무게', status: 'error', message: '누락' });
 
         const rep = Array.isArray(product.representativeImages) ? product.representativeImages : [];
-        if (oi === 0 && !String(rep[0] || '').trim()) rows.push({ productName, sku, item: '대표이미지', status: 'warn', message: '첫 옵션행 대표이미지 누락' });
+        const matches = getUploadedImageMatches(opt.sku);
 
-        const imageCandidates = uploadedImages.filter((img) =>
-          String(img.stem || '').toLowerCase().startsWith(String(opt.sku || '').toLowerCase())
-        );
+        if (oi === 0) {
+          if (String(rep[0] || '').trim() || matches.representativeImages.length > 0) {
+            const repNames = matches.representativeImages.map((img) => img.fileName).filter(Boolean).slice(0, 5);
+            if (repNames.length > 0) {
+              rows.push({ productName, sku, item: '대표이미지 매칭', status: 'ok', message: repNames.join(', ') });
+            }
+          } else {
+            rows.push({ productName, sku, item: '대표이미지', status: 'warn', message: '첫 옵션행 대표이미지 누락' });
+          }
+        }
 
-        if (String(opt.sku || '').trim()) {
-          if (!imageCandidates.length) rows.push({ productName, sku, item: 'SKU 이미지 매칭', status: 'warn', message: '업로드 매칭 없음' });
-          else rows.push({ productName, sku, item: 'SKU 이미지 매칭', status: 'ok', message: imageCandidates.map((x) => x.fileName).slice(0, 3).join(', ') });
+        if (matches.optionImages.length > 0) {
+          rows.push({
+            productName,
+            sku,
+            item: '옵션이미지 매칭',
+            status: 'ok',
+            message: matches.optionImages.map((img) => img.fileName).filter(Boolean).slice(0, 5).join(', '),
+          });
         }
 
         [opt.optionImage, ...(oi === 0 ? rep : [])].forEach((url) => {

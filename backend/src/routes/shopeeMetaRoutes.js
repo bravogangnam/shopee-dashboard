@@ -57,6 +57,14 @@ const GENERATED_ROOT = path.join(process.cwd(), 'storage', 'krsc-generated');
 const IMAGE_ROOT = path.join(process.cwd(), 'storage', 'mass-upload-images');
 const REQUIRED_VALUES_ROOT = path.join(process.cwd(), 'storage', 'krsc-required-values');
 const CATEGORY_CATALOG_ROOT = path.join(process.cwd(), 'storage', 'krsc-category-catalog');
+let KRSC_CATEGORY_CATALOG_SEED = [];
+try {
+  // Code-owned KRSC/CNSC global category seed. Storage catalog is only for additions/overrides.
+  // eslint-disable-next-line global-require, import/no-dynamic-require
+  KRSC_CATEGORY_CATALOG_SEED = require('../data/krscCategoryCatalogSeed.json');
+} catch {
+  KRSC_CATEGORY_CATALOG_SEED = [];
+}
 
 function safeName(value) {
   return String(value || '').replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -517,16 +525,26 @@ async function searchCategoryCatalog({ tenantId, q }) {
   const query = String(q || '').trim();
   if (!query) return [];
 
+  const seedRows = Array.isArray(KRSC_CATEGORY_CATALOG_SEED) ? KRSC_CATEGORY_CATALOG_SEED : [];
   const sharedRows = await readCategoryCatalog('shared', tenantId);
   const tenantRows = await readCategoryCatalog('tenant', tenantId);
 
   const combined = [];
 
+  seedRows.forEach((row) => {
+    combined.push({
+      ...row,
+      source: 'global_catalog_seed',
+      sourcePriority: 1,
+      matchedBy: 'seed',
+    });
+  });
+
   sharedRows.forEach((row) => {
     combined.push({
       ...row,
       source: 'global_catalog_shared',
-      sourcePriority: 1,
+      sourcePriority: 2,
       matchedBy: 'catalog',
     });
   });
@@ -535,7 +553,7 @@ async function searchCategoryCatalog({ tenantId, q }) {
     combined.push({
       ...row,
       source: 'global_catalog_tenant',
-      sourcePriority: 2,
+      sourcePriority: 3,
       matchedBy: 'catalog',
     });
   });
@@ -783,7 +801,7 @@ router.get('/mass-upload/category-search', async (req, res) => {
       categoryId: String(template?.categoryId || '').trim(),
       categoryPath: String(template?.categoryPath || template?.categoryName || template?.categoryId || '').trim(),
       source: 'template_registry_fallback',
-      sourcePriority: 3,
+      sourcePriority: 4,
       matchedBy: 'template_registry',
     }))
     .filter((row) => row.categoryId && !seen.has(row.categoryId))

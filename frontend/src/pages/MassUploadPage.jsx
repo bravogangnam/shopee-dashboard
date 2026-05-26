@@ -181,6 +181,7 @@ function validateProduct(product) {
 const badge = (s) => s === 'ready' ? { text: '준비 완료', style: { background: '#e8f7ed', color: '#1b7f3b' } } : s === 'review' ? { text: '검수 필요', style: { background: '#fff7e8', color: '#a46300' } } : { text: '오류', style: { background: '#fdecec', color: '#b42318' } };
 
 const categorySourceLabel = (source) => {
+  if (source === 'global_catalog_seed') return 'KRSC/CNSC catalog';
   if (source === 'global_catalog_shared') return 'shared catalog';
   if (source === 'global_catalog_tenant') return 'tenant catalog';
   if (source === 'template_registry_fallback') return 'template fallback';

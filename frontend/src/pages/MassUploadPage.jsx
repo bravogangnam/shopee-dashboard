@@ -221,6 +221,8 @@ export default function MassUploadPage() {
   const [autoCategoryCandidates, setAutoCategoryCandidates] = useState({});
   const [templateFile, setTemplateFile] = useState(null);
   const [templateAnalysis, setTemplateAnalysis] = useState(null);
+  const [preflightRows, setPreflightRows] = useState([]);
+  const [preflightSummary, setPreflightSummary] = useState(null);
 
 
   const refreshTemplateRegistry = async () => {
@@ -1096,6 +1098,79 @@ export default function MassUploadPage() {
     }
   };
 
+
+  const runPreflightCheck = () => {
+    const rows = [];
+    const suspiciousUrlPattern = /(edgeone\.app|positive-aquamarine|disgusted-silver)/i;
+    const serverImagePrefix = 'https://junandkang.com/api/shopee-meta/mass-upload/images/public/';
+    const byProductKey = new Map((effectiveMetaResults || []).map((m) => [String(m.productKey || ''), m]));
+    const requiredByCategory = new Map((resultAnalysisRows || []).map((r) => [String(r.categoryId || ''), r]));
+
+    products.forEach((product) => {
+      const productKey = String(product.id || '').trim();
+      const meta = byProductKey.get(productKey);
+      const productName = String(product.productName || '').trim() || '(상품명 없음)';
+      const categoryId = String(meta?.category?.categoryId || '').trim();
+      const templateReady = Boolean(templateRegistry?.[categoryId]?.fileName);
+      const isManual = String(meta?.category?.source || '').includes('manual');
+      const hasCandidates = (autoCategoryCandidates?.[String(meta?.productKey || '').trim()] || []).length > 1;
+
+      if (!categoryId) {
+        rows.push({ productName, sku: '-', item: '카테고리', status: 'error', message: 'category_id 미확정' });
+      } else {
+        if (!templateReady) rows.push({ productName, sku: '-', item: '카테고리', status: 'error', message: `템플릿 미등록 (${categoryId})` });
+        if (!isManual && hasCandidates) rows.push({ productName, sku: '-', item: '카테고리', status: 'warn', message: '자동추천 유지 중. 후보 확인 권장' });
+      }
+
+      if (!String(product.productName || '').trim()) rows.push({ productName, sku: '-', item: 'Product Name', status: 'error', message: '누락' });
+      if (!String(product.description || '').trim()) rows.push({ productName, sku: '-', item: 'Product Description', status: 'error', message: '누락' });
+
+      const categoryRequired = requiredByCategory.get(categoryId);
+      const requiredAttrs = Array.isArray(categoryRequired?.attributes) ? categoryRequired.attributes : [];
+      if (requiredAttrs.length > 0) {
+        const saved = requiredValuesRegistry?.[categoryId]?.items || [];
+        if (!saved.length) rows.push({ productName, sku: '-', item: 'Required Values', status: 'error', message: `필수값 후보 ${requiredAttrs.length}개 있으나 저장값 없음` });
+        else rows.push({ productName, sku: '-', item: 'Required Values', status: 'ok', message: `저장값 ${saved.length}개 / 생성 시 적용 예정` });
+      }
+
+      (product.options || []).forEach((opt, oi) => {
+        const sku = String(opt.sku || '').trim() || '-';
+
+        if (!String(opt.sku || '').trim()) rows.push({ productName, sku, item: 'SKU', status: 'error', message: '누락' });
+        if (!String(opt.price || '').trim()) rows.push({ productName, sku, item: '가격', status: 'error', message: '누락' });
+        if (!String(opt.stock || '').trim()) rows.push({ productName, sku, item: '재고', status: 'error', message: '누락' });
+        if (!String(opt.weight || '').trim()) rows.push({ productName, sku, item: '무게', status: 'error', message: '누락' });
+
+        const rep = Array.isArray(product.representativeImages) ? product.representativeImages : [];
+        if (oi === 0 && !String(rep[0] || '').trim()) rows.push({ productName, sku, item: '대표이미지', status: 'warn', message: '첫 옵션행 대표이미지 누락' });
+
+        const imageCandidates = uploadedImages.filter((img) =>
+          String(img.stem || '').toLowerCase().startsWith(String(opt.sku || '').toLowerCase())
+        );
+
+        if (String(opt.sku || '').trim()) {
+          if (!imageCandidates.length) rows.push({ productName, sku, item: 'SKU 이미지 매칭', status: 'warn', message: '업로드 매칭 없음' });
+          else rows.push({ productName, sku, item: 'SKU 이미지 매칭', status: 'ok', message: imageCandidates.map((x) => x.fileName).slice(0, 3).join(', ') });
+        }
+
+        [opt.optionImage, ...(oi === 0 ? rep : [])].forEach((url) => {
+          const u = String(url || '').trim();
+          if (!u) return;
+          if (suspiciousUrlPattern.test(u)) rows.push({ productName, sku, item: '외부 URL', status: 'warn', message: `테스트/외부 URL 감지: ${u}` });
+          if (/^https?:\/\//i.test(u) && !u.startsWith(serverImagePrefix)) rows.push({ productName, sku, item: '이미지 URL', status: 'warn', message: `서버 public URL 아님: ${u}` });
+        });
+      });
+    });
+
+    const errorCount = rows.filter((r) => r.status === 'error').length;
+    const warnCount = rows.filter((r) => r.status === 'warn').length;
+    const okCount = rows.filter((r) => r.status === 'ok').length;
+    const summary = errorCount > 0 ? '생성 전 수정 필요' : warnCount > 0 ? '생성 가능하지만 확인 필요' : '생성 가능';
+
+    setPreflightRows(rows);
+    setPreflightSummary({ errorCount, warnCount, okCount, summary });
+  };
+
   const isRequiredTemplateHeader = (value) => {
     const text = String(value || '').trim();
     return Boolean(text) && (text.includes('*') || /required|mandatory|필수/i.test(text));
@@ -1756,6 +1831,47 @@ export default function MassUploadPage() {
       <section className="card" style={{ marginTop: 16 }}>
         <h2>7. 공식 템플릿 xlsx 생성</h2>
         <p>서버에 저장된 공식 template.xlsx를 복사해서 Template 시트 7행부터 데이터를 입력합니다.</p>
+
+        <div style={{ marginBottom: 8 }}>
+          <button type="button" onClick={runPreflightCheck}>생성 전 최종 검사</button>
+        </div>
+
+        {preflightSummary ? (
+          <div style={{ marginBottom: 8, padding: 8, border: '1px solid #eee', borderRadius: 6 }}>
+            <strong>{preflightSummary.summary}</strong>
+            <div style={{ fontSize: 12, marginTop: 4 }}>
+              오류 {preflightSummary.errorCount} / 경고 {preflightSummary.warnCount} / 통과 {preflightSummary.okCount}
+            </div>
+          </div>
+        ) : null}
+
+        {preflightRows.length > 0 ? (
+          <div style={{ marginBottom: 10, overflowX: 'auto' }}>
+            <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>상품명</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>SKU</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>항목</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>상태</th>
+                  <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>메시지</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preflightRows.map((row, idx) => (
+                  <tr key={`preflight_${idx}`}>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.productName}</td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.sku}</td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.item}</td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6, color: row.status === 'error' ? '#b42318' : row.status === 'warn' ? '#a46300' : '#1b7f3b' }}>{row.status}</td>
+                    <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{row.message}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+
 
         <button type="button" onClick={generateTemplateFiles} disabled={!canGenerateTemplateFiles}>
           공식 템플릿 xlsx 생성

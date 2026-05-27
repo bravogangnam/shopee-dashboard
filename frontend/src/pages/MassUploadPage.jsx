@@ -316,6 +316,38 @@ export default function MassUploadPage() {
     });
   }, [metaResults]);
 
+
+  const uploadedImageSummary = useMemo(() => {
+    const images = Array.isArray(uploadedImages) ? uploadedImages : [];
+    const representative = [];
+    const option = [];
+    const unknown = [];
+
+    images.forEach((image) => {
+      const stem = String(image?.stem || '').trim();
+      if (!stem) {
+        unknown.push(image);
+        return;
+      }
+
+      if (/-m\d*$/i.test(stem)) {
+        representative.push(image);
+      } else {
+        option.push(image);
+      }
+    });
+
+    return {
+      total: images.length,
+      representativeCount: representative.length,
+      optionCount: option.length,
+      unknownCount: unknown.length,
+      representative,
+      option,
+      unknown,
+    };
+  }, [uploadedImages]);
+
   const massUploadProgressSummary = useMemo(() => {
     const productCount = products.length;
     const optionCount = products.reduce((sum, product) => sum + (Array.isArray(product.options) ? product.options.length : 0), 0);
@@ -671,6 +703,75 @@ export default function MassUploadPage() {
   };
 
 
+
+  const tokenizeForCategoryRank = (value) => {
+    const stopWords = new Set([
+      'the', 'and', 'or', 'for', 'with', 'without', 'from', 'into', 'onto',
+      'korea', 'korean', 'genuine', 'popular', 'set', 'type', 'pcs', 'pc', 'ea',
+      'box', 'boxes', 'pack', 'packs', 'option', 'new', 'clear', 'series',
+      'ml', 'gram', 'grams', 'kg', 'cm', 'mm', 'inch', 'inches',
+    ]);
+
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .split(/\s+/)
+      .map((x) => x.trim())
+      .filter((x) => x.length >= 3 && !stopWords.has(x));
+  };
+
+  const rankCategoryCandidatesForProduct = (product, candidates) => {
+    const productText = [
+      product?.productName,
+      product?.category?.usedItemName,
+      product?.brand?.brandName,
+      ...(Array.isArray(product?.options) ? product.options.map((opt) => opt?.optionName) : []),
+    ].filter(Boolean).join(' ');
+
+    const productTokens = tokenizeForCategoryRank(productText);
+    const productTokenSet = new Set(productTokens);
+
+    const scoreCandidate = (candidate, originalIndex) => {
+      const categoryPath = String(candidate?.categoryPath || candidate?.categoryName || '');
+      const lowerPath = categoryPath.toLowerCase();
+      const pathTokens = tokenizeForCategoryRank(categoryPath);
+      const leaf = lowerPath.split('>').pop() || lowerPath;
+      const leafTokens = tokenizeForCategoryRank(leaf);
+
+      let score = 0;
+
+      pathTokens.forEach((token) => {
+        if (productTokenSet.has(token)) score += 8;
+      });
+
+      leafTokens.forEach((token) => {
+        if (productTokenSet.has(token)) score += 14;
+      });
+
+      productTokens.forEach((token) => {
+        if (lowerPath.includes(token)) score += 3;
+      });
+
+      if (String(candidate?.source || '').includes('category_recommend')) score += 18;
+      if (candidate?.source === 'global_catalog_seed') score += 8;
+      if (candidate?.source === 'global_catalog_shared') score += 6;
+      if (candidate?.source === 'global_catalog_tenant') score += 5;
+
+      score += Math.min(pathTokens.length, 8);
+      score -= originalIndex * 0.01;
+
+      return {
+        ...candidate,
+        _rankScore: score,
+      };
+    };
+
+    return (candidates || [])
+      .map((candidate, index) => scoreCandidate(candidate, index))
+      .sort((a, b) => b._rankScore - a._rankScore)
+      .slice(0, 10);
+  };
+
   const refreshAutoCategoryCandidates = async (product) => {
     const productKey = String(product?.productKey || '').trim();
     if (!productKey) return;
@@ -724,9 +825,11 @@ export default function MassUploadPage() {
       }
     }
 
+    const rankedCandidates = rankCategoryCandidatesForProduct(product, Array.from(merged.values()));
+
     setAutoCategoryCandidates((prev) => ({
       ...prev,
-      [productKey]: Array.from(merged.values()).slice(0, 10),
+      [productKey]: rankedCandidates,
     }));
   };
 
@@ -1744,16 +1847,28 @@ export default function MassUploadPage() {
         </div>
         {imageUploadMessage ? <p style={{ marginTop: 8 }}>{imageUploadMessage}</p> : null}
         {uploadedImages.length > 0 ? (
-          <div style={{ marginTop: 8 }}>
-            <p>jobId: {imageJobId} / 업로드 파일 수: {uploadedImages.length}</p>
-            {uploadedImages.map((image) => {
-              const isMain = /-m\d+$/i.test(String(image.stem || ''));
-              return (
-                <div key={image.fileName}>
-                  {image.fileName} | {isMain ? '대표이미지' : '옵션이미지'} | <a href={image.publicUrl} target="_blank" rel="noreferrer">{image.publicUrl}</a>
-                </div>
-              );
-            })}
+          <div style={{ marginTop: 10, border: '1px solid #e5e7eb', borderRadius: 8, padding: 10, background: '#fff' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+              <div><strong>업로드 완료</strong><br />{uploadedImageSummary.total}개</div>
+              <div><strong>대표이미지 후보</strong><br />{uploadedImageSummary.representativeCount}개</div>
+              <div><strong>옵션이미지 후보</strong><br />{uploadedImageSummary.optionCount}개</div>
+              <div><strong>확인 필요</strong><br />{uploadedImageSummary.unknownCount}개</div>
+            </div>
+
+            <details style={{ marginTop: 8 }}>
+              <summary style={{ cursor: 'pointer', fontSize: 13, color: '#475467' }}>업로드 상세 보기</summary>
+              <div style={{ marginTop: 8 }}>
+                <p style={{ margin: 0, fontSize: 12 }}>jobId: {imageJobId}</p>
+                {uploadedImages.map((image) => {
+                  const isMain = /-m\d*$/i.test(String(image.stem || ''));
+                  return (
+                    <div key={image.fileName} style={{ fontSize: 12, marginBottom: 4, wordBreak: 'break-all' }}>
+                      {image.fileName} | {isMain ? '대표이미지' : '옵션이미지'} | <a href={image.publicUrl} target="_blank" rel="noreferrer">{image.publicUrl}</a>
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
           </div>
         ) : null}
       </details>

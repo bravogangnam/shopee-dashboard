@@ -403,6 +403,8 @@ function TodayOrderInventoryTable({
   purchaseOnly,
   onPreviewImage,
   onShowOrders,
+  onAdjustStock,
+  onOpenHistory,
 }) {
   function goToOrder(orderSn) {
     window.location.href = `/orders?order_sn=${encodeURIComponent(orderSn)}`;
@@ -430,6 +432,7 @@ function TodayOrderInventoryTable({
                   <th className="today-col-name">상품명</th>
                   <th className="today-col-order">주문번호</th>
                   <th className="today-col-status">상태</th>
+                  <th className="today-col-actions">작업</th>
                 </tr>
               </thead>
             <tbody>
@@ -483,6 +486,16 @@ function TodayOrderInventoryTable({
                         <span className={`stock-status-pill stock-status-${status.key}`}>
                           {status.label}
                         </span>
+                      </td>
+                      <td className="today-col-actions">
+                        <div className="inventory-actions">
+                          <button type="button" className="invoice-btn" onClick={() => onAdjustStock(item)}>
+                            재고 보정
+                          </button>
+                          <button type="button" className="invoice-btn" onClick={() => onOpenHistory(item)}>
+                            이력보기
+                          </button>
+                        </div>
                       </td>
                     </tr>
                 );
@@ -1085,6 +1098,8 @@ export default function InventoryPage() {
           purchaseOnly={todayPurchaseOnly}
           onPreviewImage={setInventoryPreviewItem}
           onShowOrders={setTodayOrderLinesProduct}
+          onAdjustStock={setAdjustProduct}
+          onOpenHistory={openHistory}
         />
       ) : filteredProducts.length ? (
         <div className="table-wrap inventory-table-wrap">

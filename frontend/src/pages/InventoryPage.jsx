@@ -401,7 +401,6 @@ function OrderLinesModal({ item, onClose }) {
 function TodayOrderInventoryTable({
   items,
   purchaseOnly,
-  onTogglePurchaseOnly,
   onPreviewImage,
   onShowOrders,
 }) {
@@ -416,14 +415,6 @@ function TodayOrderInventoryTable({
           <strong>오늘 주문 상품 재고 현황</strong>
           <p>오늘 주문 상품과 현재 구매가 필요한 SKU를 함께 표시합니다.</p>
         </div>
-        <label className="toggle-inline">
-          <input
-            type="checkbox"
-            checked={purchaseOnly}
-            onChange={event => onTogglePurchaseOnly(event.target.checked)}
-          />
-          구매필요만 보기
-        </label>
       </div>
 
       {items.length ? (
@@ -991,24 +982,6 @@ export default function InventoryPage() {
           <button type="button" className="action-btn" onClick={loadProducts} disabled={loading}>
             {loading ? '새로고침 중' : '새로고침'}
           </button>
-          <button
-            type="button"
-            className={`action-btn ${
-              (activeInventoryTab === 'today' && todayPurchaseOnly) ||
-              (activeInventoryTab === 'all' && statusFilter !== 'ALL')
-                ? 'primary'
-                : ''
-            }`}
-            onClick={() => {
-              if (activeInventoryTab === 'today') {
-                setTodayPurchaseOnly(current => !current);
-                return;
-              }
-              setStatusFilter(current => (current === 'ALL' ? 'purchase_needed' : 'ALL'));
-            }}
-          >
-            구매필요만 보기
-          </button>
         </div>
       </div>
 
@@ -1063,13 +1036,6 @@ export default function InventoryPage() {
             placeholder="SKU / 상품명 / Order SN"
           />
         </label>
-        <button
-          type="button"
-          className="ghost-button"
-          onClick={handleInventoryFilterReset}
-        >
-          초기화
-        </button>
         {activeInventoryTab === 'all' && (
           <label className="filter-field">
             상태
@@ -1082,6 +1048,33 @@ export default function InventoryPage() {
             </select>
           </label>
         )}
+        <div className="filter-actions">
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={handleInventoryFilterReset}
+          >
+            초기화
+          </button>
+          <button
+            type="button"
+            className={`action-btn ${
+              (activeInventoryTab === 'today' && todayPurchaseOnly) ||
+              (activeInventoryTab === 'all' && statusFilter === 'purchase_needed')
+                ? 'primary'
+                : ''
+            }`}
+            onClick={() => {
+              if (activeInventoryTab === 'today') {
+                setTodayPurchaseOnly(current => !current);
+                return;
+              }
+              setStatusFilter(current => (current === 'purchase_needed' ? 'ALL' : 'purchase_needed'));
+            }}
+          >
+            구매필요만 보기
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -1090,7 +1083,6 @@ export default function InventoryPage() {
         <TodayOrderInventoryTable
           items={filteredTodayOrderItems}
           purchaseOnly={todayPurchaseOnly}
-          onTogglePurchaseOnly={setTodayPurchaseOnly}
           onPreviewImage={setInventoryPreviewItem}
           onShowOrders={setTodayOrderLinesProduct}
         />

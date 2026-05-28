@@ -68,8 +68,16 @@ async function runAutoSync() {
       const newOrders   = result?.new_orders          || 0;
       const readyToShipNewOrders = result?.ready_to_ship_new_orders || 0;
       const byRegion    = result?.ready_to_ship_new_orders_by_region || {};
+      const readyToShipNewOrderItems = Array.isArray(result?.ready_to_ship_new_order_items)
+        ? result.ready_to_ship_new_order_items
+        : [];
 
-      lastResult = { success: true, new_orders: newOrders, ready_to_ship_new_orders: readyToShipNewOrders };
+      lastResult = {
+        success: true,
+        new_orders: newOrders,
+        ready_to_ship_new_orders: readyToShipNewOrders,
+        ready_to_ship_new_order_items: readyToShipNewOrderItems.length,
+      };
       console.log(`[AutoSync] ✅ 완료  jobId=${jobId}  new=${newOrders}  ready_to_ship_alert=${readyToShipNewOrders}`);
 
     // 동기화 성공 → 실패 플래그 리셋 (다음 에러 때 다시 알림 가능)
@@ -80,7 +88,7 @@ async function runAutoSync() {
 
       // 새 주문 알림은 READY_TO_SHIP 대상만 발송한다. UNPAID 신규 주문은 제외.
       if (readyToShipNewOrders > 0) {
-        await notifyNewOrders(readyToShipNewOrders, byRegion);
+        await notifyNewOrders(readyToShipNewOrders, byRegion, readyToShipNewOrderItems);
     }
 
   } catch (err) {

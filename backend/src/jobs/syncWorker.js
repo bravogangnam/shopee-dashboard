@@ -147,6 +147,109 @@ function applyDisplayStatus(orderRow, displayStatus) {
   orderRow.display_status_checked_at = displayStatus?.display_status_checked_at || mysqlDateTimeNow();
 }
 
+function getAlertItemSku(item) {
+  return String(item?.model_sku || item?.item_sku || '').trim();
+}
+
+function getAlertFallbackName(item) {
+  const itemName = String(item?.item_name || '').trim();
+  const modelName = String(item?.model_name || '').trim();
+  if (itemName && modelName && modelName !== '-') return `${itemName} / ${modelName}`;
+  return itemName || modelName || getAlertItemSku(item) || '-';
+}
+
+async function getProductNameMapForAlert(skus, tenantId) {
+  const cleanSkus = Array.from(new Set(
+    (skus || [])
+      .map(sku => String(sku || '').trim())
+      .filter(Boolean)
+  ));
+
+  if (!cleanSkus.length) return new Map();
+
+  const placeholders = cleanSkus.map(() => '?').join(',');
+  const [rows] = await db.query(
+    `SELECT sku, product_name_kr, product_name_en
+     FROM products
+     WHERE tenant_id = ?
+       AND sku IN (${placeholders})`,
+    [tenantId, ...cleanSkus]
+  );
+
+  return new Map(rows.map(row => [String(row.sku || '').trim(), row]));
+}
+
+async function buildReadyToShipAlertItemsFromRows({ orderRows, itemRows, shop, tenantId }) {
+  const readyOrderSns = new Set(
+    (orderRows || [])
+      .filter(order => order.display_status === 'READY_TO_SHIP')
+      .map(order => order.order_sn)
+      .filter(Boolean)
+  );
+
+  if (!readyOrderSns.size) return [];
+
+  const targetItems = (itemRows || []).filter(item => readyOrderSns.has(item.order_sn));
+  const productMap = await getProductNameMapForAlert(targetItems.map(getAlertItemSku), tenantId);
+
+  return targetItems.map(item => {
+    const sku = getAlertItemSku(item);
+    const product = productMap.get(sku) || {};
+    return {
+      region: shop.region || shop.alias || String(shop.shop_id),
+      orderSn: item.order_sn,
+      sku,
+      productName: product.product_name_kr || getAlertFallbackName(item) || product.product_name_en || sku || '-',
+      optionName: item.model_name || '',
+      qty: Number(item.model_quantity_purchased || 1),
+    };
+  });
+}
+
+async function buildReadyToShipAlertItemsFromDb({ orderSns, shop, tenantId }) {
+  const cleanOrderSns = Array.from(new Set(
+    (orderSns || [])
+      .map(orderSn => String(orderSn || '').trim())
+      .filter(Boolean)
+  ));
+
+  if (!cleanOrderSns.length) return [];
+
+  const placeholders = cleanOrderSns.map(() => '?').join(',');
+  const [rows] = await db.query(
+    `SELECT
+       oi.order_sn,
+       oi.item_name,
+       oi.item_sku,
+       oi.model_name,
+       oi.model_sku,
+       oi.model_quantity_purchased,
+       p.product_name_kr,
+       p.product_name_en
+     FROM order_items oi
+     LEFT JOIN products p
+       ON p.tenant_id = oi.tenant_id
+      AND p.sku = COALESCE(NULLIF(oi.model_sku, ''), NULLIF(oi.item_sku, ''))
+     WHERE oi.tenant_id = ?
+       AND oi.shop_id = ?
+       AND oi.order_sn IN (${placeholders})
+     ORDER BY oi.order_sn ASC, oi.id ASC`,
+    [tenantId, shop.shop_id, ...cleanOrderSns]
+  );
+
+  return rows.map(row => {
+    const sku = String(row.model_sku || row.item_sku || '').trim();
+    return {
+      region: shop.region || shop.alias || String(shop.shop_id),
+      orderSn: row.order_sn,
+      sku,
+      productName: row.product_name_kr || getAlertFallbackName(row) || row.product_name_en || sku || '-',
+      optionName: row.model_name || '',
+      qty: Number(row.model_quantity_purchased || 1),
+    };
+  });
+}
+
 
 /**
  * 수동 동기화 메인 실행 함수
@@ -180,6 +283,7 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
     const newOrdersByRegion = {}; // { MY: n, SG: n, TW: n }
     let totalReadyToShipAlertOrders = 0;
     const readyToShipAlertOrdersByRegion = {}; // 새주문 알림 대상: READY_TO_SHIP only
+    const readyToShipAlertItems = [];
 
     // ───────────────────────────────────────────────────────────
     // STEP 1: 신규 주문 수집
@@ -279,6 +383,12 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
               shopReadyToShipAlertCount += readyToShipInserted;
               if (readyToShipInserted > 0) {
                 console.log(`[Sync][Step1] │  새주문 알림 대상 READY_TO_SHIP=${readyToShipInserted}건`);
+                readyToShipAlertItems.push(...await buildReadyToShipAlertItemsFromRows({
+                  orderRows,
+                  itemRows: itemRowsAll,
+                  shop,
+                  tenantId,
+                }));
               }
 
             shopNewCount += inserted;
@@ -364,6 +474,7 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
         const updateStart = t();
         let shopUpdated = 0;
           let shopReadyToShipAlertCount = 0;
+          const shopReadyToShipAlertOrderSns = [];
         for (const order of details) {
           const dbRow = nonFinalOrders.find(o => o.order_sn === order.order_sn);
           if (!dbRow) continue;
@@ -385,6 +496,7 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
               const previousDisplayStatus = dbRow.display_status || dbRow.order_status;
                 if (previousDisplayStatus !== 'READY_TO_SHIP' && orderRow.display_status === 'READY_TO_SHIP') {
                   shopReadyToShipAlertCount++;
+                  shopReadyToShipAlertOrderSns.push(order.order_sn);
                   console.log(`[Sync][Step2] │  새주문 알림 대상 전환: ${order.order_sn} ${previousDisplayStatus} → READY_TO_SHIP`);
                 }
 
@@ -398,6 +510,11 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
           totalReadyToShipAlertOrders += shopReadyToShipAlertCount;
           if (shopReadyToShipAlertCount > 0) {
             readyToShipAlertOrdersByRegion[shop.region] = (readyToShipAlertOrdersByRegion[shop.region] || 0) + shopReadyToShipAlertCount;
+            readyToShipAlertItems.push(...await buildReadyToShipAlertItemsFromDb({
+              orderSns: shopReadyToShipAlertOrderSns,
+              shop,
+              tenantId,
+            }));
           }
 
           console.log(`[Sync][Step2] └─ shop=${shopAlias} 완료  업데이트=${shopUpdated}건  새주문알림대상=${shopReadyToShipAlertCount}건  ${ms(shopStart)}`);
@@ -511,6 +628,8 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
       new_orders_by_region: newOrdersByRegion,
       ready_to_ship_new_orders: totalReadyToShipAlertOrders,
       ready_to_ship_new_orders_by_region: readyToShipAlertOrdersByRegion,
+      ready_to_ship_new_order_items: readyToShipAlertItems,
+      ready_to_ship_new_order_items: readyToShipAlertItems,
     });
 
     console.log(`\n${'═'.repeat(60)}`);

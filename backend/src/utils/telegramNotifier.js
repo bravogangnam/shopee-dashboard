@@ -89,7 +89,24 @@ async function notifySyncFailed(errorMessage) {
  * @param {number} total      - 전체 새 주문 수
  * @param {object} byRegion   - { SG: n, MY: n, PH: n, TW: n } 형태
  */
-async function notifyNewOrders(total, byRegion = {}) {
+function escapeMarkdownText(value) {
+  return String(value || '-')
+    .replace(/([_*`\[\]])/g, '\\$1')
+    .slice(0, 180);
+}
+
+function formatNewOrderItemLine(item) {
+  const region = escapeMarkdownText(item.region || '-');
+  const orderSn = escapeMarkdownText(item.orderSn || '-');
+  const productName = escapeMarkdownText(item.productName || item.sku || '-');
+  const optionName = String(item.optionName || '').trim();
+  const qty = Number(item.qty || 1);
+  const optionText = optionName && optionName !== '-' ? ` / ${escapeMarkdownText(optionName)}` : '';
+
+  return `- ${region} ${orderSn}\n  ${productName}${optionText} x ${Number.isFinite(qty) ? qty : 1}`;
+}
+
+async function notifyNewOrders(total, byRegion = {}, items = []) {
   if (total <= 0) return; // 새 주문 없으면 스킵
 
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -102,11 +119,24 @@ async function notifyNewOrders(total, byRegion = {}) {
     .join(', ');
 
   const detail = regionParts ? ` (${regionParts})` : '';
+  const visibleItems = Array.isArray(items) ? items.slice(0, 10) : [];
+  const hiddenCount = Array.isArray(items) ? Math.max(0, items.length - visibleItems.length) : 0;
 
-  await sendMessage(
-    `🛍️ *[Shopee] 새 주문 ${total}건*${detail}\n` +
-    `🕐 ${now} UTC`
-  );
+  const lines = [
+    `🛍️ *[Shopee] 새 주문 ${total}건*${detail}`,
+    `🕐 ${now} UTC`,
+  ];
+
+  if (visibleItems.length) {
+    lines.push('');
+    lines.push('*상품명*');
+    lines.push(...visibleItems.map(formatNewOrderItemLine));
+    if (hiddenCount > 0) {
+      lines.push(`외 ${hiddenCount}개 상품`);
+    }
+  }
+
+  await sendMessage(lines.join('\n'));
 }
 
 module.exports = {

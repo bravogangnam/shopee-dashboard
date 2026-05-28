@@ -60,7 +60,7 @@ const createDefaultFilters = () => ({
   order_status: '',
   order_sn: '',
   page: 1,
-  page_size: 20,
+  page_size: 100,
   ...getCurrentMonthRange(),
 });
 

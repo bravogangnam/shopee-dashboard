@@ -1236,12 +1236,55 @@ label {
 }
 
 .today-order-inventory-table {
-  min-width: 1080px;
+  table-layout: fixed;
+  min-width: 1500px;
 }
 
-.today-order-inventory-table th:nth-child(2),
-.today-order-inventory-table td:nth-child(2) {
-  min-width: 280px;
+.today-order-inventory-table .today-col-sku,
+.today-order-inventory-table .today-col-sku-cell {
+  width: 105px;
+}
+
+.today-order-inventory-table .today-col-cost {
+  width: 115px;
+}
+
+.today-order-inventory-table .today-col-qty,
+.today-order-inventory-table .today-col-stock,
+.today-order-inventory-table .today-col-needed {
+  width: 80px;
+}
+
+.today-order-inventory-table .today-col-name {
+  width: auto;
+  min-width: 420px;
+}
+
+.today-order-inventory-table .today-col-order {
+  width: 170px;
+}
+
+.today-order-inventory-table .today-col-status {
+  width: 95px;
+}
+
+.today-order-inventory-table .today-col-actions {
+  width: 135px;
+}
+
+.today-order-inventory-table .today-col-actions .inventory-actions {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.today-order-inventory-table .today-col-actions .invoice-btn {
+  min-height: 30px;
+  padding: 0 9px;
+  white-space: nowrap;
+}
+
+.today-order-inventory-table .inventory-product-link {
+  max-width: 100%;
 }
 
 .link-button {

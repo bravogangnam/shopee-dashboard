@@ -878,6 +878,14 @@ export default function InventoryPage() {
     setAllSkuPage(1);
   }, [search, activeInventoryTab, statusFilter]);
 
+  function handleInventoryFilterReset() {
+    setSearch('');
+    if (activeInventoryTab === 'all') {
+      setStatusFilter('ALL');
+    }
+    setAllSkuPage(1);
+  }
+
   useEffect(() => {
     if (allSkuPage > allSkuTotalPages) {
       setAllSkuPage(allSkuTotalPages);
@@ -1055,6 +1063,13 @@ export default function InventoryPage() {
             placeholder="SKU / 상품명 / Order SN"
           />
         </label>
+        <button
+          type="button"
+          className="ghost-button"
+          onClick={handleInventoryFilterReset}
+        >
+          초기화
+        </button>
         {activeInventoryTab === 'all' && (
           <label className="filter-field">
             상태

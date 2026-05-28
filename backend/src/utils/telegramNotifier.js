@@ -154,27 +154,50 @@ async function notifyNewOrders(total, byRegion = {}, items = []) {
 
   const detail = regionParts ? ` (${regionParts})` : '';
   const groupedOrders = groupNewOrderItemsByOrder(items);
-  const visibleGroups = groupedOrders.slice(0, 10);
-  const hiddenOrderCount = Math.max(0, groupedOrders.length - visibleGroups.length);
-  const visibleItemCount = visibleGroups.reduce((sum, group) => sum + group.items.length, 0);
-  const totalItemCount = groupedOrders.reduce((sum, group) => sum + group.items.length, 0);
-  const hiddenItemCount = Math.max(0, totalItemCount - visibleItemCount);
 
-  const lines = [
+  const headerLines = [
     `🛍️ *[Shopee] 새 주문 ${total}건*${detail}`,
     `🕐 ${now} UTC`,
   ];
 
-  if (visibleGroups.length) {
-    lines.push('');
-    lines.push('*상품명*');
-    lines.push(...visibleGroups.map(formatNewOrderGroup));
-    if (hiddenOrderCount > 0 || hiddenItemCount > 0) {
-      lines.push(`외 ${hiddenOrderCount}개 주문 / ${hiddenItemCount}개 상품`);
+  if (!groupedOrders.length) {
+    await sendMessage(headerLines.join('\n'));
+    return;
+  }
+
+  const MAX_MESSAGE_LENGTH = 3500;
+  const messages = [];
+  let currentLines = [
+    ...headerLines,
+    '',
+    '*상품명*',
+  ];
+
+  for (const group of groupedOrders) {
+    const groupText = formatNewOrderGroup(group);
+    const nextText = [...currentLines, groupText].join('\n');
+
+    if (nextText.length > MAX_MESSAGE_LENGTH && currentLines.length > 3) {
+      messages.push(currentLines.join('\n'));
+      currentLines = [
+        `🛍️ *[Shopee] 새 주문 ${total}건*${detail} \(계속\)`,
+        `🕐 ${now} UTC`,
+        '',
+        '*상품명*',
+        groupText,
+      ];
+    } else {
+      currentLines.push(groupText);
     }
   }
 
-  await sendMessage(lines.join('\n'));
+  if (currentLines.length > 3) {
+    messages.push(currentLines.join('\n'));
+  }
+
+  for (const message of messages) {
+    await sendMessage(message);
+  }
 }
 
 module.exports = {

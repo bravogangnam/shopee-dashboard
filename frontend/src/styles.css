@@ -1237,7 +1237,7 @@ label {
 
 .today-order-inventory-table {
   table-layout: fixed;
-  min-width: 1500px;
+  min-width: 1560px;
 }
 
 .today-order-inventory-table .today-col-sku,
@@ -1261,7 +1261,7 @@ label {
 }
 
 .today-order-inventory-table .today-col-order {
-  width: 170px;
+  width: 160px;
 }
 
 .today-order-inventory-table .today-col-status {
@@ -1269,17 +1269,24 @@ label {
 }
 
 .today-order-inventory-table .today-col-actions {
-  width: 135px;
+  width: 210px;
 }
 
 .today-order-inventory-table .today-col-actions .inventory-actions {
+  display: flex;
   flex-wrap: nowrap;
   gap: 6px;
+  justify-content: flex-start;
+  min-width: 190px;
 }
 
 .today-order-inventory-table .today-col-actions .invoice-btn {
+  flex: 0 0 auto;
+  min-width: 78px;
   min-height: 30px;
   padding: 0 9px;
+  overflow: visible;
+  text-overflow: clip;
   white-space: nowrap;
 }
 

@@ -95,15 +95,49 @@ function escapeMarkdownText(value) {
     .slice(0, 180);
 }
 
-function formatNewOrderItemLine(item) {
-  const region = escapeMarkdownText(item.region || '-');
-  const orderSn = escapeMarkdownText(item.orderSn || '-');
+function formatNewOrderProductLine(item) {
   const productName = escapeMarkdownText(item.productName || item.sku || '-');
   const optionName = String(item.optionName || '').trim();
   const qty = Number(item.qty || 1);
   const optionText = optionName && optionName !== '-' ? ` / ${escapeMarkdownText(optionName)}` : '';
 
-  return `- ${region} ${orderSn}\n  ${productName}${optionText} x ${Number.isFinite(qty) ? qty : 1}`;
+  return `  ${productName}${optionText} x ${Number.isFinite(qty) ? qty : 1}`;
+}
+
+function groupNewOrderItemsByOrder(items = []) {
+  const groups = [];
+  const groupMap = new Map();
+
+  for (const item of Array.isArray(items) ? items : []) {
+    const region = item.region || '-';
+    const orderSn = item.orderSn || '-';
+    const key = `${region}::${orderSn}`;
+
+    if (!groupMap.has(key)) {
+      const group = {
+        region,
+        orderSn,
+        items: [],
+      };
+      groupMap.set(key, group);
+      groups.push(group);
+    }
+
+    groupMap.get(key).items.push(item);
+  }
+
+  return groups;
+}
+
+function formatNewOrderGroup(group) {
+  const region = escapeMarkdownText(group.region || '-');
+  const orderSn = escapeMarkdownText(group.orderSn || '-');
+  const productLines = group.items.map(formatNewOrderProductLine);
+
+  return [
+    `- ${region} ${orderSn}`,
+    ...productLines,
+  ].join('\n');
 }
 
 async function notifyNewOrders(total, byRegion = {}, items = []) {
@@ -119,20 +153,24 @@ async function notifyNewOrders(total, byRegion = {}, items = []) {
     .join(', ');
 
   const detail = regionParts ? ` (${regionParts})` : '';
-  const visibleItems = Array.isArray(items) ? items.slice(0, 10) : [];
-  const hiddenCount = Array.isArray(items) ? Math.max(0, items.length - visibleItems.length) : 0;
+  const groupedOrders = groupNewOrderItemsByOrder(items);
+  const visibleGroups = groupedOrders.slice(0, 10);
+  const hiddenOrderCount = Math.max(0, groupedOrders.length - visibleGroups.length);
+  const visibleItemCount = visibleGroups.reduce((sum, group) => sum + group.items.length, 0);
+  const totalItemCount = groupedOrders.reduce((sum, group) => sum + group.items.length, 0);
+  const hiddenItemCount = Math.max(0, totalItemCount - visibleItemCount);
 
   const lines = [
     `🛍️ *[Shopee] 새 주문 ${total}건*${detail}`,
     `🕐 ${now} UTC`,
   ];
 
-  if (visibleItems.length) {
+  if (visibleGroups.length) {
     lines.push('');
     lines.push('*상품명*');
-    lines.push(...visibleItems.map(formatNewOrderItemLine));
-    if (hiddenCount > 0) {
-      lines.push(`외 ${hiddenCount}개 상품`);
+    lines.push(...visibleGroups.map(formatNewOrderGroup));
+    if (hiddenOrderCount > 0 || hiddenItemCount > 0) {
+      lines.push(`외 ${hiddenOrderCount}개 주문 / ${hiddenItemCount}개 상품`);
     }
   }
 

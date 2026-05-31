@@ -184,6 +184,21 @@ const categorySourceLabel = (source) => {
   return source || '-';
 };
 
+const formatBytes = (value) => {
+  const bytes = Number(value) || 0;
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let size = bytes / 1024;
+  let index = 0;
+
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+
+  return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[index]}`;
+};
+
 export default function MassUploadPage() {
   const CATEGORY_OVERRIDE_KEY = 'krsc_category_overrides_v1';
   const [products, setProducts] = useState([]);
@@ -202,6 +217,10 @@ export default function MassUploadPage() {
   const [imageUploadFiles, setImageUploadFiles] = useState([]);
   const [imageUploadMessage, setImageUploadMessage] = useState('');
   const [uploadedImages, setUploadedImages] = useState([]);
+  const [serverImageJobs, setServerImageJobs] = useState([]);
+  const [serverImageSummary, setServerImageSummary] = useState({ jobCount: 0, fileCount: 0, totalBytes: 0 });
+  const [serverImageMessage, setServerImageMessage] = useState('');
+  const [serverImageLoading, setServerImageLoading] = useState(false);
   const [resultAnalysisFile, setResultAnalysisFile] = useState(null);
   const [resultAnalysisMessage, setResultAnalysisMessage] = useState('');
   const [resultAnalysisRows, setResultAnalysisRows] = useState([]);
@@ -1254,6 +1273,96 @@ export default function MassUploadPage() {
     }
   };
 
+  const refreshServerImageJobs = async ({ silent = false } = {}) => {
+    setServerImageLoading(true);
+    if (!silent) setServerImageMessage('이미지 현황을 불러오는 중...');
+
+    try {
+      const res = await fetch('/api/shopee-meta/mass-upload/images', {
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!data?.ok) {
+        throw new Error(data?.message || data?.error || '이미지 현황 조회 실패');
+      }
+
+      const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+      setServerImageJobs(jobs);
+      setServerImageSummary({
+        jobCount: Number(data.jobCount) || jobs.length,
+        fileCount: Number(data.fileCount) || 0,
+        totalBytes: Number(data.totalBytes) || 0,
+      });
+      if (!silent) setServerImageMessage(`이미지 현황 갱신 완료: job ${Number(data.jobCount) || jobs.length}개 / 파일 ${Number(data.fileCount) || 0}개`);
+    } catch (err) {
+      setServerImageMessage(`이미지 현황 조회 실패: ${err?.message || '알 수 없는 오류'}`);
+    } finally {
+      setServerImageLoading(false);
+    }
+  };
+
+  const deleteCurrentImageJob = async () => {
+    const targetJobId = String(imageJobId || '').trim();
+    if (!targetJobId) {
+      setServerImageMessage('삭제할 현재 작업 imageJobId가 없습니다.');
+      return;
+    }
+
+    if (!window.confirm(`현재 작업 이미지 job(${targetJobId})을 서버에서 삭제할까요?`)) return;
+
+    setServerImageLoading(true);
+    setServerImageMessage('현재 작업 이미지 삭제 중...');
+
+    try {
+      const res = await fetch(`/api/shopee-meta/mass-upload/images/${encodeURIComponent(targetJobId)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!data?.ok) {
+        throw new Error(data?.message || data?.error || '현재 작업 이미지 삭제 실패');
+      }
+
+      setImageJobId('');
+      setUploadedImages([]);
+      setImageUploadFiles([]);
+      setImageUploadMessage('현재 작업 이미지가 삭제되어 업로드 상태를 초기화했습니다.');
+      setServerImageMessage(`삭제 완료: job ${data.deletedJobCount || 1}개 / 파일 ${data.deletedFileCount || 0}개 / ${formatBytes(data.deletedBytes)}`);
+      await refreshServerImageJobs({ silent: true });
+    } catch (err) {
+      setServerImageMessage(`현재 작업 이미지 삭제 실패: ${err?.message || '알 수 없는 오류'}`);
+    } finally {
+      setServerImageLoading(false);
+    }
+  };
+
+  const cleanupOldImageJobs = async () => {
+    if (!window.confirm('24시간 지난 서버 업로드 이미지 job만 정리할까요?')) return;
+
+    setServerImageLoading(true);
+    setServerImageMessage('24시간 지난 이미지 정리 중...');
+
+    try {
+      const res = await fetch('/api/shopee-meta/mass-upload/images/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ olderThanHours: 24 }),
+      });
+      const data = await res.json();
+      if (!data?.ok) {
+        throw new Error(data?.message || data?.error || '오래된 이미지 정리 실패');
+      }
+
+      setServerImageMessage(`정리 완료: job ${data.deletedJobCount || 0}개 / 파일 ${data.deletedFileCount || 0}개 / ${formatBytes(data.deletedBytes)}`);
+      await refreshServerImageJobs({ silent: true });
+    } catch (err) {
+      setServerImageMessage(`오래된 이미지 정리 실패: ${err?.message || '알 수 없는 오류'}`);
+    } finally {
+      setServerImageLoading(false);
+    }
+  };
+
   const generateTemplateFiles = async () => {
     setGenerateMessage('Shopee 업로드용 xlsx 생성 중...');
     setGeneratedFiles([]);
@@ -1871,6 +1980,59 @@ export default function MassUploadPage() {
             </details>
           </div>
         ) : null}
+
+        <div style={{ marginTop: 14, border: '1px solid #e5e7eb', borderRadius: 8, padding: 12, background: '#fff' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ fontWeight: 700 }}>서버 이미지 관리</div>
+              <p style={{ margin: '4px 0 0', fontSize: 13, color: '#475467' }}>
+                대량등록용 서버 업로드 이미지는 임시파일입니다. 원본은 노트북에 보관하고, 24시간 지난 이미지 job은 정리 대상입니다.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" onClick={refreshServerImageJobs} disabled={serverImageLoading}>이미지 현황 새로고침</button>
+              <button type="button" onClick={deleteCurrentImageJob} disabled={serverImageLoading || !imageJobId}>현재 작업 이미지 삭제</button>
+              <button type="button" onClick={cleanupOldImageJobs} disabled={serverImageLoading}>24시간 지난 이미지 정리</button>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginTop: 10 }}>
+            <div><strong>서버 job</strong><br />{serverImageSummary.jobCount}개</div>
+            <div><strong>서버 파일</strong><br />{serverImageSummary.fileCount}개</div>
+            <div><strong>총 용량</strong><br />{formatBytes(serverImageSummary.totalBytes)}</div>
+            <div><strong>현재 작업</strong><br />{imageJobId || '-'}</div>
+          </div>
+
+          {serverImageMessage ? <p style={{ marginTop: 8 }}>{serverImageMessage}</p> : null}
+
+          {serverImageJobs.length > 0 ? (
+            <details style={{ marginTop: 8 }}>
+              <summary style={{ cursor: 'pointer', fontSize: 13, color: '#475467' }}>서버 이미지 job 목록 보기</summary>
+              <div style={{ marginTop: 8, overflowX: 'auto' }}>
+                <table style={{ width: '100%', minWidth: 620, borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>jobId</th>
+                      <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>업로드 시각</th>
+                      <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>파일 수</th>
+                      <th style={{ borderBottom: '1px solid #ddd', padding: 6 }}>용량</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {serverImageJobs.map((job) => (
+                      <tr key={job.jobId}>
+                        <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{job.jobId}</td>
+                        <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{job.uploadedAt || '-'}</td>
+                        <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{job.fileCount || 0}</td>
+                        <td style={{ borderBottom: '1px solid #eee', padding: 6 }}>{formatBytes(job.totalBytes)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          ) : null}
+        </div>
       </details>
 
       <section className="card" style={{ marginTop: 16 }}>

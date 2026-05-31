@@ -201,6 +201,141 @@ function imageContentType(fileName) {
 }
 
 
+function pathIsInside(parentDir, candidatePath) {
+  const relative = path.relative(path.resolve(parentDir), path.resolve(candidatePath));
+  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function getTenantImageDir(tenantId) {
+  const tenantFolder = `tenant_${tenantId}`;
+  const root = path.resolve(IMAGE_ROOT);
+  const tenantDir = path.resolve(root, tenantFolder);
+
+  if (!pathIsInside(root, tenantDir)) {
+    throw new Error('INVALID_TENANT_IMAGE_PATH');
+  }
+
+  return { tenantFolder, root, tenantDir };
+}
+
+function getTenantImageJobDir(tenantId, jobId) {
+  const { tenantDir, root } = getTenantImageDir(tenantId);
+  const jobDir = path.resolve(tenantDir, jobId);
+
+  if (!pathIsInside(root, jobDir) || !pathIsInside(tenantDir, jobDir) || jobDir === tenantDir) {
+    throw new Error('INVALID_IMAGE_JOB_PATH');
+  }
+
+  return { tenantDir, jobDir };
+}
+
+async function summarizeDirectory(dir) {
+  let fileCount = 0;
+  let totalBytes = 0;
+
+  async function walk(currentDir) {
+    let entries = [];
+
+    try {
+      entries = await fs.readdir(currentDir, { withFileTypes: true });
+    } catch (err) {
+      if (err?.code === 'ENOENT') return;
+      throw err;
+    }
+
+    await Promise.all(entries.map(async (entry) => {
+      const entryPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(entryPath);
+        return;
+      }
+
+      if (!entry.isFile()) return;
+
+      const stat = await fs.stat(entryPath);
+      fileCount += 1;
+      totalBytes += stat.size;
+    }));
+  }
+
+  await walk(dir);
+  return { fileCount, totalBytes };
+}
+
+function timestampMsFromMetadata(metadata, fallbackStat) {
+  const uploadedMs = Date.parse(metadata?.uploadedAt || '');
+  if (Number.isFinite(uploadedMs)) return uploadedMs;
+
+  const birthMs = fallbackStat?.birthtimeMs;
+  if (Number.isFinite(birthMs) && birthMs > 0) return birthMs;
+
+  const modifiedMs = fallbackStat?.mtimeMs;
+  if (Number.isFinite(modifiedMs)) return modifiedMs;
+
+  return Date.now();
+}
+
+async function readImageJobSummary(tenantDir, entryName) {
+  const jobDir = path.resolve(tenantDir, entryName);
+  if (!pathIsInside(tenantDir, jobDir) || jobDir === tenantDir) return null;
+
+  let stat;
+  try {
+    stat = await fs.stat(jobDir);
+  } catch {
+    return null;
+  }
+
+  if (!stat.isDirectory()) return null;
+
+  let metadata = {};
+  try {
+    const raw = await fs.readFile(path.join(jobDir, 'metadata.json'), 'utf8');
+    metadata = JSON.parse(raw);
+  } catch {
+    metadata = {};
+  }
+
+  const { fileCount, totalBytes } = await summarizeDirectory(jobDir);
+  const timestampMs = timestampMsFromMetadata(metadata, stat);
+
+  return {
+    ...metadata,
+    jobId: entryName,
+    metadataJobId: metadata?.jobId,
+    uploadedAt: metadata?.uploadedAt || new Date(timestampMs).toISOString(),
+    fileCount,
+    totalBytes,
+  };
+}
+
+async function readImageJobsForTenant(tenantId) {
+  const { tenantDir } = getTenantImageDir(tenantId);
+  let entries = [];
+
+  try {
+    entries = await fs.readdir(tenantDir, { withFileTypes: true });
+  } catch (err) {
+    if (err?.code === 'ENOENT') return [];
+    throw err;
+  }
+
+  const jobs = await Promise.all(
+    entries.filter((entry) => entry.isDirectory()).map((entry) => readImageJobSummary(tenantDir, entry.name))
+  );
+
+  return jobs.filter(Boolean).sort((a, b) => Date.parse(b.uploadedAt || '') - Date.parse(a.uploadedAt || ''));
+}
+
+function summarizeImageJobs(jobs) {
+  return jobs.reduce((summary, job) => ({
+    jobCount: summary.jobCount + 1,
+    fileCount: summary.fileCount + (Number(job?.fileCount) || 0),
+    totalBytes: summary.totalBytes + (Number(job?.totalBytes) || 0),
+  }), { jobCount: 0, fileCount: 0, totalBytes: 0 });
+}
+
+
 async function readRequiredValuesDirectory(dir, scope) {
   let entries = [];
 
@@ -697,8 +832,8 @@ router.post('/mass-upload/images', async (req, res) => {
   const jobId = safeName(req.body?.jobId || makeImageJobId());
   if (!jobId) return sendResult(res, { ok: false, error: 'JOB_ID_REQUIRED' });
 
-  const tenantFolder = `tenant_${tenantId}`;
-  const targetDir = path.join(IMAGE_ROOT, tenantFolder, jobId);
+  const { tenantFolder } = getTenantImageDir(tenantId);
+  const { jobDir: targetDir } = getTenantImageJobDir(tenantId, jobId);
   await fs.mkdir(targetDir, { recursive: true });
 
   const images = [];
@@ -745,40 +880,80 @@ router.get('/mass-upload/images', async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return sendResult(res, { ok: false, error: 'TENANT_CONTEXT_REQUIRED' });
 
-  const tenantDir = path.join(IMAGE_ROOT, `tenant_${tenantId}`);
-  let entries = [];
+  const jobs = await readImageJobsForTenant(tenantId);
+  const summary = summarizeImageJobs(jobs);
 
-  try {
-    entries = await fs.readdir(tenantDir, { withFileTypes: true });
-  } catch (err) {
-    if (err?.code === 'ENOENT') return sendResult(res, { ok: true, jobs: [] });
-    throw err;
+  return sendResult(res, { ok: true, jobs, ...summary });
+});
+
+router.post('/mass-upload/images/cleanup', async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return sendResult(res, { ok: false, error: 'TENANT_CONTEXT_REQUIRED' });
+
+  const rawOlderThanHours = Number(req.body?.olderThanHours ?? req.query?.olderThanHours ?? 24);
+  const olderThanHours = Number.isFinite(rawOlderThanHours) && rawOlderThanHours > 0 ? rawOlderThanHours : 24;
+  const dryRun = req.body?.dryRun === true || req.query?.dryRun === 'true';
+  const cutoffMs = Date.now() - (olderThanHours * 60 * 60 * 1000);
+  const jobs = await readImageJobsForTenant(tenantId);
+  const expiredJobs = jobs.filter((job) => {
+    const uploadedMs = Date.parse(job?.uploadedAt || '');
+    return Number.isFinite(uploadedMs) && uploadedMs < cutoffMs;
+  });
+
+  let deletedJobCount = 0;
+  let deletedFileCount = 0;
+  let deletedBytes = 0;
+
+  for (const job of expiredJobs) {
+    const rawJobId = String(job?.jobId || '');
+    const jobId = safeName(rawJobId);
+    if (!jobId || jobId !== rawJobId) continue;
+
+    const { jobDir } = getTenantImageJobDir(tenantId, jobId);
+    deletedJobCount += 1;
+    deletedFileCount += Number(job?.fileCount) || 0;
+    deletedBytes += Number(job?.totalBytes) || 0;
+
+    if (!dryRun) {
+      await fs.rm(jobDir, { recursive: true, force: true });
+    }
   }
 
-  const jobs = await Promise.all(
-    entries.filter((entry) => entry.isDirectory()).map(async (entry) => {
-      try {
-        const raw = await fs.readFile(path.join(tenantDir, entry.name, 'metadata.json'), 'utf8');
-        return JSON.parse(raw);
-      } catch {
-        return null;
-      }
-    })
-  );
-
-  return sendResult(res, { ok: true, jobs: jobs.filter(Boolean) });
+  return sendResult(res, {
+    ok: true,
+    dryRun,
+    olderThanHours,
+    deletedJobCount,
+    deletedFileCount,
+    deletedBytes,
+    jobs: expiredJobs.map((job) => ({
+      jobId: job.jobId,
+      uploadedAt: job.uploadedAt,
+      fileCount: job.fileCount,
+      totalBytes: job.totalBytes,
+    })),
+  });
 });
 
 router.delete('/mass-upload/images/:jobId', async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return sendResult(res, { ok: false, error: 'TENANT_CONTEXT_REQUIRED' });
 
-  const jobId = safeName(req.params?.jobId || '');
-  if (!jobId) return sendResult(res, { ok: false, error: 'JOB_ID_REQUIRED' });
+  const rawJobId = String(req.params?.jobId || '');
+  const jobId = safeName(rawJobId);
+  if (!jobId || jobId !== rawJobId) return sendResult(res, { ok: false, error: 'JOB_ID_REQUIRED' });
 
-  await fs.rm(path.join(IMAGE_ROOT, `tenant_${tenantId}`, jobId), { recursive: true, force: true });
+  const { jobDir } = getTenantImageJobDir(tenantId, jobId);
+  const summary = await summarizeDirectory(jobDir);
+  await fs.rm(jobDir, { recursive: true, force: true });
 
-  return sendResult(res, { ok: true });
+  return sendResult(res, {
+    ok: true,
+    jobId,
+    deletedJobCount: 1,
+    deletedFileCount: summary.fileCount,
+    deletedBytes: summary.totalBytes,
+  });
 });
 
 

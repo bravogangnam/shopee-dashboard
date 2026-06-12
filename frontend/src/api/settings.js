@@ -6,7 +6,7 @@ export function fetchRates() {
 
 export function saveRates(rates) {
   return apiRequest('/api/settings/rates', {
-    method: 'PUT',
+    method: 'PATCH',
     body: { rates },
   });
 }

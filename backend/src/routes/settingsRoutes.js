@@ -317,26 +317,53 @@ router.get('/shops', async (req, res) => {
 });
 
 // ─── 샵 정보 업데이트 ────────────────────────────────────────────
-router.put('/shops/:shopId', async (req, res) => {
-  const { shopId } = req.params;
-  const { alias, region, is_active } = req.body;
+async function updateShopSettings(req, res) {
+  const shopId = String(req.params?.shopId || '').trim();
+  const { alias, region, is_active } = req.body || {};
+
+  if (!/^\d+$/.test(shopId)) {
+    return res.status(400).json({ success: false, error: 'Invalid shop_id' });
+  }
 
   const tenantId = getCurrentTenantId(req);
   const [existing] = await db.query(
-    'SELECT id, is_active FROM shops WHERE tenant_id = ? AND shop_id = ?',
+    'SELECT * FROM shops WHERE tenant_id = ? AND shop_id = ?',
     [tenantId, shopId]
   );
-  if (!existing.length) {
+
+  const existingShop = existing[0];
+  if (!existingShop) {
     return res.status(404).json({ success: false, error: 'Shop not found' });
+  }
+
+  const nextAlias = alias === undefined ? existingShop.alias : (String(alias || '').trim() || null);
+  const nextRegion = region === undefined ? existingShop.region : (String(region || '').trim().toUpperCase() || null);
+  const nextIsActive = is_active === undefined ? Number(existingShop.is_active || 0) : (is_active ? 1 : 0);
+  const allowedRegions = new Set(['SG', 'MY', 'TW', 'PH', 'TH', 'VN', 'BR', 'MX']);
+
+  if (nextRegion && !allowedRegions.has(nextRegion)) {
+    return res.status(400).json({ success: false, error: 'Unsupported shop region' });
+  }
+
+  if (nextIsActive && !nextRegion) {
+    return res.status(400).json({ success: false, error: 'Region is required before activating a shop' });
   }
 
   await db.query(
     'UPDATE shops SET alias = ?, region = ?, is_active = ?, updated_at = NOW() WHERE tenant_id = ? AND shop_id = ?',
-    [alias || null, region || null, is_active !== undefined ? (is_active ? 1 : 0) : existing[0].is_active, tenantId, shopId]
+    [nextAlias, nextRegion, nextIsActive, tenantId, shopId]
   );
 
-  return res.json({ success: true, message: 'Shop updated' });
-});
+  const [updatedRows] = await db.query(
+    'SELECT * FROM shops WHERE tenant_id = ? AND shop_id = ? LIMIT 1',
+    [tenantId, shopId]
+  );
+
+  return res.json({ success: true, message: 'Shop updated', shop: updatedRows[0] });
+}
+
+router.put('/shops/:shopId', updateShopSettings);
+router.patch('/shops/:shopId', updateShopSettings);
 
 // ─── 환율 목록 조회 ──────────────────────────────────────────────
 router.get('/rates', async (req, res) => {

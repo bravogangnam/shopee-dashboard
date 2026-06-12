@@ -989,6 +989,39 @@ async function getTodayOrderInventory({ tenantId = CURRENT_TENANT_ID } = {}) {
   }
 
   const placeholders = skus.map(() => '?').join(',');
+
+  const [recent30Rows] = await db.query(
+    `SELECT im.sku, COALESCE(SUM(ABS(im.qty_delta)), 0) AS recent_30d_sold_qty
+     FROM inventory_movements im
+     INNER JOIN orders o
+       ON o.tenant_id = im.tenant_id
+      AND o.order_sn = im.order_sn
+      AND o.shop_id = im.shop_id
+     INNER JOIN shops s
+       ON s.tenant_id = o.tenant_id
+      AND s.shop_id = o.shop_id
+      AND s.is_active = 1
+     WHERE im.tenant_id = ?
+       AND im.movement_type = 'SALE'
+       AND im.sku IN (${placeholders})
+       AND o.order_created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+       AND COALESCE(o.display_status, o.order_status) IN ('READY_TO_SHIP', 'PROCESSED', 'SHIPPED', 'TO_CONFIRM_RECEIVE', 'COMPLETED')
+       AND NOT EXISTS (
+         SELECT 1
+         FROM inventory_movements cr
+         WHERE cr.tenant_id = im.tenant_id
+           AND cr.movement_type = 'CANCEL_RESTORE'
+           AND cr.sku = im.sku
+           AND cr.order_sn = im.order_sn
+           AND cr.shop_id = im.shop_id
+       )
+     GROUP BY im.sku`,
+    [tenantId, ...skus]
+  );
+  const recent30SoldMap = new Map(
+    recent30Rows.map(row => [String(row.sku || '').trim(), Number(row.recent_30d_sold_qty || 0)])
+  );
+
   const [products] = await db.query(
     `SELECT sku, brand, product_name_kr, product_name_en, option_name,
             stock_quantity, low_stock_threshold, stock_tracking_started_at,
@@ -1045,7 +1078,7 @@ async function getTodayOrderInventory({ tenantId = CURRENT_TENANT_ID } = {}) {
       product_name_kr: product.product_name_kr || null,
       product_name_en: product.product_name_en || null,
       ordered_qty: row.ordered_qty,
-      outstanding_sale_qty: Number(row.outstanding_sale_qty || 0),
+      recent_30d_sold_qty: recent30SoldMap.get(row.sku) || 0,
       order_count: orderLines.length,
       order_sns: orderLines.map(line => line.order_sn),
       order_lines: orderLines,

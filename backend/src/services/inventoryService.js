@@ -842,6 +842,7 @@ async function getTodayOrderInventory({ tenantId = CURRENT_TENANT_ID } = {}) {
       const existing = aggregates.get(component.baseSku) || {
         sku: component.baseSku,
         ordered_qty: 0,
+        outstanding_sale_qty: 0,
         orderMap: new Map(),
         sourceNames: [],
         image_url: null,
@@ -949,6 +950,7 @@ async function getTodayOrderInventory({ tenantId = CURRENT_TENANT_ID } = {}) {
       const existing = aggregates.get(sku) || {
         sku,
         ordered_qty: 0,
+        outstanding_sale_qty: 0,
         orderMap: new Map(),
         sourceNames: [],
         image_url: null,
@@ -960,11 +962,7 @@ async function getTodayOrderInventory({ tenantId = CURRENT_TENANT_ID } = {}) {
       for (const row of negativeOrderMap.get(sku) || []) {
         const qty = Number(row.qty || 0);
         if (!existing.orderMap.has(row.order_sn)) {
-          existing.ordered_qty += qty;
-          existing.orderMap.set(row.order_sn, {
-            order_sn: row.order_sn,
-            qty,
-          });
+          existing.outstanding_sale_qty += qty;
         }
 
         existing.image_url = existing.image_url || row.image_url || null;
@@ -1047,6 +1045,7 @@ async function getTodayOrderInventory({ tenantId = CURRENT_TENANT_ID } = {}) {
       product_name_kr: product.product_name_kr || null,
       product_name_en: product.product_name_en || null,
       ordered_qty: row.ordered_qty,
+      outstanding_sale_qty: Number(row.outstanding_sale_qty || 0),
       order_count: orderLines.length,
       order_sns: orderLines.map(line => line.order_sn),
       order_lines: orderLines,

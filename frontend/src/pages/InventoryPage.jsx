@@ -415,7 +415,7 @@ function TodayOrderInventoryTable({
       <div className="today-order-toolbar">
         <div>
           <strong>오늘 주문 상품 재고 현황</strong>
-          <p>오늘 주문 상품과 현재 구매가 필요한 SKU를 함께 표시합니다.</p>
+          <p>오늘 주문수량과 과거 미복구 판매이력을 분리해서 표시합니다.</p>
         </div>
       </div>
 
@@ -426,7 +426,8 @@ function TodayOrderInventoryTable({
                 <tr>
                   <th className="today-col-sku">SKU</th>
                   <th className="num today-col-cost">부가세포함 원가</th>
-                  <th className="num today-col-qty">주문수량</th>
+                  <th className="num today-col-qty">오늘 주문수량</th>
+                    <th className="num today-col-qty">미복구 판매</th>
                   <th className="num today-col-stock">현재 재고</th>
                   <th className="num today-col-needed">구매필요</th>
                   <th className="today-col-name">상품명</th>
@@ -449,6 +450,7 @@ function TodayOrderInventoryTable({
                       <td className="today-col-sku-cell"><SkuCopyCell sku={item.sku} /></td>
                       <td className="num today-col-cost">{formatWon(item.latest_unit_cost_vat)}</td>
                       <td className="num today-col-qty">{Number(item.ordered_qty || 0).toLocaleString('ko-KR')}</td>
+                        <td className="num today-col-qty">{Number(item.outstanding_sale_qty || 0).toLocaleString('ko-KR')}</td>
                       <td className={`num today-col-stock ${Number(item.stock_quantity || 0) < 0 ? 'negative' : ''}`}>
                         {Number(item.stock_quantity || 0).toLocaleString('ko-KR')}
                       </td>

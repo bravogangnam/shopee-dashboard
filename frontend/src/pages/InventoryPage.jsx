@@ -427,9 +427,9 @@ function TodayOrderInventoryTable({
                   <th className="today-col-sku">SKU</th>
                   <th className="num today-col-cost">부가세포함 원가</th>
                   <th className="num today-col-qty">오늘 주문수량</th>
-                    <th className="num today-col-qty">최근30일 판매량</th>
                   <th className="num today-col-stock">현재 재고</th>
                   <th className="num today-col-needed">구매필요</th>
+                    <th className="num today-col-qty">최근30일 판매량</th>
                   <th className="today-col-name">상품명</th>
                   <th className="today-col-order">주문번호</th>
                   <th className="today-col-status">상태</th>
@@ -450,13 +450,13 @@ function TodayOrderInventoryTable({
                       <td className="today-col-sku-cell"><SkuCopyCell sku={item.sku} /></td>
                       <td className="num today-col-cost">{formatWon(item.latest_unit_cost_vat)}</td>
                       <td className="num today-col-qty">{Number(item.ordered_qty || 0).toLocaleString('ko-KR')}</td>
-                        <td className="num today-col-qty">{Number(item.recent_30d_sold_qty || 0).toLocaleString('ko-KR')}</td>
                       <td className={`num today-col-stock ${Number(item.stock_quantity || 0) < 0 ? 'negative' : ''}`}>
                         {Number(item.stock_quantity || 0).toLocaleString('ko-KR')}
                       </td>
                       <td className={`num today-col-needed purchase-needed-qty ${purchaseNeeded > 0 ? 'active' : ''}`}>
                         {purchaseNeeded.toLocaleString('ko-KR')}
                       </td>
+                        <td className="num today-col-qty">{Number(item.recent_30d_sold_qty || 0).toLocaleString('ko-KR')}</td>
                       <td className="today-col-name">
                         <button
                           type="button"

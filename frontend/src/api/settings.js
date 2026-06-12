@@ -6,7 +6,7 @@ export function fetchRates() {
 
 export function saveRates(rates) {
   return apiRequest('/api/settings/rates', {
-    method: 'PATCH',
+    method: 'PUT',
     body: { rates },
   });
 }
@@ -41,7 +41,7 @@ export function fetchShops() {
 
 export function updateShop(shopId, data) {
   return apiRequest(`/api/settings/shops/${encodeURIComponent(shopId)}`, {
-    method: 'PUT',
+    method: 'PATCH',
     body: data,
   });
 }

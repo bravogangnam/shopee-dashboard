@@ -415,7 +415,7 @@ function TodayOrderInventoryTable({
       <div className="today-order-toolbar">
         <div>
           <strong>오늘 주문 상품 재고 현황</strong>
-          <p>오늘 주문수량과 최근 30일 판매량을 함께 표시합니다.</p>
+          <p>오늘 주문수량과 30일 판매을 함께 표시합니다.</p>
         </div>
       </div>
 
@@ -429,7 +429,7 @@ function TodayOrderInventoryTable({
                   <th className="num today-col-qty">오늘 주문수량</th>
                   <th className="num today-col-stock">현재 재고</th>
                   <th className="num today-col-needed">구매필요</th>
-                    <th className="num today-col-qty">최근30일 판매량</th>
+                    <th className="num today-col-qty">30일판매</th>
                   <th className="today-col-name">상품명</th>
                   <th className="today-col-order">주문번호</th>
                   <th className="today-col-status">상태</th>

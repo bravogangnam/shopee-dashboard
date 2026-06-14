@@ -36,6 +36,7 @@ function ChartSummaryMetrics({ summary }) {
     { label: '순이익', value: formatKrw(summary?.total_net_profit) },
     { label: '부가세', value: formatKrw(summary?.total_vat) },
     { label: '순이익률', value: summary ? `${formatNumber(summary.profit_rate, 2)}%` : '-' },
+    { label: '제품 순이익률', value: summary ? `${formatNumber(summary.product_profit_rate, 2)}%` : '-' },
     { label: '주문건수', value: summary ? `${formatNumber(summary.order_count)}건` : '-' },
   ];
 

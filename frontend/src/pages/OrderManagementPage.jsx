@@ -296,29 +296,60 @@ export default function OrderManagementPage() {
   }
 
   async function autoOpenInvoicePrintWindow(job) {
-    const downloadUrl = job.download_url || `/api/invoices/jobs/${encodeURIComponent(job.jobId)}/download`;
-
     try {
-      let printWindow = invoicePrintWindowRef.current;
-      if (!printWindow || printWindow.closed) {
-        printWindow = window.open('', '_blank');
-        invoicePrintWindowRef.current = printWindow;
-      }
+      const blob = await downloadInvoiceJob(job.jobId);
+      const url = window.URL.createObjectURL(blob);
+      const printWindow = invoicePrintWindowRef.current;
 
       if (printWindow && !printWindow.closed) {
-        printWindow.location.href = downloadUrl;
+        const pdfSrc = JSON.stringify(url);
+        printWindow.document.open();
+        printWindow.document.write(`
+          <html>
+            <head>
+              <title>송장 출력</title>
+              <style>
+                html, body { margin: 0; width: 100%; height: 100%; }
+                iframe { border: 0; width: 100%; height: 100%; }
+              </style>
+            </head>
+            <body>
+              <iframe id="invoice-pdf" src=${pdfSrc}></iframe>
+              <script>
+                const frame = document.getElementById('invoice-pdf');
+                frame.onload = function () {
+                  setTimeout(function () {
+                    try {
+                      frame.contentWindow.focus();
+                      frame.contentWindow.print();
+                    } catch (error) {
+                      try { window.print(); } catch (_) {}
+                    }
+                      try {
+                        if (window.opener) {
+                          window.opener.postMessage({
+                            type: 'INVOICE_PRINT_COMPLETE',
+                            successCount: ${Number(job.completed || 0)},
+                            failedCount: ${Number(job.failed || 0)}
+                          }, '*');
+                        }
+                      } catch (_) {}
+                  }, 700);
+                };
+              </script>
+            </body>
+          </html>
+        `);
+        printWindow.document.close();
+        setMessage('송장 PDF가 준비되어 자동 인쇄창을 열었습니다.');
       } else {
-        window.open(downloadUrl, '_blank');
+        setInvoicePollingError('자동 인쇄창을 열 수 없습니다. 다운로드 버튼을 눌러 송장을 출력하세요.');
+        downloadBlob(blob, `invoice-${job.jobId}.pdf`);
       }
 
-      setInvoicePollingError('');
-      setInvoiceFallbackVisible(true);
-      skipHideInvoiceFallbackOnceRef.current = true;
-      setMessage('송장 PDF가 준비되었습니다. 새 창에서 PDF가 열리면 인쇄 버튼으로 출력하세요.');
+      setTimeout(() => window.URL.revokeObjectURL(url), 60000);
     } catch (err) {
-      setInvoiceFallbackVisible(true);
-      skipHideInvoiceFallbackOnceRef.current = true;
-      setInvoicePollingError('송장 PDF 열기에 실패했습니다. 아래 다운로드 버튼으로 출력하세요.');
+      setInvoicePollingError(formatInvoiceJobError(err.message || '자동 인쇄창을 열지 못했습니다. 다운로드 버튼을 눌러 송장을 출력하세요.'));
     }
   }
 

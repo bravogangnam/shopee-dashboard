@@ -2298,23 +2298,36 @@ label {
 
 .chart-summary-metrics {
   display: grid;
-  grid-template-columns: repeat(7, minmax(120px, 1fr));
-  gap: 8px;
-  margin-bottom: 12px;
+  grid-template-columns: repeat(7, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 14px 0 16px;
 }
 
 .chart-summary-pill {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 58px;
   min-width: 0;
-  padding: 10px 12px;
+  border: 1px solid #e6edf5;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  padding: 10px 14px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 }
 
 .chart-summary-pill span {
+  margin-bottom: 4px;
+  color: #64748b;
   font-size: 11px;
+  font-weight: 800;
   white-space: nowrap;
 }
 
 .chart-summary-pill strong {
-  font-size: 16px;
+  color: #172033;
+  font-size: 17px;
+  font-weight: 900;
   line-height: 1.2;
   white-space: nowrap;
 }
@@ -2325,6 +2338,31 @@ label {
 
 .chart-summary-pill:nth-child(2) strong {
   color: #1677ff;
+}
+
+.chart-summary-pill:nth-child(4) strong {
+  color: #7c3aed;
+}
+
+.chart-summary-pill:nth-child(5) strong,
+.chart-summary-pill:nth-child(6) strong {
+  color: #059669;
+}
+
+.chart-summary-pill:nth-child(7) strong {
+  color: #f97316;
+}
+
+@media (max-width: 1400px) {
+  .chart-summary-metrics {
+    grid-template-columns: repeat(4, minmax(130px, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .chart-summary-metrics {
+    grid-template-columns: repeat(2, minmax(130px, 1fr));
+  }
 }
 
 .chart-summary-pill:nth-child(3) strong {

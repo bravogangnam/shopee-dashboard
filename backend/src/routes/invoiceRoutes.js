@@ -44,39 +44,7 @@ router.get('/jobs/:jobId/print', async (req, res) => {
   }
 
   const pdfUrl = `/api/invoices/jobs/${encodeURIComponent(job.id)}/print-pdf?token=${encodeURIComponent(expectedToken)}`;
-
-  return res.send(`<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>송장 출력</title>
-  <style>
-    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
-    iframe { border: 0; width: 100%; height: 100%; }
-  </style>
-</head>
-<body>
-  <iframe id="invoice-pdf" src="${pdfUrl}"></iframe>
-  <script>
-    const frame = document.getElementById('invoice-pdf');
-    function tryPrint() {
-      try {
-        frame.contentWindow.focus();
-        frame.contentWindow.print();
-      } catch (error) {
-        try {
-          window.focus();
-          window.print();
-        } catch (_) {}
-      }
-    }
-    frame.onload = function () {
-      setTimeout(tryPrint, 900);
-    };
-    setTimeout(tryPrint, 2500);
-  </script>
-</body>
-</html>`);
+  return res.redirect(302, pdfUrl);
 });
 
 router.get('/jobs/:jobId/print-pdf', async (req, res) => {

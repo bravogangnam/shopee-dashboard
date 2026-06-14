@@ -296,50 +296,25 @@ export default function OrderManagementPage() {
   }
 
   async function autoOpenInvoicePrintWindow(job) {
-    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-    async function downloadInvoiceWithRetry() {
-      let lastError = null;
-      for (let attempt = 1; attempt <= 3; attempt += 1) {
-        try {
-          if (attempt > 1) await sleep(1200);
-          return await downloadInvoiceJob(job.jobId);
-        } catch (err) {
-          lastError = err;
-        }
-      }
-      throw lastError || new Error('송장 PDF 다운로드에 실패했습니다.');
-    }
+    const downloadUrl = job.download_url || `/api/invoices/jobs/${encodeURIComponent(job.jobId)}/download`;
 
     try {
-      const blob = await downloadInvoiceWithRetry();
-
-      downloadBlob(blob, `invoice-${job.jobId}.pdf`);
-
       const printWindow = invoicePrintWindowRef.current;
+
       if (printWindow && !printWindow.closed) {
-        printWindow.document.open();
-        printWindow.document.write(`
-          <html>
-            <head><title>송장 출력 완료</title></head>
-            <body style="font-family: sans-serif; padding: 24px;">
-              <h2>송장 PDF가 준비되었습니다.</h2>
-              <p>브라우저의 인쇄 확인창이 뜨면 인쇄를 진행하세요.</p>
-              <p>인쇄창이 뜨지 않으면 주문관리 화면의 다운로드 버튼을 눌러 다시 출력하세요.</p>
-            </body>
-          </html>
-        `);
-        printWindow.document.close();
+        printWindow.location.href = downloadUrl;
+      } else {
+        window.open(downloadUrl, '_blank');
       }
 
       setInvoicePollingError('');
       setInvoiceFallbackVisible(true);
       skipHideInvoiceFallbackOnceRef.current = true;
-      setMessage('송장 PDF가 준비되었습니다. 인쇄창이 뜨지 않으면 다운로드 버튼을 눌러 다시 출력하세요.');
+      setMessage('송장 PDF가 준비되었습니다. 새 창에서 PDF가 열리지 않으면 다운로드 버튼을 눌러 출력하세요.');
     } catch (err) {
       setInvoiceFallbackVisible(true);
       skipHideInvoiceFallbackOnceRef.current = true;
-      setInvoicePollingError('자동 인쇄 시도에 실패했습니다. 송장은 생성 완료됐으니 아래 다운로드 버튼으로 출력하세요.');
+      setInvoicePollingError('자동 송장 열기에 실패했습니다. 송장은 생성 완료됐으니 아래 다운로드 버튼으로 출력하세요.');
     }
   }
 

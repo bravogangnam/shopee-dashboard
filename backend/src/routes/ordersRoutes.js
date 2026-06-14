@@ -338,6 +338,10 @@ router.get('/', async (req, res) => {
 
     console.log(`[Orders] RES page=${pageNum} returned=${enrichedOrders.length} rows | total=${total}`);
 
+    const prevProductProfitRate = prevSummary.confirmed_sales_krw === 0 || prevSummary.confirmed_sales_krw === null
+      ? null
+      : Math.round((prevSummary.total_product_profit / prevSummary.confirmed_sales_krw) * 10000) / 100;
+
     return res.json({
       success: true,
       data: enrichedOrders,
@@ -674,9 +678,6 @@ router.get('/summary', async (req, res) => {
     const productProfitRate = currentSummary.confirmed_sales_krw === 0
       ? 0
       : Math.round((currentSummary.total_product_profit / currentSummary.confirmed_sales_krw) * 10000) / 100;
-    const prevProductProfitRate = prevSummary.confirmed_sales_krw === 0 || prevSummary.confirmed_sales_krw === null
-      ? null
-      : Math.round((prevSummary.total_product_profit / prevSummary.confirmed_sales_krw) * 10000) / 100;
 
     let prevSummary = {
       total_sales_krw: null,

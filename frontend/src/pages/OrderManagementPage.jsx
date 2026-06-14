@@ -296,12 +296,24 @@ export default function OrderManagementPage() {
   }
 
   async function autoOpenInvoicePrintWindow(job) {
-    try {
-      const blob = await downloadInvoiceJob(job.jobId);
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-      // 기존 다운로드 버튼과 같은 방식으로 메인 화면에서 인쇄를 시도한다.
-      // 팝업 창 안 iframe 인쇄가 브라우저 정책/로드 타이밍 때문에 멈추는 경우가 있어
-      // 검증된 downloadBlob 경로를 자동 완료 시에도 사용한다.
+    async function downloadInvoiceWithRetry() {
+      let lastError = null;
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          if (attempt > 1) await sleep(1200);
+          return await downloadInvoiceJob(job.jobId);
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      throw lastError || new Error('송장 PDF 다운로드에 실패했습니다.');
+    }
+
+    try {
+      const blob = await downloadInvoiceWithRetry();
+
       downloadBlob(blob, `invoice-${job.jobId}.pdf`);
 
       const printWindow = invoicePrintWindowRef.current;
@@ -320,13 +332,14 @@ export default function OrderManagementPage() {
         printWindow.document.close();
       }
 
+      setInvoicePollingError('');
       setInvoiceFallbackVisible(true);
       skipHideInvoiceFallbackOnceRef.current = true;
       setMessage('송장 PDF가 준비되었습니다. 인쇄창이 뜨지 않으면 다운로드 버튼을 눌러 다시 출력하세요.');
     } catch (err) {
       setInvoiceFallbackVisible(true);
       skipHideInvoiceFallbackOnceRef.current = true;
-      setInvoicePollingError(formatInvoiceJobError(err.message || '자동 인쇄창을 열지 못했습니다. 다운로드 버튼을 눌러 송장을 출력하세요.'));
+      setInvoicePollingError('자동 인쇄 시도에 실패했습니다. 송장은 생성 완료됐으니 아래 다운로드 버튼으로 출력하세요.');
     }
   }
 

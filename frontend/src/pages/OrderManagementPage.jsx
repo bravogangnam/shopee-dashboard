@@ -296,60 +296,87 @@ export default function OrderManagementPage() {
   }
 
   async function autoOpenInvoicePrintWindow(job) {
-    try {
-      const blob = await downloadInvoiceJob(job.jobId);
-      const url = window.URL.createObjectURL(blob);
-      const printWindow = invoicePrintWindowRef.current;
+    const downloadUrl = job.download_url || `/api/invoices/jobs/${encodeURIComponent(job.jobId)}/download`;
 
-      if (printWindow && !printWindow.closed) {
-        const pdfSrc = JSON.stringify(url);
-        printWindow.document.open();
-        printWindow.document.write(`
-          <html>
-            <head>
-              <title>송장 출력</title>
-              <style>
-                html, body { margin: 0; width: 100%; height: 100%; }
-                iframe { border: 0; width: 100%; height: 100%; }
-              </style>
-            </head>
-            <body>
-              <iframe id="invoice-pdf" src=${pdfSrc}></iframe>
-              <script>
-                const frame = document.getElementById('invoice-pdf');
-                frame.onload = function () {
-                  setTimeout(function () {
-                    try {
-                      frame.contentWindow.focus();
-                      frame.contentWindow.print();
-                    } catch (error) {
-                      try { window.print(); } catch (_) {}
-                    }
-                      try {
-                        if (window.opener) {
-                          window.opener.postMessage({
-                            type: 'INVOICE_PRINT_COMPLETE',
-                            successCount: ${Number(job.completed || 0)},
-                            failedCount: ${Number(job.failed || 0)}
-                          }, '*');
-                        }
-                      } catch (_) {}
-                  }, 700);
-                };
-              </script>
-            </body>
-          </html>
-        `);
-        printWindow.document.close();
-        setMessage('송장 PDF가 준비되어 자동 인쇄창을 열었습니다.');
-      } else {
-        setInvoicePollingError('자동 인쇄창을 열 수 없습니다. 다운로드 버튼을 눌러 송장을 출력하세요.');
-        downloadBlob(blob, `invoice-${job.jobId}.pdf`);
+    try {
+      let printWindow = invoicePrintWindowRef.current;
+      if (!printWindow || printWindow.closed) {
+        printWindow = window.open('', '_blank');
+        invoicePrintWindowRef.current = printWindow;
       }
 
-      setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+      if (!printWindow || printWindow.closed) {
+        setInvoiceFallbackVisible(true);
+        skipHideInvoiceFallbackOnceRef.current = true;
+        setInvoicePollingError('자동 인쇄창을 열 수 없습니다. 다운로드 버튼을 눌러 송장을 출력하세요.');
+        return;
+      }
+
+      const pdfSrc = JSON.stringify(downloadUrl);
+
+      printWindow.document.open();
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>송장 출력</title>
+            <style>
+              html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+              iframe { border: 0; width: 100%; height: 100%; }
+            </style>
+          </head>
+          <body>
+            <iframe id="invoice-pdf" src=${pdfSrc}></iframe>
+            <script>
+              const frame = document.getElementById('invoice-pdf');
+
+              function tryPrint() {
+                try {
+                  frame.contentWindow.focus();
+                  frame.contentWindow.print();
+                } catch (error) {
+                  try {
+                    window.focus();
+                    window.print();
+                  } catch (_) {}
+                }
+              }
+
+              function notifyComplete() {
+                try {
+                  if (window.opener) {
+                    window.opener.postMessage({
+                      type: 'INVOICE_PRINT_COMPLETE',
+                      successCount: ${Number(job.completed || 0)},
+                      failedCount: ${Number(job.failed || 0)}
+                    }, '*');
+                  }
+                } catch (_) {}
+              }
+
+              frame.onload = function () {
+                setTimeout(function () {
+                  tryPrint();
+                  notifyComplete();
+                }, 1000);
+              };
+
+              setTimeout(function () {
+                tryPrint();
+              }, 3000);
+            </script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+
+      setInvoicePollingError('');
+      setInvoiceFallbackVisible(true);
+      skipHideInvoiceFallbackOnceRef.current = true;
+      setMessage('송장 PDF가 준비되어 자동 인쇄창을 열었습니다. 인쇄창이 안 뜨면 다운로드 버튼을 눌러 출력하세요.');
     } catch (err) {
-      setInvoicePollingError(formatInvoiceJobError(err.message || '자동 인쇄창을 열지 못했습니다. 다운로드 버튼을 눌러 송장을 출력하세요.'));
+      setInvoiceFallbackVisible(true);
+      skipHideInvoiceFallbackOnceRef.current = true;
+      setInvoicePollingError('자동 인쇄 시도에 실패했습니다. 송장은 생성 완료됐으니 아래 다운로드 버튼으로 출력하세요.');
     }
   }
 

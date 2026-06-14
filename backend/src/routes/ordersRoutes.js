@@ -589,14 +589,28 @@ router.get('/summary', async (req, res) => {
   try {
     const summarySql = `SELECT
         COALESCE(SUM(COALESCE(o.merchandise_subtotal, o.total_amount) * er.rate_to_krw), 0) AS total_sales_krw,
-        COALESCE(SUM(o.escrow_amount * er.rate_to_krw), 0) AS total_escrow_krw,
         COALESCE(SUM(
           CASE
+            WHEN COALESCE(o.order_chargeable_weight_gram, 0) > 0
+              THEN o.escrow_amount * er.rate_to_krw
+            ELSE 0
+          END
+        ), 0) AS total_escrow_krw,
+        COALESCE(SUM(
+          CASE
+            WHEN COALESCE(o.order_chargeable_weight_gram, 0) <= 0 THEN 0
             WHEN fifo.fifo_cost_price IS NOT NULL AND o.net_profit IS NOT NULL
               THEN o.net_profit - (fifo.fifo_cost_price - COALESCE(o.total_cost_price, 0))
             ELSE o.net_profit
           END
         ), 0) AS total_net_profit,
+        COALESCE(SUM(
+          CASE
+            WHEN COALESCE(o.order_chargeable_weight_gram, 0) > 0
+              THEN COALESCE(o.merchandise_subtotal, o.total_amount) * er.rate_to_krw
+            ELSE 0
+          END
+        ), 0) AS confirmed_sales_krw,
         COALESCE(SUM(
             CASE
               WHEN fifo.fifo_cost_price IS NOT NULL THEN ROUND(fifo.fifo_cost_price * 0.1)
@@ -628,6 +642,7 @@ router.get('/summary', async (req, res) => {
       total_sales_krw: round2(row?.total_sales_krw),
       total_escrow_krw: round2(row?.total_escrow_krw),
       total_net_profit: round2(row?.total_net_profit),
+      confirmed_sales_krw: round2(row?.confirmed_sales_krw),
       total_vat: round2(row?.total_vat),
       order_count: parseInt(row?.order_count || 0),
     });
@@ -644,14 +659,15 @@ router.get('/summary', async (req, res) => {
     );
 
     const currentSummary = parseSummary(rows[0] || {});
-    const profitRate = currentSummary.total_sales_krw === 0
+    const profitRate = currentSummary.confirmed_sales_krw === 0
       ? 0
-      : Math.round((currentSummary.total_net_profit / currentSummary.total_sales_krw) * 10000) / 100;
+      : Math.round((currentSummary.total_net_profit / currentSummary.confirmed_sales_krw) * 10000) / 100;
 
     let prevSummary = {
       total_sales_krw: null,
       total_escrow_krw: null,
       total_net_profit: null,
+      confirmed_sales_krw: null,
       total_vat: null,
       order_count: null,
     };
@@ -700,6 +716,7 @@ router.get('/summary', async (req, res) => {
         total_sales_krw: currentSummary.total_sales_krw,
         total_escrow_krw: currentSummary.total_escrow_krw,
         total_net_profit: currentSummary.total_net_profit,
+        confirmed_sales_krw: currentSummary.confirmed_sales_krw,
         total_vat: currentSummary.total_vat,
         profit_rate: profitRate,
         order_count: currentSummary.order_count,
@@ -707,6 +724,7 @@ router.get('/summary', async (req, res) => {
         prev_total_sales_krw: prevSummary.total_sales_krw,
         prev_total_escrow_krw: prevSummary.total_escrow_krw,
         prev_total_net_profit: prevSummary.total_net_profit,
+        prev_confirmed_sales_krw: prevSummary.confirmed_sales_krw,
         prev_total_vat: prevSummary.total_vat,
         prev_order_count: prevSummary.order_count,
 

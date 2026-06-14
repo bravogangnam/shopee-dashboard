@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getCurrentTenantId } = require('../config/tenant');
 const fs = require('fs');
+const crypto = require('crypto');
 const { requireAuth, requireApprovedTenant } = require('../middleware/auth');
 const {
   createJob,
@@ -12,8 +13,118 @@ const {
 const { runInvoice } = require('../jobs/invoiceWorker');
 const labelStorage = require('../services/labelStorageService');
 
+router.get('/jobs/:jobId/print', async (req, res) => {
+  const jobId = String(req.params.jobId || '').trim();
+  const token = String(req.query.token || '').trim();
+
+  const [rows] = await require('../config/database').query(
+    `SELECT id, tenant_id, status, result_data
+     FROM jobs
+     WHERE id = ?
+       AND job_type = 'invoice'
+     LIMIT 1`,
+    [jobId]
+  );
+
+  const job = rows[0];
+  if (!job) {
+    return res.status(404).send('Invoice job not found');
+  }
+
+  const expectedToken = getInvoicePrintToken(job.id, job.tenant_id);
+  if (!token || token !== expectedToken) {
+    return res.status(401).send('Invalid invoice print token');
+  }
+
+  const resultData = parseJobResultData(job);
+  const mergedPath = resultData?.merged_pdf_path;
+
+  if (job.status !== 'completed' || !mergedPath || !fs.existsSync(mergedPath)) {
+    return res.status(404).send('Invoice PDF is not ready');
+  }
+
+  const pdfUrl = `/api/invoices/jobs/${encodeURIComponent(job.id)}/print-pdf?token=${encodeURIComponent(expectedToken)}`;
+
+  return res.send(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>송장 출력</title>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+    iframe { border: 0; width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <iframe id="invoice-pdf" src="${pdfUrl}"></iframe>
+  <script>
+    const frame = document.getElementById('invoice-pdf');
+    function tryPrint() {
+      try {
+        frame.contentWindow.focus();
+        frame.contentWindow.print();
+      } catch (error) {
+        try {
+          window.focus();
+          window.print();
+        } catch (_) {}
+      }
+    }
+    frame.onload = function () {
+      setTimeout(tryPrint, 900);
+    };
+    setTimeout(tryPrint, 2500);
+  </script>
+</body>
+</html>`);
+});
+
+router.get('/jobs/:jobId/print-pdf', async (req, res) => {
+  const jobId = String(req.params.jobId || '').trim();
+  const token = String(req.query.token || '').trim();
+
+  const [rows] = await require('../config/database').query(
+    `SELECT id, tenant_id, status, result_data
+     FROM jobs
+     WHERE id = ?
+       AND job_type = 'invoice'
+     LIMIT 1`,
+    [jobId]
+  );
+
+  const job = rows[0];
+  if (!job) {
+    return res.status(404).send('Invoice job not found');
+  }
+
+  const expectedToken = getInvoicePrintToken(job.id, job.tenant_id);
+  if (!token || token !== expectedToken) {
+    return res.status(401).send('Invalid invoice print token');
+  }
+
+  const resultData = parseJobResultData(job);
+  const mergedPath = resultData?.merged_pdf_path;
+
+  if (job.status !== 'completed' || !mergedPath || !fs.existsSync(mergedPath)) {
+    return res.status(404).send('Invoice PDF is not ready');
+  }
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="invoice-${job.id}.pdf"`);
+  fs.createReadStream(mergedPath).pipe(res);
+});
+
 router.use(requireAuth);
 router.use(requireApprovedTenant);
+
+function getInvoicePrintToken(jobId, tenantId) {
+  const secret = process.env.JWT_SECRET || process.env.SESSION_SECRET || process.env.SHOPEE_PARTNER_KEY || 'invoice-print-secret';
+  return crypto
+    .createHmac('sha256', secret)
+    .update(`${tenantId}:${jobId}`)
+    .digest('hex')
+    .slice(0, 32);
+}
 
 function normalizeOrderSnList(body = {}) {
   const rawList = body.order_sns || body.order_sn_list || body.orderSnList || [];
@@ -118,6 +229,7 @@ function formatInvoiceJob(job) {
     message: job.progress_message || '',
     percent: total > 0 ? Math.round((processed / total) * 100) : 0,
     download_url: hasDownload ? `/api/invoices/jobs/${job.id}/download` : null,
+    print_url: hasDownload ? `/api/invoices/jobs/${job.id}/print?token=${getInvoicePrintToken(job.id, job.tenant_id)}` : null,
     legacy_download_url: hasDownload ? `/api/invoice/download/${job.id}` : null,
     results,
     errors,

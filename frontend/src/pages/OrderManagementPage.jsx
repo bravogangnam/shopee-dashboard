@@ -298,57 +298,34 @@ export default function OrderManagementPage() {
   async function autoOpenInvoicePrintWindow(job) {
     try {
       const blob = await downloadInvoiceJob(job.jobId);
-      const url = window.URL.createObjectURL(blob);
-      const printWindow = invoicePrintWindowRef.current;
 
+      // 기존 다운로드 버튼과 같은 방식으로 메인 화면에서 인쇄를 시도한다.
+      // 팝업 창 안 iframe 인쇄가 브라우저 정책/로드 타이밍 때문에 멈추는 경우가 있어
+      // 검증된 downloadBlob 경로를 자동 완료 시에도 사용한다.
+      downloadBlob(blob, `invoice-${job.jobId}.pdf`);
+
+      const printWindow = invoicePrintWindowRef.current;
       if (printWindow && !printWindow.closed) {
-        const pdfSrc = JSON.stringify(url);
         printWindow.document.open();
         printWindow.document.write(`
           <html>
-            <head>
-              <title>송장 출력</title>
-              <style>
-                html, body { margin: 0; width: 100%; height: 100%; }
-                iframe { border: 0; width: 100%; height: 100%; }
-              </style>
-            </head>
-            <body>
-              <iframe id="invoice-pdf" src=${pdfSrc}></iframe>
-              <script>
-                const frame = document.getElementById('invoice-pdf');
-                frame.onload = function () {
-                  setTimeout(function () {
-                    try {
-                      frame.contentWindow.focus();
-                      frame.contentWindow.print();
-                    } catch (error) {
-                      try { window.print(); } catch (_) {}
-                    }
-                      try {
-                        if (window.opener) {
-                          window.opener.postMessage({
-                            type: 'INVOICE_PRINT_COMPLETE',
-                            successCount: ${Number(job.completed || 0)},
-                            failedCount: ${Number(job.failed || 0)}
-                          }, '*');
-                        }
-                      } catch (_) {}
-                  }, 700);
-                };
-              </script>
+            <head><title>송장 출력 완료</title></head>
+            <body style="font-family: sans-serif; padding: 24px;">
+              <h2>송장 PDF가 준비되었습니다.</h2>
+              <p>브라우저의 인쇄 확인창이 뜨면 인쇄를 진행하세요.</p>
+              <p>인쇄창이 뜨지 않으면 주문관리 화면의 다운로드 버튼을 눌러 다시 출력하세요.</p>
             </body>
           </html>
         `);
         printWindow.document.close();
-        setMessage('송장 PDF가 준비되어 자동 인쇄창을 열었습니다.');
-      } else {
-        setInvoicePollingError('자동 인쇄창을 열 수 없습니다. 다운로드 버튼을 눌러 송장을 출력하세요.');
-        downloadBlob(blob, `invoice-${job.jobId}.pdf`);
       }
 
-      setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+      setInvoiceFallbackVisible(true);
+      skipHideInvoiceFallbackOnceRef.current = true;
+      setMessage('송장 PDF가 준비되었습니다. 인쇄창이 뜨지 않으면 다운로드 버튼을 눌러 다시 출력하세요.');
     } catch (err) {
+      setInvoiceFallbackVisible(true);
+      skipHideInvoiceFallbackOnceRef.current = true;
       setInvoicePollingError(formatInvoiceJobError(err.message || '자동 인쇄창을 열지 못했습니다. 다운로드 버튼을 눌러 송장을 출력하세요.'));
     }
   }
@@ -475,7 +452,7 @@ export default function OrderManagementPage() {
       {message && <div className="notice">{message}</div>}
       {error && <div className="alert">{error}</div>}
       {invoicePollingError && <div className="notice">{invoicePollingError}</div>}
-      {invoiceFallbackVisible && isInvoiceJobDone(invoiceJob) && invoiceJob?.download_url && (!invoicePrintWindowRef.current || invoicePrintWindowRef.current.closed) && (
+      {invoiceFallbackVisible && isInvoiceJobDone(invoiceJob) && invoiceJob?.download_url && (
         <div className="notice">
           <span>송장 생성이 완료되었습니다. 새 창이 닫혀 있으면 다운로드 버튼으로 출력하세요.</span>
           <button

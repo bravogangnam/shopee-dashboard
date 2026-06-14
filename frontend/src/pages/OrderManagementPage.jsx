@@ -220,12 +220,25 @@ export default function OrderManagementPage() {
   }, [invoiceJob?.jobId, invoiceJob?.status]);
 
   useEffect(() => {
-    if (!invoiceJob?.jobId || !isInvoiceJobDone(invoiceJob) || !invoiceJob.download_url) return;
+    if (!invoiceJob?.jobId) return;
+    if (!isInvoiceJobDone(invoiceJob)) return;
+    if (!invoiceJob.print_url) return;
+    if (Number(invoiceJob.percent || 0) < 100) return;
+    if (Number(invoiceJob.completed || 0) < Number(invoiceJob.total || 0)) return;
     if (autoPrintedInvoiceJobRef.current === invoiceJob.jobId) return;
 
     autoPrintedInvoiceJobRef.current = invoiceJob.jobId;
-    autoOpenInvoicePrintWindow(invoiceJob);
-  }, [invoiceJob?.jobId, invoiceJob?.status, invoiceJob?.download_url]);
+    window.setTimeout(() => {
+      autoOpenInvoicePrintWindow(invoiceJob);
+    }, 1200);
+  }, [
+    invoiceJob?.jobId,
+    invoiceJob?.status,
+    invoiceJob?.print_url,
+    invoiceJob?.percent,
+    invoiceJob?.completed,
+    invoiceJob?.total,
+  ]);
 
   useEffect(() => {
     const printWindow = invoicePrintWindowRef.current;

@@ -79,7 +79,8 @@ router.get('/jobs/:jobId/print-pdf', async (req, res) => {
 
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="invoice-${job.id}.pdf"`);
-  fs.createReadStream(mergedPath).pipe(res);
+  res.setHeader('Cache-Control', 'no-store');
+  return res.sendFile(mergedPath);
 });
 
 router.use(requireAuth);
@@ -281,7 +282,8 @@ async function sendInvoiceJobDownload(req, res, jobId) {
   const fileName = `invoices_${new Date().toISOString().slice(0, 10)}.pdf`;
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-  fs.createReadStream(mergedPath).pipe(res);
+  res.setHeader('Cache-Control', 'no-store');
+  return res.sendFile(mergedPath);
 }
 
 router.post('/jobs', async (req, res) => {

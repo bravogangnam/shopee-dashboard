@@ -723,6 +723,10 @@ router.get('/summary', async (req, res) => {
         }
       }
 
+    const prevProfitRate = prevSummary.confirmed_sales_krw === 0 || prevSummary.confirmed_sales_krw === null
+      ? null
+      : Math.round((prevSummary.total_net_profit / prevSummary.confirmed_sales_krw) * 10000) / 100;
+
     const prevProductProfitRate = prevSummary.confirmed_sales_krw === 0 || prevSummary.confirmed_sales_krw === null
       ? null
       : Math.round((prevSummary.total_product_profit / prevSummary.confirmed_sales_krw) * 10000) / 100;
@@ -751,6 +755,7 @@ router.get('/summary', async (req, res) => {
         sales_change_rate: changeRate(currentSummary.total_sales_krw, prevSummary.total_sales_krw),
         escrow_change_rate: changeRate(currentSummary.total_escrow_krw, prevSummary.total_escrow_krw),
         profit_change_rate: changeRate(currentSummary.total_net_profit, prevSummary.total_net_profit),
+        profit_rate_change_rate: changeRate(profitRate, prevProfitRate),
         product_profit_rate_change_rate: changeRate(productProfitRate, prevProductProfitRate),
         vat_change_rate: changeRate(currentSummary.total_vat, prevSummary.total_vat),
         count_change_rate: changeRate(currentSummary.order_count, prevSummary.order_count),

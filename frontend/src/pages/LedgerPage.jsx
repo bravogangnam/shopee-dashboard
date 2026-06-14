@@ -71,7 +71,7 @@ function SummaryCards({ summary }) {
     { label: '확정 정산액', value: formatKrw(summary?.total_escrow_krw), changeRate: summary?.escrow_change_rate },
     { label: '확정 순이익', value: formatKrw(summary?.total_net_profit), changeRate: summary?.profit_change_rate },
     { label: '부가세', value: formatKrw(summary?.total_vat), changeRate: summary?.vat_change_rate },
-    { label: '확정 순이익률', value: summary ? `${formatNumber(summary.profit_rate, 2)}%` : '-' },
+    { label: '확정 순이익률', value: summary ? `${formatNumber(summary.profit_rate, 2)}%` : '-', changeRate: summary?.profit_rate_change_rate },
     { label: '확정 제품 순이익률', value: summary ? `${formatNumber(summary.product_profit_rate, 2)}%` : '-', changeRate: summary?.product_profit_rate_change_rate },
     { label: '주문건수', value: summary ? `${formatNumber(summary.order_count, 0)}건` : '-', changeRate: summary?.count_change_rate },
   ];

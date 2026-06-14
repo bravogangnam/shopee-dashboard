@@ -612,6 +612,14 @@ router.get('/summary', async (req, res) => {
           END
         ), 0) AS confirmed_sales_krw,
         COALESCE(SUM(
+          CASE
+            WHEN COALESCE(o.order_chargeable_weight_gram, 0) <= 0 THEN 0
+            WHEN fifo.fifo_cost_price IS NOT NULL AND o.product_profit IS NOT NULL
+              THEN o.product_profit - (fifo.fifo_cost_price - COALESCE(o.total_cost_price, 0))
+            ELSE o.product_profit
+          END
+        ), 0) AS total_product_profit,
+        COALESCE(SUM(
             CASE
               WHEN fifo.fifo_cost_price IS NOT NULL THEN ROUND(fifo.fifo_cost_price * 0.1)
               ELSE o.total_vat
@@ -643,6 +651,7 @@ router.get('/summary', async (req, res) => {
       total_escrow_krw: round2(row?.total_escrow_krw),
       total_net_profit: round2(row?.total_net_profit),
       confirmed_sales_krw: round2(row?.confirmed_sales_krw),
+      total_product_profit: round2(row?.total_product_profit),
       total_vat: round2(row?.total_vat),
       order_count: parseInt(row?.order_count || 0),
     });
@@ -662,12 +671,16 @@ router.get('/summary', async (req, res) => {
     const profitRate = currentSummary.confirmed_sales_krw === 0
       ? 0
       : Math.round((currentSummary.total_net_profit / currentSummary.confirmed_sales_krw) * 10000) / 100;
+    const productProfitRate = currentSummary.confirmed_sales_krw === 0
+      ? 0
+      : Math.round((currentSummary.total_product_profit / currentSummary.confirmed_sales_krw) * 10000) / 100;
 
     let prevSummary = {
       total_sales_krw: null,
       total_escrow_krw: null,
       total_net_profit: null,
       confirmed_sales_krw: null,
+      total_product_profit: null,
       total_vat: null,
       order_count: null,
     };
@@ -717,14 +730,17 @@ router.get('/summary', async (req, res) => {
         total_escrow_krw: currentSummary.total_escrow_krw,
         total_net_profit: currentSummary.total_net_profit,
         confirmed_sales_krw: currentSummary.confirmed_sales_krw,
+        total_product_profit: currentSummary.total_product_profit,
         total_vat: currentSummary.total_vat,
         profit_rate: profitRate,
+        product_profit_rate: productProfitRate,
         order_count: currentSummary.order_count,
 
         prev_total_sales_krw: prevSummary.total_sales_krw,
         prev_total_escrow_krw: prevSummary.total_escrow_krw,
         prev_total_net_profit: prevSummary.total_net_profit,
         prev_confirmed_sales_krw: prevSummary.confirmed_sales_krw,
+        prev_total_product_profit: prevSummary.total_product_profit,
         prev_total_vat: prevSummary.total_vat,
         prev_order_count: prevSummary.order_count,
 

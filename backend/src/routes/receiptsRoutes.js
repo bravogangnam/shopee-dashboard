@@ -13,6 +13,60 @@ function likeKeyword(keyword) {
   return text ? `%${text}%` : null;
 }
 
+
+function cleanText(value) {
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
+function normalizeInputSku(value) {
+  return cleanText(value)?.toUpperCase() || null;
+}
+
+function toPositiveFactor(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return Math.round(number * 10000) / 10000;
+}
+
+async function assertProductExists(tenantId, sku, label) {
+  const [rows] = await db.query(
+    `SELECT sku FROM products WHERE tenant_id = ? AND sku = ? LIMIT 1`,
+    [tenantId, sku]
+  );
+  if (!rows.length) {
+    const err = new Error(`${label} 상품을 찾을 수 없습니다: ${sku}`);
+    err.status = 400;
+    throw err;
+  }
+}
+
+async function assertNoDuplicateComposition({ tenantId, sourceSku, baseSku, excludeId = null }) {
+  const params = [tenantId, sourceSku, baseSku];
+  let extra = '';
+  if (excludeId) {
+    extra = ' AND id <> ?';
+    params.push(excludeId);
+  }
+
+  const [rows] = await db.query(
+    `SELECT id
+     FROM sku_compositions
+     WHERE tenant_id = ?
+       AND source_sku = ?
+       AND base_sku = ?
+       ${extra}
+     LIMIT 1`,
+    params
+  );
+
+  if (rows.length) {
+    const err = new Error(`이미 등록된 구성입니다: ${sourceSku} → ${baseSku}`);
+    err.status = 409;
+    throw err;
+  }
+}
+
 router.get('/dashboard', async (req, res) => {
   const tenantId = getCurrentTenantId(req);
 
@@ -91,6 +145,47 @@ router.get('/dashboard', async (req, res) => {
   });
 });
 
+router.get('/product-search', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const keyword = likeKeyword(req.query.q);
+
+  if (!keyword) {
+    return res.json({ success: true, data: [] });
+  }
+
+  const rawQuery = String(req.query.q || '').trim();
+
+  const [rows] = await db.query(
+    `SELECT
+       sku,
+       product_name_kr,
+       product_name_en,
+       option_name,
+       stock_quantity,
+       cost_price_with_vat,
+       supply_rate
+     FROM products
+     WHERE tenant_id = ?
+       AND (
+         sku LIKE ?
+         OR product_name_kr LIKE ?
+         OR product_name_en LIKE ?
+         OR option_name LIKE ?
+       )
+     ORDER BY
+       CASE
+         WHEN sku = ? THEN 0
+         WHEN sku LIKE ? THEN 1
+         ELSE 2
+       END,
+       sku ASC
+     LIMIT 30`,
+    [tenantId, keyword, keyword, keyword, keyword, rawQuery, keyword]
+  );
+
+  return res.json({ success: true, data: rows });
+});
+
 router.get('/sku-compositions', async (req, res) => {
   const tenantId = getCurrentTenantId(req);
   const keyword = likeKeyword(req.query.q);
@@ -160,5 +255,97 @@ router.get('/sku-compositions', async (req, res) => {
     summary: summaryRows[0] || {},
   });
 });
+
+router.post('/sku-compositions', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const sourceSku = normalizeInputSku(req.body.source_sku);
+  const baseSku = normalizeInputSku(req.body.base_sku);
+  const factor = toPositiveFactor(req.body.factor);
+  const compositionType = cleanText(req.body.composition_type) || '공통';
+  const note = cleanText(req.body.note);
+
+  if (!sourceSku || !baseSku || !factor) {
+    return res.status(400).json({
+      success: false,
+      error: 'SKU, 기준재고SKU, 기준수량은 필수입니다. 기준수량은 1 이상이어야 합니다.',
+    });
+  }
+
+  await assertProductExists(tenantId, sourceSku, '판매 SKU');
+  await assertProductExists(tenantId, baseSku, '기준재고 SKU');
+  await assertNoDuplicateComposition({ tenantId, sourceSku, baseSku });
+
+  const [result] = await db.query(
+    `INSERT INTO sku_compositions
+       (tenant_id, source_sku, base_sku, factor, composition_type, note, sheet_row)
+     VALUES (?, ?, ?, ?, ?, ?, NULL)`,
+    [tenantId, sourceSku, baseSku, factor, compositionType, note]
+  );
+
+  return res.json({ success: true, id: result.insertId });
+});
+
+router.patch('/sku-compositions/:id', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const id = Number(req.params.id);
+  const sourceSku = normalizeInputSku(req.body.source_sku);
+  const baseSku = normalizeInputSku(req.body.base_sku);
+  const factor = toPositiveFactor(req.body.factor);
+  const compositionType = cleanText(req.body.composition_type) || '공통';
+  const note = cleanText(req.body.note);
+
+  if (!id || !sourceSku || !baseSku || !factor) {
+    return res.status(400).json({
+      success: false,
+      error: 'ID, SKU, 기준재고SKU, 기준수량은 필수입니다. 기준수량은 1 이상이어야 합니다.',
+    });
+  }
+
+  await assertProductExists(tenantId, sourceSku, '판매 SKU');
+  await assertProductExists(tenantId, baseSku, '기준재고 SKU');
+  await assertNoDuplicateComposition({ tenantId, sourceSku, baseSku, excludeId: id });
+
+  const [result] = await db.query(
+    `UPDATE sku_compositions
+     SET source_sku = ?,
+         base_sku = ?,
+         factor = ?,
+         composition_type = ?,
+         note = ?,
+         updated_at = NOW()
+     WHERE tenant_id = ?
+       AND id = ?`,
+    [sourceSku, baseSku, factor, compositionType, note, tenantId, id]
+  );
+
+  if (result.affectedRows !== 1) {
+    return res.status(404).json({ success: false, error: '상품구성을 찾을 수 없습니다.' });
+  }
+
+  return res.json({ success: true });
+});
+
+router.delete('/sku-compositions/:id', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const id = Number(req.params.id);
+
+  if (!id) {
+    return res.status(400).json({ success: false, error: 'ID가 필요합니다.' });
+  }
+
+  const [result] = await db.query(
+    `DELETE FROM sku_compositions
+     WHERE tenant_id = ?
+       AND id = ?`,
+    [tenantId, id]
+  );
+
+  if (result.affectedRows !== 1) {
+    return res.status(404).json({ success: false, error: '상품구성을 찾을 수 없습니다.' });
+  }
+
+  return res.json({ success: true });
+});
+
 
 module.exports = router;

@@ -35,6 +35,15 @@ function optionName(row, prefix = '') {
   return row?.[`${prefix}option_name`] || row?.option_name || '-';
 }
 
+function getSuggestedReceiptPrice(product) {
+  return Number(
+    product?.latest_receipt_price_vat_included ||
+    product?.cost_price_with_vat ||
+    product?.discounted_price_with_vat ||
+    0
+  );
+}
+
 const RECEIPT_PAGE_SIZE = 20;
 const PURCHASE_PAGE_SIZE = 20;
 
@@ -189,6 +198,12 @@ function StockInTab({ dashboard, reloadDashboard }) {
   const unitPriceVatIncluded = priceVatIncluded > 0 ? priceVatIncluded * supplyRate : 0;
   const unitCost = unitPriceVatIncluded > 0 ? unitPriceVatIncluded / 1.1 : 0;
   const totalVatIncluded = quantity > 0 ? unitPriceVatIncluded * quantity : 0;
+  const latestPriceVatIncluded = getSuggestedReceiptPrice(selectedProduct);
+  const priceDiffRate = latestPriceVatIncluded > 0 && unitPriceVatIncluded > 0
+    ? ((unitPriceVatIncluded - latestPriceVatIncluded) / latestPriceVatIncluded) * 100
+    : 0;
+  const hasPriceWarning = Math.abs(priceDiffRate) >= 30;
+  const hasSeverePriceWarning = Math.abs(priceDiffRate) >= 100;
   const stockAfter = selectedProduct ? Number(selectedProduct.stock_quantity || 0) + quantity : null;
 
   const pendingRows = stockReceipts.filter(row => row.status === 'PENDING');
@@ -226,7 +241,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
     setForm(current => ({
       ...current,
       quantity: suggestedQty ? String(suggestedQty) : current.quantity,
-      price_vat_included: String(Math.round(Number(product.cost_price_with_vat || product.discounted_price_with_vat || 0) || 0)),
+      price_vat_included: String(Math.round(getSuggestedReceiptPrice(product) || 0)),
       supply_rate: product.supply_rate
         ? String(Math.round(Number(product.supply_rate) <= 1 ? Number(product.supply_rate) * 100 : Number(product.supply_rate)))
         : '100',
@@ -367,7 +382,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
                   <td className={Number(product.stock_quantity || 0) + Number(product.pending_receipt_qty || 0) < 0 ? 'receipt-negative' : 'receipt-positive'}>
                     {formatNumber(Number(product.stock_quantity || 0) + Number(product.pending_receipt_qty || 0))}
                   </td>
-                  <td>{formatKrw(product.cost_price_with_vat || product.discounted_price_with_vat || 0)}</td>
+                  <td>{formatKrw(getSuggestedReceiptPrice(product))}</td>
                   <td>{formatSupplyRate(product.supply_rate)}</td>
                   <td>
                     {Number(product.pending_receipt_qty || 0) >= Number(product.purchase_needed_qty || 0) ? (
@@ -423,7 +438,10 @@ function StockInTab({ dashboard, reloadDashboard }) {
             <div className="receipt-selected-product">
               <strong>{selectedProduct.sku}</strong>
               <span>{selectedProduct.product_name_kr || selectedProduct.product_name_en || '-'}</span>
-              <small>{selectedProduct.option_name || '-'} · 현재재고 {formatNumber(selectedProduct.stock_quantity)}</small>
+              <small>
+                {selectedProduct.option_name || '-'} · 현재재고 {formatNumber(selectedProduct.stock_quantity)}
+                · 최근입고가 {formatKrw(getSuggestedReceiptPrice(selectedProduct))}
+              </small>
             </div>
           )}
 
@@ -488,6 +506,11 @@ function StockInTab({ dashboard, reloadDashboard }) {
               <small>
                 저장 후 재고: {formatNumber(selectedProduct.stock_quantity)} → {form.status === 'COMPLETED' ? formatNumber(stockAfter) : '입고예정은 재고 미반영'}
               </small>
+            )}
+            {selectedProduct && hasPriceWarning && (
+              <strong className={hasSeverePriceWarning ? 'receipt-price-warning severe' : 'receipt-price-warning'}>
+                최근 입고가 {formatKrw(latestPriceVatIncluded)} 대비 {priceDiffRate > 0 ? '+' : ''}{formatNumber(priceDiffRate, 0)}% 차이납니다. 단가를 확인하세요.
+              </strong>
             )}
           </div>
 

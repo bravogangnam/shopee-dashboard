@@ -145,6 +145,23 @@ router.get('/dashboard', async (req, res) => {
        p.supply_rate,
        p.discounted_price_with_vat,
        p.cost_price,
+       (
+         SELECT ROUND(b.unit_cost * 1.1, 0)
+         FROM inventory_batches b
+         WHERE b.tenant_id = p.tenant_id
+           AND b.sku COLLATE utf8mb4_unicode_ci = p.sku COLLATE utf8mb4_unicode_ci
+         ORDER BY b.received_at IS NULL, b.received_at DESC, b.id DESC
+         LIMIT 1
+       ) AS latest_receipt_price_vat_included,
+       (
+         SELECT b.received_at
+         FROM inventory_batches b
+         WHERE b.tenant_id = p.tenant_id
+           AND b.sku COLLATE utf8mb4_unicode_ci = p.sku COLLATE utf8mb4_unicode_ci
+         ORDER BY b.received_at IS NULL, b.received_at DESC, b.id DESC
+         LIMIT 1
+       ) AS latest_receipt_at,
+       p.cost_price,
        COALESCE(pending_receipts.pending_receipt_qty, 0) AS pending_receipt_qty,
        COALESCE(pending_receipts.pending_receipt_count, 0) AS pending_receipt_count,
        CASE
@@ -450,7 +467,24 @@ router.get('/product-search', async (req, res) => {
        option_name,
        stock_quantity,
        cost_price_with_vat,
-       supply_rate
+       discounted_price_with_vat,
+       supply_rate,
+       (
+         SELECT ROUND(b.unit_cost * 1.1, 0)
+         FROM inventory_batches b
+         WHERE b.tenant_id = products.tenant_id
+           AND b.sku COLLATE utf8mb4_unicode_ci = products.sku COLLATE utf8mb4_unicode_ci
+         ORDER BY b.received_at IS NULL, b.received_at DESC, b.id DESC
+         LIMIT 1
+       ) AS latest_receipt_price_vat_included,
+       (
+         SELECT b.received_at
+         FROM inventory_batches b
+         WHERE b.tenant_id = products.tenant_id
+           AND b.sku COLLATE utf8mb4_unicode_ci = products.sku COLLATE utf8mb4_unicode_ci
+         ORDER BY b.received_at IS NULL, b.received_at DESC, b.id DESC
+         LIMIT 1
+       ) AS latest_receipt_at
      FROM products
      WHERE tenant_id = ?
        AND (

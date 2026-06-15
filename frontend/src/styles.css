@@ -3955,3 +3955,18 @@ label {
   color: #15803d;
   font-weight: 900;
 }
+
+.receipt-price-warning {
+  display: block;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 12px;
+}
+
+.receipt-price-warning.severe {
+  background: #fee2e2;
+  color: #b91c1c;
+}

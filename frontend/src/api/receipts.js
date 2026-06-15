@@ -63,3 +63,17 @@ export function cancelStockReceipt(id, payload = {}) {
     body: payload,
   });
 }
+
+export function previewStockBatchCost(batchId, payload) {
+  return apiRequest(`/api/receipts/stock-batches/${batchId}/cost-preview`, {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export function updateStockBatchCost(batchId, payload) {
+  return apiRequest(`/api/receipts/stock-batches/${batchId}/cost`, {
+    method: 'PATCH',
+    body: payload,
+  });
+}

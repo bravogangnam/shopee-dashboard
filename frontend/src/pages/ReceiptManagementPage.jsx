@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { cancelStockReceipt, completeStockReceipt, createSkuComposition, createStockReceipt, deleteSkuComposition, fetchReceiptDashboard, fetchSkuCompositions, fetchStockReceipts, searchReceiptProducts, updateSkuComposition, updateStockReceipt } from '../api/receipts.js';
+import { cancelStockReceipt, completeStockReceipt, createSkuComposition, createStockReceipt, deleteSkuComposition, fetchReceiptDashboard, fetchSkuCompositions, fetchStockReceipts, previewStockBatchCost, searchReceiptProducts, updateSkuComposition, updateStockBatchCost, updateStockReceipt } from '../api/receipts.js';
 
 function formatNumber(value, digits = 0) {
   const number = Number(value || 0);
@@ -384,6 +384,52 @@ function StockInTab({ dashboard, reloadDashboard }) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  async function handleEditBatchCost(row) {
+    const currentVatPrice = Math.round(Number(row.unit_cost || 0) * 1.1);
+    const input = window.prompt(`${row.sku} 새 부가세포함 원가를 입력하세요.`, String(currentVatPrice || ''));
+
+    if (input === null) return;
+
+    const priceVatIncluded = Number(String(input).replace(/,/g, '').trim());
+    if (!Number.isFinite(priceVatIncluded) || priceVatIncluded <= 0) {
+      setReceiptMessage('부가세포함 원가를 올바르게 입력하세요.');
+      return;
+    }
+
+    try {
+      setReceiptLoading(true);
+      const preview = await previewStockBatchCost(row.id, { price_vat_included: priceVatIncluded });
+      const impact = preview.impact || {};
+      const batch = preview.batch || {};
+
+      const confirmText = [
+        '입고 원가 수정 확인',
+        '',
+        `상품: ${batch.sku || row.sku} / ${batch.product_name_kr || batch.product_name_en || row.product_name_kr || row.product_name_en || '-'}`,
+        `기존 부가세포함 원가: ${formatKrw(batch.old_price_vat_included)}`,
+        `변경 부가세포함 원가: ${formatKrw(batch.new_price_vat_included)}`,
+        '',
+        `판매 반영 수량: ${formatNumber(impact.allocated_qty || 0)}개`,
+        `영향 주문: ${formatNumber(impact.affected_order_count || 0)}건`,
+        `기존 배정 원가: ${formatKrw(impact.old_allocated_total_cost || 0)}`,
+        `변경 배정 원가: ${formatKrw(impact.new_allocated_total_cost || 0)}`,
+        `순이익 변화 예상: ${formatKrw(impact.profit_change_estimate || 0)}`,
+        '',
+        '이 변경은 내부 FIFO 원가/정산관리 순이익에 반영됩니다.',
+      ].join('\n');
+
+      if (!window.confirm(confirmText)) return;
+
+      const result = await updateStockBatchCost(row.id, { price_vat_included: priceVatIncluded });
+      setReceiptMessage(`입고 원가를 수정했습니다. 순이익 변화 예상 ${formatKrw(result.impact?.profit_change_estimate || 0)}`);
+      await reloadDashboard();
+    } catch (err) {
+      setReceiptMessage(err.message || '입고 원가 수정에 실패했습니다.');
+    } finally {
+      setReceiptLoading(false);
+    }
+  }
+
   async function handleComplete(row) {
     if (!window.confirm(`${row.sku} 입고예정을 입고완료 처리할까요? 재고와 FIFO 배치가 생성됩니다.`)) return;
 
@@ -683,6 +729,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
                 <th>남은수량</th>
                 <th>부가세포함 원가</th>
                 <th>메모</th>
+                <th>작업</th>
               </tr>
             </thead>
             <tbody>
@@ -695,10 +742,15 @@ function StockInTab({ dashboard, reloadDashboard }) {
                   <td>{formatNumber(row.remaining_qty)}</td>
                   <td>{formatKrw(Number(row.unit_cost || 0) * 1.1)}</td>
                   <td>{row.note || '-'}</td>
+                  <td>
+                    <button type="button" className="receipt-inline-button" onClick={() => handleEditBatchCost(row)}>
+                      원가수정
+                    </button>
+                  </td>
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="7" className="receipt-empty">입고 이력이 없습니다.</td>
+                  <td colSpan="8" className="receipt-empty">입고 이력이 없습니다.</td>
                 </tr>
               )}
             </tbody>

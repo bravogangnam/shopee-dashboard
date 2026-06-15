@@ -58,6 +58,69 @@ function computeCosts({ priceVatIncluded, supplyRate }) {
   return { supplyRate: rate, unitPriceVatIncluded, unitCost };
 }
 
+
+function computeUnitCostFromVatIncluded(value) {
+  const priceVatIncluded = Number(value || 0);
+  if (!Number.isFinite(priceVatIncluded) || priceVatIncluded <= 0) return null;
+  return {
+    priceVatIncluded: roundMoney(priceVatIncluded),
+    unitCost: roundMoney(priceVatIncluded / 1.1),
+  };
+}
+
+async function getBatchCostImpact(connOrPool, { tenantId, batchId, newUnitCost }) {
+  const [batchRows] = await connOrPool.query(
+    `SELECT
+       b.*,
+       p.product_name_kr,
+       p.product_name_en,
+       p.option_name
+     FROM inventory_batches b
+     LEFT JOIN products p
+       ON p.tenant_id = b.tenant_id
+      AND p.sku COLLATE utf8mb4_unicode_ci = b.sku COLLATE utf8mb4_unicode_ci
+     WHERE b.tenant_id = ?
+       AND b.id = ?
+     LIMIT 1`,
+    [tenantId, batchId]
+  );
+  const batch = batchRows[0];
+  if (!batch) {
+    const err = new Error('입고 배치를 찾을 수 없습니다.');
+    err.status = 404;
+    throw err;
+  }
+
+  const [impactRows] = await connOrPool.query(
+    `SELECT
+       COUNT(a.id) AS allocation_count,
+       COALESCE(SUM(a.qty), 0) AS allocated_qty,
+       COALESCE(SUM(a.total_cost), 0) AS old_allocated_total_cost,
+       COALESCE(SUM(ROUND(a.qty * ?, 2)), 0) AS new_allocated_total_cost,
+       COUNT(DISTINCT CONCAT(COALESCE(a.shop_id, ''), ':', COALESCE(a.order_sn, ''))) AS affected_order_count
+     FROM inventory_allocations a
+     WHERE a.tenant_id = ?
+       AND a.batch_id = ?`,
+    [newUnitCost, tenantId, batchId]
+  );
+
+  const impact = impactRows[0] || {};
+  const oldAllocatedTotalCost = Number(impact.old_allocated_total_cost || 0);
+  const newAllocatedTotalCost = Number(impact.new_allocated_total_cost || 0);
+
+  return {
+    batch,
+    impact: {
+      allocation_count: Number(impact.allocation_count || 0),
+      allocated_qty: Number(impact.allocated_qty || 0),
+      affected_order_count: Number(impact.affected_order_count || 0),
+      old_allocated_total_cost: roundMoney(oldAllocatedTotalCost),
+      new_allocated_total_cost: roundMoney(newAllocatedTotalCost),
+      profit_change_estimate: roundMoney(oldAllocatedTotalCost - newAllocatedTotalCost),
+    },
+  };
+}
+
 function makeReceiptCode({ sku, dateText }) {
   const safeSku = String(sku || '').replace(/[^A-Za-z0-9_]/g, '');
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
@@ -233,6 +296,124 @@ router.get('/dashboard', async (req, res) => {
     purchase_needed: purchaseNeededRows,
     recent_receipts: recentReceiptRows,
   });
+});
+
+router.post('/stock-batches/:id/cost-preview', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const batchId = Number(req.params.id);
+  const computed = computeUnitCostFromVatIncluded(req.body.price_vat_included);
+
+  if (!batchId || !computed) {
+    return res.status(400).json({
+      success: false,
+      error: 'batch_id와 부가세포함 원가가 필요합니다.',
+    });
+  }
+
+  try {
+    const { batch, impact } = await getBatchCostImpact(db, {
+      tenantId,
+      batchId,
+      newUnitCost: computed.unitCost,
+    });
+
+    return res.json({
+      success: true,
+      batch: {
+        id: batch.id,
+        receipt_id: batch.receipt_id,
+        sku: batch.sku,
+        product_name_kr: batch.product_name_kr,
+        product_name_en: batch.product_name_en,
+        option_name: batch.option_name,
+        initial_qty: Number(batch.initial_qty || 0),
+        remaining_qty: Number(batch.remaining_qty || 0),
+        old_unit_cost: Number(batch.unit_cost || 0),
+        old_price_vat_included: roundMoney(Number(batch.unit_cost || 0) * 1.1),
+        new_unit_cost: computed.unitCost,
+        new_price_vat_included: computed.priceVatIncluded,
+      },
+      impact,
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ success: false, error: err.message });
+  }
+});
+
+router.patch('/stock-batches/:id/cost', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const batchId = Number(req.params.id);
+  const computed = computeUnitCostFromVatIncluded(req.body.price_vat_included);
+
+  if (!batchId || !computed) {
+    return res.status(400).json({
+      success: false,
+      error: 'batch_id와 부가세포함 원가가 필요합니다.',
+    });
+  }
+
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const { batch, impact } = await getBatchCostImpact(conn, {
+      tenantId,
+      batchId,
+      newUnitCost: computed.unitCost,
+    });
+
+    await conn.query(
+      `UPDATE inventory_batches
+       SET unit_cost = ?,
+           source_unit_cost = ?,
+           note = CONCAT(COALESCE(note, ''), CASE WHEN COALESCE(note, '') = '' THEN '' ELSE '; ' END, ?)
+       WHERE tenant_id = ?
+         AND id = ?`,
+      [
+        computed.unitCost,
+        computed.priceVatIncluded,
+        `cost_corrected_vat_included=${computed.priceVatIncluded}`,
+        tenantId,
+        batchId,
+      ]
+    );
+
+    await conn.query(
+      `UPDATE inventory_allocations
+       SET unit_cost = ?,
+           total_cost = ROUND(qty * ?, 2)
+       WHERE tenant_id = ?
+         AND batch_id = ?`,
+      [computed.unitCost, computed.unitCost, tenantId, batchId]
+    );
+
+    await conn.query(
+      `UPDATE stock_receipts
+       SET price_vat_included = ?,
+           unit_price_vat_included = ?,
+           unit_cost = ?
+       WHERE tenant_id = ?
+         AND batch_id = ?`,
+      [computed.priceVatIncluded, computed.priceVatIncluded, computed.unitCost, tenantId, batchId]
+    );
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      batch_id: batchId,
+      old_price_vat_included: roundMoney(Number(batch.unit_cost || 0) * 1.1),
+      new_price_vat_included: computed.priceVatIncluded,
+      old_unit_cost: Number(batch.unit_cost || 0),
+      new_unit_cost: computed.unitCost,
+      impact,
+    });
+  } catch (err) {
+    await conn.rollback();
+    return res.status(err.status || 500).json({ success: false, error: err.message });
+  } finally {
+    conn.release();
+  }
 });
 
 router.get('/stock-receipts', async (req, res) => {

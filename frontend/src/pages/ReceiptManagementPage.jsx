@@ -208,6 +208,28 @@ function StockInTab({ dashboard, reloadDashboard }) {
 
   const pendingRows = stockReceipts.filter(row => row.status === 'PENDING');
 
+  const selectedSku = selectedProduct?.sku || '';
+  const targetDate = form.status === 'COMPLETED'
+    ? form.receipt_date
+    : (form.expected_date || form.receipt_date);
+
+  const duplicatePendingRows = selectedSku
+    ? stockReceipts.filter(row =>
+        row.status === 'PENDING' &&
+        row.sku === selectedSku &&
+        formatDate(row.expected_date || row.receipt_date) === targetDate
+      )
+    : [];
+
+  const duplicateCompletedRows = selectedSku
+    ? recentReceipts.filter(row =>
+        row.sku === selectedSku &&
+        formatDate(row.received_at || row.created_at) === targetDate
+      )
+    : [];
+
+  const hasDuplicateReceipt = duplicatePendingRows.length > 0 || duplicateCompletedRows.length > 0;
+
   useEffect(() => {
     setPurchasePage(1);
   }, [purchaseNeeded.length]);
@@ -269,6 +291,29 @@ function StockInTab({ dashboard, reloadDashboard }) {
 
     if (!selectedProduct?.sku) {
       setReceiptMessage('상품을 먼저 선택하세요.');
+      return;
+    }
+
+    const duplicateText = hasDuplicateReceipt
+      ? `\n\n주의: 같은 날짜에 같은 SKU 입고 기록이 있습니다.\n입고예정 ${duplicatePendingRows.length}건 / 입고완료 ${duplicateCompletedRows.length}건`
+      : '';
+
+    const confirmText = [
+      '입고 저장 확인',
+      '',
+      `상품: ${selectedProduct.sku} / ${selectedProduct.product_name_kr || selectedProduct.product_name_en || '-'}`,
+      `상태: ${form.status === 'COMPLETED' ? '입고완료' : '입고예정'}`,
+      `날짜: ${targetDate || '-'}`,
+      `입고수량: ${formatNumber(quantity)}개`,
+      `부가세포함 단가: ${formatKrw(unitPriceVatIncluded)}`,
+      `총 입고금액: ${formatKrw(totalVatIncluded)}`,
+      form.status === 'COMPLETED'
+        ? `재고 변화: ${formatNumber(selectedProduct.stock_quantity)} → ${formatNumber(stockAfter)}`
+        : '입고예정은 아직 재고에 반영되지 않습니다.',
+      duplicateText,
+    ].join('\n');
+
+    if (!window.confirm(confirmText)) {
       return;
     }
 
@@ -499,6 +544,13 @@ function StockInTab({ dashboard, reloadDashboard }) {
               </select>
             </label>
           </div>
+
+          {hasDuplicateReceipt && (
+            <div className="receipt-duplicate-warning">
+              <strong>같은 날짜에 같은 SKU 입고 기록이 있습니다.</strong>
+              <span>입고예정 {formatNumber(duplicatePendingRows.length)}건 · 입고완료 {formatNumber(duplicateCompletedRows.length)}건</span>
+            </div>
+          )}
 
           <div className="receipt-preview-box">
             <span>입고단가 {formatKrw(unitPriceVatIncluded)} · 총 입고금액 {formatKrw(totalVatIncluded)}</span>

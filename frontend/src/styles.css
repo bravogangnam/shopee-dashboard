@@ -3970,3 +3970,24 @@ label {
   background: #fee2e2;
   color: #b91c1c;
 }
+
+
+.receipt-duplicate-warning {
+  border: 1px solid #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+  border-radius: 14px;
+  padding: 11px 12px;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.receipt-duplicate-warning strong {
+  font-weight: 900;
+}
+
+.receipt-duplicate-warning span {
+  color: #b45309;
+  font-weight: 800;
+}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { cancelStockReceipt, completeStockReceipt, createSkuComposition, createStockReceipt, deleteSkuComposition, fetchReceiptDashboard, fetchSkuCompositions, fetchStockReceipts, previewStockBatchCost, searchReceiptProducts, updateSkuComposition, updateStockBatchCost, updateStockReceipt } from '../api/receipts.js';
+import { cancelStockReceipt, completeStockReceipt, createSkuComposition, createStockReceipt, deleteSkuComposition, fetchReceiptDashboard, fetchSkuCompositions, fetchStockReceiptHistory, fetchStockReceiptSummary, fetchStockReceipts, previewStockBatchCost, searchReceiptProducts, updateSkuComposition, updateStockBatchCost, updateStockReceipt } from '../api/receipts.js';
 
 function formatNumber(value, digits = 0) {
   const number = Number(value || 0);
@@ -163,6 +163,10 @@ function StockInTab({ dashboard, reloadDashboard }) {
   const [purchasePage, setPurchasePage] = useState(1);
   const [receiptPage, setReceiptPage] = useState(1);
   const [stockReceipts, setStockReceipts] = useState([]);
+  const [historyRows, setHistoryRows] = useState(recentReceipts);
+  const [receiptSummary, setReceiptSummary] = useState(null);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyMonth, setHistoryMonth] = useState(new Date().toISOString().slice(0, 7));
   const [receiptLoading, setReceiptLoading] = useState(false);
   const [receiptMessage, setReceiptMessage] = useState('');
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -185,9 +189,9 @@ function StockInTab({ dashboard, reloadDashboard }) {
     safePurchasePage * PURCHASE_PAGE_SIZE
   );
 
-  const receiptTotalPages = Math.max(1, Math.ceil(recentReceipts.length / RECEIPT_PAGE_SIZE));
+  const receiptTotalPages = Math.max(1, Math.ceil(historyRows.length / RECEIPT_PAGE_SIZE));
   const safeReceiptPage = Math.min(receiptPage, receiptTotalPages);
-  const pagedReceipts = recentReceipts.slice(
+  const pagedReceipts = historyRows.slice(
     (safeReceiptPage - 1) * RECEIPT_PAGE_SIZE,
     safeReceiptPage * RECEIPT_PAGE_SIZE
   );
@@ -225,7 +229,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
     : [];
 
   const duplicateCompletedRows = selectedSku
-    ? recentReceipts.filter(row =>
+    ? historyRows.filter(row =>
         row.sku === selectedSku &&
         formatDate(row.received_at || row.created_at) === targetDate
       )
@@ -240,6 +244,31 @@ function StockInTab({ dashboard, reloadDashboard }) {
   useEffect(() => {
     setReceiptPage(1);
   }, [recentReceipts.length]);
+
+  async function loadReceiptSummaryAndHistory() {
+    try {
+      setReceiptLoading(true);
+      const [summaryResult, historyResult] = await Promise.all([
+        fetchStockReceiptSummary({ month: historyMonth }),
+        fetchStockReceiptHistory({ month: historyMonth, q: historySearch }),
+      ]);
+      setReceiptSummary(summaryResult || null);
+      setHistoryRows(historyResult.data || []);
+      setReceiptPage(1);
+    } catch (err) {
+      setReceiptMessage(err.message || '입고 요약/이력을 불러오지 못했습니다.');
+    } finally {
+      setReceiptLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadReceiptSummaryAndHistory();
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [historyMonth, historySearch]);
 
   async function loadStockReceipts() {
     try {
@@ -713,9 +742,55 @@ function StockInTab({ dashboard, reloadDashboard }) {
       <section className="receipt-card receipt-card-wide">
         <div className="receipt-section-header">
           <div>
-            <h2>최근 입고 이력</h2>
-            <p>입고 완료된 내역을 날짜 기준으로 표시합니다.</p>
+            <h2>월별 입고 요약</h2>
+            <p>입고완료 금액과 입고예정 금액을 월 기준으로 확인합니다.</p>
           </div>
+        </div>
+
+        <div className="receipt-summary-grid receipt-month-summary">
+          <div className="receipt-summary-card">
+            <span>입고완료 수량</span>
+            <strong>{formatNumber(receiptSummary?.completed?.total_qty || 0)}개</strong>
+            <small>{historyMonth}</small>
+          </div>
+          <div className="receipt-summary-card">
+            <span>입고완료 금액</span>
+            <strong>{formatKrw(receiptSummary?.completed?.total_amount_vat_included || 0)}</strong>
+            <small>부가세포함</small>
+          </div>
+          <div className="receipt-summary-card">
+            <span>입고예정 수량</span>
+            <strong>{formatNumber(receiptSummary?.pending?.pending_qty || 0)}개</strong>
+            <small>{formatNumber(receiptSummary?.pending?.pending_count || 0)}건</small>
+          </div>
+          <div className="receipt-summary-card">
+            <span>입고예정 금액</span>
+            <strong>{formatKrw(receiptSummary?.pending?.pending_amount_vat_included || 0)}</strong>
+            <small>부가세포함</small>
+          </div>
+        </div>
+      </section>
+
+      <section className="receipt-card receipt-card-wide">
+        <div className="receipt-section-header">
+          <div>
+            <h2>최근 입고 이력</h2>
+            <p>입고 완료된 내역을 월별/검색어 기준으로 표시합니다.</p>
+          </div>
+        </div>
+
+        <div className="receipt-toolbar receipt-history-toolbar">
+          <input
+            type="month"
+            value={historyMonth}
+            onChange={event => setHistoryMonth(event.target.value)}
+          />
+          <input
+            type="search"
+            value={historySearch}
+            onChange={event => setHistorySearch(event.target.value)}
+            placeholder="SKU / 상품명 / 메모 검색"
+          />
         </div>
 
         <div className="receipt-table-wrap">
@@ -758,7 +833,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
         </div>
 
         <div className="receipt-pagination">
-          <span>최근 입고 이력 {formatNumber(recentReceipts.length)}건 · {formatNumber(safeReceiptPage)} / {formatNumber(receiptTotalPages)} 페이지</span>
+          <span>최근 입고 이력 {formatNumber(historyRows.length)}건 · {formatNumber(safeReceiptPage)} / {formatNumber(receiptTotalPages)} 페이지</span>
           <div>
             <button type="button" onClick={() => setReceiptPage(page => Math.max(1, page - 1))} disabled={safeReceiptPage <= 1}>이전</button>
             <button type="button" onClick={() => setReceiptPage(page => Math.min(receiptTotalPages, page + 1))} disabled={safeReceiptPage >= receiptTotalPages}>다음</button>

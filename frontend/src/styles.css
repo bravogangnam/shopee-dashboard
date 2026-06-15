@@ -4017,3 +4017,20 @@ label {
 .receipt-sync-disabled p {
   color: #64748b;
 }
+
+.receipt-month-summary {
+  margin-bottom: 4px;
+}
+
+.receipt-history-toolbar {
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.receipt-history-toolbar input[type="month"] {
+  max-width: 180px;
+}
+
+.receipt-history-toolbar input[type="search"] {
+  max-width: 360px;
+}

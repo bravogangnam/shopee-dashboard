@@ -77,3 +77,11 @@ export function updateStockBatchCost(batchId, payload) {
     body: payload,
   });
 }
+
+export async function fetchStockReceiptSummary(params = {}) {
+  return apiRequest(`/api/receipts/stock-receipts/summary${buildQuery(params)}`);
+}
+
+export async function fetchStockReceiptHistory(params = {}) {
+  return apiRequest(`/api/receipts/stock-receipts/history${buildQuery(params)}`);
+}

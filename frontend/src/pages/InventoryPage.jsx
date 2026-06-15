@@ -986,10 +986,8 @@ export default function InventoryPage() {
         <div>
           <h1>재고 관리</h1>
           <p>
-            재고 수량은 구글시트 입고관리탭을 기준으로 반영할 예정입니다.
-            현재 보유 재고와 추가 입고는 입고관리탭에 입력하세요.
-            재고 증가는 입고관리탭에서 처리합니다.
-            재고 보정은 파손/분실/실사 차이처럼 재고를 줄일 때만 사용합니다.
+            재고 수량은 대시보드 입고 관리 메뉴에서 반영합니다.
+            재고 증가는 입고 관리에서 처리하고, 재고 보정은 파손/분실/실사 차이처럼 재고를 줄일 때만 사용합니다.
             Shopee 실제 재고와는 연동하지 않습니다.
           </p>
         </div>
@@ -1003,17 +1001,14 @@ export default function InventoryPage() {
       {message && <div className="notice">{message}</div>}
       {error && <div className="alert">{error}</div>}
 
-      <div className="receipt-sync-panel">
+      <div className="receipt-sync-panel receipt-sync-disabled">
         <div>
-          <strong>입고관리 동기화</strong>
+          <strong>입고관리 시트 동기화 중단</strong>
           <p>
-            구글시트 입고관리탭의 ‘대기’ 행을 DB 재고와 FIFO batch에 반영합니다.
-            성공한 행은 시트에서 ‘동기화완료’로 변경하세요.
+            입고관리 시트와 상품구성표 시트 동기화는 중단되었습니다.
+            앞으로 입고 등록과 상품구성표 관리는 왼쪽 메뉴의 입고 관리에서 처리하세요.
           </p>
         </div>
-        <button type="button" className="action-btn primary" onClick={handleReceiptSync} disabled={syncLoading}>
-          {syncLoading ? '동기화 중...' : '입고관리 동기화'}
-        </button>
       </div>
 
       <ReceiptSyncResultCard result={syncResult} />

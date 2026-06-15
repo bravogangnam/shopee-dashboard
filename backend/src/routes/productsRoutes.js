@@ -43,14 +43,17 @@ router.get('/inventory/today-orders', async (req, res) => {
 });
 
 router.post('/inventory-receipts/sync', async (req, res) => {
-  const result = await syncPendingInventoryReceipts();
-  return res.json({ success: true, result });
+  return res.status(410).json({
+    success: false,
+    error: '입고관리 시트 동기화는 중단되었습니다. 앞으로 입고 관리는 대시보드 입고 관리 메뉴에서 처리하세요.',
+  });
 });
 
 router.post('/sku-compositions/refresh', async (req, res) => {
-  const result = await refreshSkuCompositionsFromSheet();
-  const { compositionMap, ...safeResult } = result;
-  return res.json({ success: true, result: safeResult });
+  return res.status(410).json({
+    success: false,
+    error: '상품구성표 시트 동기화는 중단되었습니다. 앞으로 상품구성표는 대시보드 입고 관리 > 상품구성표에서 관리하세요.',
+  });
 });
 
 router.patch('/:sku/stock', async (req, res) => {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createSkuComposition, deleteSkuComposition, fetchReceiptDashboard, fetchSkuCompositions, searchReceiptProducts, updateSkuComposition } from '../api/receipts.js';
+import { cancelStockReceipt, completeStockReceipt, createSkuComposition, createStockReceipt, deleteSkuComposition, fetchReceiptDashboard, fetchSkuCompositions, fetchStockReceipts, searchReceiptProducts, updateSkuComposition } from '../api/receipts.js';
 
 function formatNumber(value, digits = 0) {
   const number = Number(value || 0);
@@ -45,7 +45,7 @@ function compositionTone(type) {
   return 'receipt-pill';
 }
 
-function ProductPicker({ label, value, onChange, placeholder }) {
+function ProductPicker({ label, value, onChange, placeholder, onSelect }) {
   const [query, setQuery] = useState(value || '');
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
@@ -82,6 +82,7 @@ function ProductPicker({ label, value, onChange, placeholder }) {
 
   function selectProduct(product) {
     onChange(product.sku);
+    if (onSelect) onSelect(product);
     setQuery(product.sku);
     setOpen(false);
   }
@@ -146,11 +147,26 @@ function ReceiptOverview({ dashboard }) {
   );
 }
 
-function StockInTab({ dashboard }) {
+function StockInTab({ dashboard, reloadDashboard }) {
   const purchaseNeeded = dashboard?.purchase_needed || [];
   const recentReceipts = dashboard?.recent_receipts || [];
+
   const [purchasePage, setPurchasePage] = useState(1);
   const [receiptPage, setReceiptPage] = useState(1);
+  const [stockReceipts, setStockReceipts] = useState([]);
+  const [receiptLoading, setReceiptLoading] = useState(false);
+  const [receiptMessage, setReceiptMessage] = useState('');
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [form, setForm] = useState({
+    status: 'COMPLETED',
+    receipt_date: new Date().toISOString().slice(0, 10),
+    expected_date: '',
+    quantity: '',
+    price_vat_included: '',
+    supply_rate: '100',
+    supplier: '',
+    memo: '추가입고',
+  });
 
   const purchaseTotalPages = Math.max(1, Math.ceil(purchaseNeeded.length / PURCHASE_PAGE_SIZE));
   const safePurchasePage = Math.min(purchasePage, purchaseTotalPages);
@@ -166,6 +182,17 @@ function StockInTab({ dashboard }) {
     safeReceiptPage * RECEIPT_PAGE_SIZE
   );
 
+  const priceVatIncluded = Number(form.price_vat_included || 0);
+  const quantity = Number(form.quantity || 0);
+  const supplyRateNumber = Number(form.supply_rate || 100);
+  const supplyRate = supplyRateNumber > 1 ? supplyRateNumber / 100 : supplyRateNumber;
+  const unitPriceVatIncluded = priceVatIncluded > 0 ? priceVatIncluded * supplyRate : 0;
+  const unitCost = unitPriceVatIncluded > 0 ? unitPriceVatIncluded / 1.1 : 0;
+  const totalVatIncluded = quantity > 0 ? unitPriceVatIncluded * quantity : 0;
+  const stockAfter = selectedProduct ? Number(selectedProduct.stock_quantity || 0) + quantity : null;
+
+  const pendingRows = stockReceipts.filter(row => row.status === 'PENDING');
+
   useEffect(() => {
     setPurchasePage(1);
   }, [purchaseNeeded.length]);
@@ -173,6 +200,127 @@ function StockInTab({ dashboard }) {
   useEffect(() => {
     setReceiptPage(1);
   }, [recentReceipts.length]);
+
+  async function loadStockReceipts() {
+    try {
+      setReceiptLoading(true);
+      const result = await fetchStockReceipts();
+      setStockReceipts(result.data || []);
+    } catch (err) {
+      setReceiptMessage(err.message || '입고예정 목록을 불러오지 못했습니다.');
+    } finally {
+      setReceiptLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadStockReceipts();
+  }, []);
+
+  function updateForm(field, value) {
+    setForm(current => ({ ...current, [field]: value }));
+  }
+
+  function fillProduct(product, suggestedQty = '') {
+    setSelectedProduct(product);
+    setForm(current => ({
+      ...current,
+      quantity: suggestedQty ? String(suggestedQty) : current.quantity,
+      price_vat_included: String(Math.round(Number(product.cost_price_with_vat || product.discounted_price_with_vat || 0) || 0)),
+      supply_rate: product.supply_rate
+        ? String(Math.round(Number(product.supply_rate) <= 1 ? Number(product.supply_rate) * 100 : Number(product.supply_rate)))
+        : '100',
+      memo: current.memo || '추가입고',
+    }));
+  }
+
+  function resetReceiptForm() {
+    setSelectedProduct(null);
+    setForm({
+      status: 'COMPLETED',
+      receipt_date: new Date().toISOString().slice(0, 10),
+      expected_date: '',
+      quantity: '',
+      price_vat_included: '',
+      supply_rate: '100',
+      supplier: '',
+      memo: '추가입고',
+    });
+    setReceiptMessage('');
+  }
+
+  async function submitStockReceipt(event) {
+    event.preventDefault();
+
+    if (!selectedProduct?.sku) {
+      setReceiptMessage('상품을 먼저 선택하세요.');
+      return;
+    }
+
+    try {
+      setReceiptLoading(true);
+      setReceiptMessage('');
+
+      const result = await createStockReceipt({
+        sku: selectedProduct.sku,
+        status: form.status,
+        receipt_date: form.status === 'COMPLETED' ? form.receipt_date : null,
+        expected_date: form.status === 'PENDING' ? (form.expected_date || form.receipt_date) : null,
+        quantity: form.quantity,
+        price_vat_included: form.price_vat_included,
+        supply_rate: form.supply_rate,
+        supplier: form.supplier,
+        memo: form.memo,
+      });
+
+      setReceiptMessage(
+        form.status === 'COMPLETED'
+          ? `입고완료 저장됨 · 배치 ${result.completion?.batchId || '-'} · 부족분 배정 ${result.completion?.allocatedShortageQty || 0}개`
+          : '입고예정으로 저장했습니다.'
+      );
+
+      resetReceiptForm();
+      await loadStockReceipts();
+      await reloadDashboard();
+    } catch (err) {
+      setReceiptMessage(err.message || '입고 저장에 실패했습니다.');
+    } finally {
+      setReceiptLoading(false);
+    }
+  }
+
+  async function handleComplete(row) {
+    if (!window.confirm(`${row.sku} 입고예정을 입고완료 처리할까요? 재고와 FIFO 배치가 생성됩니다.`)) return;
+
+    try {
+      setReceiptLoading(true);
+      const result = await completeStockReceipt(row.id);
+      setReceiptMessage(`입고완료 처리됨 · 배치 ${result.completion?.batchId || '-'} · 부족분 배정 ${result.completion?.allocatedShortageQty || 0}개`);
+      await loadStockReceipts();
+      await reloadDashboard();
+    } catch (err) {
+      setReceiptMessage(err.message || '입고완료 처리에 실패했습니다.');
+    } finally {
+      setReceiptLoading(false);
+    }
+  }
+
+  async function handleCancel(row) {
+    const memo = window.prompt(`${row.sku} 입고예정을 취소할까요? 취소 메모를 입력하세요.`, '주문취소');
+    if (memo === null) return;
+
+    try {
+      setReceiptLoading(true);
+      await cancelStockReceipt(row.id, { memo });
+      setReceiptMessage('입고예정을 취소했습니다.');
+      await loadStockReceipts();
+      await reloadDashboard();
+    } catch (err) {
+      setReceiptMessage(err.message || '입고취소에 실패했습니다.');
+    } finally {
+      setReceiptLoading(false);
+    }
+  }
 
   return (
     <div className="receipt-tab-grid">
@@ -195,6 +343,7 @@ function StockInTab({ dashboard }) {
                 <th>구매필요</th>
                 <th>최근 원가</th>
                 <th>공급률</th>
+                <th>작업</th>
               </tr>
             </thead>
             <tbody>
@@ -203,16 +352,19 @@ function StockInTab({ dashboard }) {
                   <td><strong>{product.sku}</strong></td>
                   <td>{product.product_name_kr || product.product_name_en || '-'}</td>
                   <td>{product.option_name || '-'}</td>
-                  <td className={Number(product.stock_quantity || 0) < 0 ? 'receipt-negative' : ''}>
-                    {formatNumber(product.stock_quantity)}
-                  </td>
+                  <td className="receipt-negative">{formatNumber(product.stock_quantity)}</td>
                   <td><strong>{formatNumber(product.purchase_needed_qty)}</strong></td>
                   <td>{formatKrw(product.cost_price_with_vat || product.discounted_price_with_vat || 0)}</td>
                   <td>{formatSupplyRate(product.supply_rate)}</td>
+                  <td>
+                    <button type="button" className="receipt-inline-button" onClick={() => fillProduct(product, product.purchase_needed_qty)}>
+                      입고등록
+                    </button>
+                  </td>
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="7" className="receipt-empty">구매필요 상품이 없습니다.</td>
+                  <td colSpan="8" className="receipt-empty">구매필요 상품이 없습니다.</td>
                 </tr>
               )}
             </tbody>
@@ -220,24 +372,10 @@ function StockInTab({ dashboard }) {
         </div>
 
         <div className="receipt-pagination">
-          <span>
-            구매필요 상품 {formatNumber(purchaseNeeded.length)}개 · {formatNumber(safePurchasePage)} / {formatNumber(purchaseTotalPages)} 페이지
-          </span>
+          <span>구매필요 상품 {formatNumber(purchaseNeeded.length)}개 · {formatNumber(safePurchasePage)} / {formatNumber(purchaseTotalPages)} 페이지</span>
           <div>
-            <button
-              type="button"
-              onClick={() => setPurchasePage(page => Math.max(1, page - 1))}
-              disabled={safePurchasePage <= 1}
-            >
-              이전
-            </button>
-            <button
-              type="button"
-              onClick={() => setPurchasePage(page => Math.min(purchaseTotalPages, page + 1))}
-              disabled={safePurchasePage >= purchaseTotalPages}
-            >
-              다음
-            </button>
+            <button type="button" onClick={() => setPurchasePage(page => Math.max(1, page - 1))} disabled={safePurchasePage <= 1}>이전</button>
+            <button type="button" onClick={() => setPurchasePage(page => Math.min(purchaseTotalPages, page + 1))} disabled={safePurchasePage >= purchaseTotalPages}>다음</button>
           </div>
         </div>
       </section>
@@ -246,32 +384,150 @@ function StockInTab({ dashboard }) {
         <div className="receipt-section-header">
           <div>
             <h2>신규 입고 등록</h2>
-            <p>다음 단계에서 상품검색, 입고예정/입고완료, 공급처, 공급률 입력을 연결합니다.</p>
+            <p>상품 검색 또는 구매필요 상품의 입고등록 버튼으로 시작합니다.</p>
           </div>
         </div>
 
-        <div className="receipt-form-preview">
-          <label>
-            상품 검색
-            <input type="text" placeholder="SKU / 상품명 / 옵션명 통합검색" disabled />
-          </label>
+        <form className="receipt-form-preview" onSubmit={submitStockReceipt}>
+          <ProductPicker
+            label="상품 검색"
+            value={selectedProduct?.sku || ''}
+            onChange={() => {}}
+            onSelect={product => fillProduct(product)}
+            placeholder="SKU / 상품명 / 옵션명 통합검색"
+          />
+
+          {selectedProduct && (
+            <div className="receipt-selected-product">
+              <strong>{selectedProduct.sku}</strong>
+              <span>{selectedProduct.product_name_kr || selectedProduct.product_name_en || '-'}</span>
+              <small>{selectedProduct.option_name || '-'} · 현재재고 {formatNumber(selectedProduct.stock_quantity)}</small>
+            </div>
+          )}
+
+          <div className="receipt-form-row">
+            <label>
+              입고상태
+              <select value={form.status} onChange={event => updateForm('status', event.target.value)}>
+                <option value="COMPLETED">입고완료</option>
+                <option value="PENDING">입고예정</option>
+              </select>
+            </label>
+            <label>
+              {form.status === 'COMPLETED' ? '입고완료일' : '입고예정일'}
+              <input
+                type="date"
+                value={form.status === 'COMPLETED' ? form.receipt_date : (form.expected_date || form.receipt_date)}
+                onChange={event => {
+                  if (form.status === 'COMPLETED') updateForm('receipt_date', event.target.value);
+                  else updateForm('expected_date', event.target.value);
+                }}
+              />
+            </label>
+          </div>
+
           <div className="receipt-form-row">
             <label>
               입고수량
-              <input type="number" placeholder="구매필요수량 자동입력 예정" disabled />
+              <input type="number" min="1" step="1" value={form.quantity} onChange={event => updateForm('quantity', event.target.value)} />
             </label>
             <label>
               공급률
-              <input type="text" value="100%" disabled readOnly />
+              <input type="number" min="1" step="1" value={form.supply_rate} onChange={event => updateForm('supply_rate', event.target.value)} />
             </label>
           </div>
+
           <label>
             부가세포함 단가
-            <input type="text" placeholder="최근 입고가 자동입력 예정" disabled />
+            <input type="number" min="1" step="1" value={form.price_vat_included} onChange={event => updateForm('price_vat_included', event.target.value)} />
           </label>
-          <div className="receipt-preview-box">
-            <span>입력한 부가세포함 단가 기준으로 입고단가와 저장 후 재고를 자동 계산합니다.</span>
+
+          <div className="receipt-form-row">
+            <label>
+              공급처
+              <input type="text" value={form.supplier} onChange={event => updateForm('supplier', event.target.value)} placeholder="쿠팡 / 지마켓 / 도매처 등" />
+            </label>
+            <label>
+              메모
+              <select value={form.memo} onChange={event => updateForm('memo', event.target.value)}>
+                <option value="추가입고">추가입고</option>
+                <option value="재고보충">재고보충</option>
+                <option value="원가수정">원가수정</option>
+                <option value="주문취소">주문취소</option>
+                <option value="입고취소">입고취소</option>
+                <option value="기타">기타</option>
+              </select>
+            </label>
           </div>
+
+          <div className="receipt-preview-box">
+            <span>입고단가 {formatKrw(unitPriceVatIncluded)} · 총 입고금액 {formatKrw(totalVatIncluded)}</span>
+            {selectedProduct && (
+              <small>
+                저장 후 재고: {formatNumber(selectedProduct.stock_quantity)} → {form.status === 'COMPLETED' ? formatNumber(stockAfter) : '입고예정은 재고 미반영'}
+              </small>
+            )}
+          </div>
+
+          <div className="composition-editor-actions">
+            <button type="submit" className="primary-button" disabled={receiptLoading}>
+              {receiptLoading ? '저장 중...' : '입고 저장'}
+            </button>
+            <button type="button" className="secondary-button" onClick={resetReceiptForm} disabled={receiptLoading}>
+              초기화
+            </button>
+          </div>
+
+          {receiptMessage && <div className="receipt-alert receipt-message">{receiptMessage}</div>}
+        </form>
+      </section>
+
+      <section className="receipt-card receipt-card-wide">
+        <div className="receipt-section-header">
+          <div>
+            <h2>입고예정 목록</h2>
+            <p>입고예정은 재고에 반영되지 않습니다. 실제 도착 시 입고완료 처리하세요.</p>
+          </div>
+        </div>
+
+        <div className="receipt-table-wrap">
+          <table className="receipt-table">
+            <thead>
+              <tr>
+                <th>예정일</th>
+                <th>SKU</th>
+                <th>상품명</th>
+                <th>수량</th>
+                <th>부가세포함 단가</th>
+                <th>공급처</th>
+                <th>메모</th>
+                <th>작업</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingRows.length ? pendingRows.map(row => (
+                <tr key={row.id}>
+                  <td>{formatDate(row.expected_date || row.receipt_date)}</td>
+                  <td><strong>{row.sku}</strong></td>
+                  <td>{row.product_name_kr || row.product_name_en || '-'}</td>
+                  <td>{formatNumber(row.quantity)}</td>
+                  <td>{formatKrw(row.unit_price_vat_included)}</td>
+                  <td>{row.supplier || '-'}</td>
+                  <td>{row.memo || '-'}</td>
+                  <td>
+                    <div className="composition-row-actions">
+                      <button type="button" onClick={() => handleComplete(row)}>입고완료</button>
+                      <button type="button" className="danger" onClick={() => handleCancel(row)}>취소</button>
+                    </div>
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan="8" className="receipt-empty">입고예정 내역이 없습니다.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -317,31 +573,16 @@ function StockInTab({ dashboard }) {
         </div>
 
         <div className="receipt-pagination">
-          <span>
-            최근 입고 이력 {formatNumber(recentReceipts.length)}건 · {formatNumber(safeReceiptPage)} / {formatNumber(receiptTotalPages)} 페이지
-          </span>
+          <span>최근 입고 이력 {formatNumber(recentReceipts.length)}건 · {formatNumber(safeReceiptPage)} / {formatNumber(receiptTotalPages)} 페이지</span>
           <div>
-            <button
-              type="button"
-              onClick={() => setReceiptPage(page => Math.max(1, page - 1))}
-              disabled={safeReceiptPage <= 1}
-            >
-              이전
-            </button>
-            <button
-              type="button"
-              onClick={() => setReceiptPage(page => Math.min(receiptTotalPages, page + 1))}
-              disabled={safeReceiptPage >= receiptTotalPages}
-            >
-              다음
-            </button>
+            <button type="button" onClick={() => setReceiptPage(page => Math.max(1, page - 1))} disabled={safeReceiptPage <= 1}>이전</button>
+            <button type="button" onClick={() => setReceiptPage(page => Math.min(receiptTotalPages, page + 1))} disabled={safeReceiptPage >= receiptTotalPages}>다음</button>
           </div>
         </div>
       </section>
     </div>
   );
 }
-
 function CompositionTab({ rows, summary, search, setSearch, loading, reload }) {
   const [form, setForm] = useState(EMPTY_COMPOSITION_FORM);
   const [saving, setSaving] = useState(false);
@@ -661,7 +902,10 @@ export default function ReceiptManagementPage() {
       {activeTab === 'stock-in' && (
         <>
           {loading ? <div className="receipt-card">입고관리 데이터를 불러오는 중입니다.</div> : <ReceiptOverview dashboard={dashboard} />}
-          <StockInTab dashboard={dashboard} />
+          <StockInTab dashboard={dashboard} reloadDashboard={async () => {
+            const result = await fetchReceiptDashboard();
+            setDashboard(result);
+          }} />
         </>
       )}
 

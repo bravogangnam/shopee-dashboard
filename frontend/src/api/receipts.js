@@ -31,3 +31,27 @@ export function deleteSkuComposition(id) {
     method: 'DELETE',
   });
 }
+
+export async function fetchStockReceipts(params = {}) {
+  return apiRequest(`/api/receipts/stock-receipts${buildQuery(params)}`);
+}
+
+export function createStockReceipt(payload) {
+  return apiRequest('/api/receipts/stock-receipts', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export function completeStockReceipt(id) {
+  return apiRequest(`/api/receipts/stock-receipts/${id}/complete`, {
+    method: 'POST',
+  });
+}
+
+export function cancelStockReceipt(id, payload = {}) {
+  return apiRequest(`/api/receipts/stock-receipts/${id}/cancel`, {
+    method: 'POST',
+    body: payload,
+  });
+}

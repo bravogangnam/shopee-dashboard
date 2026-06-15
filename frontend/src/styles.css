@@ -3858,3 +3858,55 @@ label {
     grid-column: 1 / -1;
   }
 }
+
+.receipt-inline-button {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 10px;
+  padding: 7px 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.receipt-inline-button:hover {
+  background: #dbeafe;
+}
+
+.receipt-selected-product {
+  border: 1px solid #dbeafe;
+  background: #f8fbff;
+  border-radius: 14px;
+  padding: 12px;
+  display: grid;
+  gap: 4px;
+}
+
+.receipt-selected-product strong {
+  color: #1d4ed8;
+}
+
+.receipt-selected-product span {
+  color: #111827;
+  font-weight: 800;
+}
+
+.receipt-selected-product small,
+.receipt-preview-box small {
+  color: #64748b;
+  font-weight: 700;
+}
+
+.receipt-form-preview select {
+  width: 100%;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+  padding: 11px 12px;
+  font-size: 14px;
+  background: #ffffff;
+  color: #111827;
+}
+
+.receipt-message {
+  margin-top: 8px;
+}

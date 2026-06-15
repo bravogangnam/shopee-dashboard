@@ -4,6 +4,7 @@ const router = express.Router();
 const db = require('../config/database');
 const { requireAuth, requireApprovedTenant } = require('../middleware/auth');
 const { getCurrentTenantId } = require('../config/tenant');
+const { allocateOpenShortagesForBatch } = require('../services/inventoryFifoService');
 
 router.use(requireAuth);
 router.use(requireApprovedTenant);
@@ -11,6 +12,68 @@ router.use(requireApprovedTenant);
 function likeKeyword(keyword) {
   const text = String(keyword || '').trim();
   return text ? `%${text}%` : null;
+}
+
+
+function roundMoney(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function todayDateKst() {
+  const now = new Date();
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
+}
+
+function mysqlDateTime(date = new Date()) {
+  const pad = value => String(value).padStart(2, '0');
+  return [
+    date.getUTCFullYear(),
+    pad(date.getUTCMonth() + 1),
+    pad(date.getUTCDate()),
+  ].join('-') + ' ' + [
+    pad(date.getUTCHours()),
+    pad(date.getUTCMinutes()),
+    pad(date.getUTCSeconds()),
+  ].join(':');
+}
+
+function parsePositiveInt(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return Math.trunc(number);
+}
+
+function parseSupplyRate(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 1;
+  return number > 1 ? number / 100 : number;
+}
+
+function computeCosts({ priceVatIncluded, supplyRate }) {
+  const priceVat = Number(priceVatIncluded || 0);
+  const rate = parseSupplyRate(supplyRate);
+  const unitPriceVatIncluded = roundMoney(priceVat * rate);
+  const unitCost = roundMoney(unitPriceVatIncluded / 1.1);
+  return { supplyRate: rate, unitPriceVatIncluded, unitCost };
+}
+
+function makeReceiptCode({ sku, dateText }) {
+  const safeSku = String(sku || '').replace(/[^A-Za-z0-9_]/g, '');
+  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
+  return `DB-${dateText.replace(/-/g, '')}-${safeSku}-${stamp}`;
+}
+
+async function getProductBySku(connOrPool, tenantId, sku) {
+  const [rows] = await connOrPool.query(
+    `SELECT sku, product_name_kr, product_name_en, option_name, stock_quantity
+     FROM products
+     WHERE tenant_id = ?
+       AND sku = ?
+     LIMIT 1`,
+    [tenantId, sku]
+  );
+  return rows[0] || null;
 }
 
 
@@ -145,6 +208,220 @@ router.get('/dashboard', async (req, res) => {
   });
 });
 
+router.get('/stock-receipts', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const status = cleanText(req.query.status);
+  const keyword = likeKeyword(req.query.q);
+  const params = [tenantId];
+
+  let where = 'WHERE r.tenant_id = ?';
+  if (status && ['PENDING', 'COMPLETED', 'CANCELLED'].includes(status)) {
+    where += ' AND r.status = ?';
+    params.push(status);
+  }
+  if (keyword) {
+    where += ` AND (
+      r.receipt_code LIKE ?
+      OR r.sku LIKE ?
+      OR r.supplier LIKE ?
+      OR r.memo LIKE ?
+      OR p.product_name_kr LIKE ?
+      OR p.product_name_en LIKE ?
+      OR p.option_name LIKE ?
+    )`;
+    params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword);
+  }
+
+  const [rows] = await db.query(
+    `SELECT
+       r.*,
+       p.product_name_kr,
+       p.product_name_en,
+       p.option_name,
+       p.stock_quantity
+     FROM stock_receipts r
+     LEFT JOIN products p
+       ON p.tenant_id = r.tenant_id
+      AND p.sku COLLATE utf8mb4_unicode_ci = r.sku COLLATE utf8mb4_unicode_ci
+     ${where}
+     ORDER BY r.created_at DESC, r.id DESC
+     LIMIT 200`,
+    params
+  );
+
+  return res.json({ success: true, data: rows });
+});
+
+router.post('/stock-receipts', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const sku = normalizeInputSku(req.body.sku);
+  const quantity = parsePositiveInt(req.body.quantity);
+  const status = cleanText(req.body.status) || 'PENDING';
+  const supplier = cleanText(req.body.supplier);
+  const memo = cleanText(req.body.memo);
+  const expectedDate = cleanText(req.body.expected_date);
+  const receiptDate = cleanText(req.body.receipt_date) || todayDateKst();
+  const priceVatIncluded = Number(req.body.price_vat_included || 0);
+  const { supplyRate, unitPriceVatIncluded, unitCost } = computeCosts({
+    priceVatIncluded,
+    supplyRate: req.body.supply_rate,
+  });
+
+  if (!sku || !quantity || priceVatIncluded <= 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'SKU, 입고수량, 부가세포함 단가는 필수입니다.',
+    });
+  }
+  if (!['PENDING', 'COMPLETED'].includes(status)) {
+    return res.status(400).json({
+      success: false,
+      error: '신규 입고 상태는 PENDING 또는 COMPLETED만 가능합니다.',
+    });
+  }
+
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const product = await getProductBySku(conn, tenantId, sku);
+    if (!product) {
+      const err = new Error(`상품을 찾을 수 없습니다: ${sku}`);
+      err.status = 400;
+      throw err;
+    }
+
+    const receiptCode = makeReceiptCode({ sku, dateText: receiptDate });
+
+    const [insertResult] = await conn.query(
+      `INSERT INTO stock_receipts
+         (tenant_id, receipt_code, sku, status, receipt_date, expected_date,
+          quantity, supplier, price_vat_included, supply_rate,
+          unit_price_vat_included, unit_cost, memo)
+       VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        tenantId,
+        receiptCode,
+        sku,
+        receiptDate,
+        expectedDate || null,
+        quantity,
+        supplier,
+        priceVatIncluded,
+        supplyRate,
+        unitPriceVatIncluded,
+        unitCost,
+        memo,
+      ]
+    );
+
+    const receipt = {
+      id: insertResult.insertId,
+      tenant_id: tenantId,
+      receipt_code: receiptCode,
+      sku,
+      status: 'PENDING',
+      receipt_date: receiptDate,
+      quantity,
+      supplier,
+      price_vat_included: priceVatIncluded,
+      supply_rate: supplyRate,
+      unit_price_vat_included: unitPriceVatIncluded,
+      unit_cost: unitCost,
+      memo,
+    };
+
+    let completion = null;
+    if (status === 'COMPLETED') {
+      completion = await completeStockReceipt(conn, receipt, { tenantId });
+    }
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      id: receipt.id,
+      receipt_code: receiptCode,
+      status,
+      completion,
+    });
+  } catch (err) {
+    await conn.rollback();
+    return res.status(err.status || 500).json({ success: false, error: err.message });
+  } finally {
+    conn.release();
+  }
+});
+
+router.post('/stock-receipts/:id/complete', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const id = Number(req.params.id);
+
+  if (!id) {
+    return res.status(400).json({ success: false, error: 'ID가 필요합니다.' });
+  }
+
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [rows] = await conn.query(
+      `SELECT *
+       FROM stock_receipts
+       WHERE tenant_id = ?
+         AND id = ?
+       FOR UPDATE`,
+      [tenantId, id]
+    );
+    const receipt = rows[0];
+    if (!receipt) {
+      const err = new Error('입고건을 찾을 수 없습니다.');
+      err.status = 404;
+      throw err;
+    }
+
+    const completion = await completeStockReceipt(conn, receipt, { tenantId });
+    await conn.commit();
+
+    return res.json({ success: true, completion });
+  } catch (err) {
+    await conn.rollback();
+    return res.status(err.status || 500).json({ success: false, error: err.message });
+  } finally {
+    conn.release();
+  }
+});
+
+router.post('/stock-receipts/:id/cancel', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const id = Number(req.params.id);
+
+  if (!id) {
+    return res.status(400).json({ success: false, error: 'ID가 필요합니다.' });
+  }
+
+  const [result] = await db.query(
+    `UPDATE stock_receipts
+     SET status = 'CANCELLED',
+         cancelled_at = NOW(),
+         memo = COALESCE(NULLIF(?, ''), memo)
+     WHERE tenant_id = ?
+       AND id = ?
+       AND status = 'PENDING'`,
+    [cleanText(req.body.memo) || '', tenantId, id]
+  );
+
+  if (result.affectedRows !== 1) {
+    return res.status(400).json({
+      success: false,
+      error: '입고예정 상태의 입고건만 취소할 수 있습니다.',
+    });
+  }
+
+  return res.json({ success: true });
+});
+
+
 router.get('/product-search', async (req, res) => {
   const tenantId = getCurrentTenantId(req);
   const keyword = likeKeyword(req.query.q);
@@ -255,6 +532,102 @@ router.get('/sku-compositions', async (req, res) => {
     summary: summaryRows[0] || {},
   });
 });
+
+async function completeStockReceipt(conn, receipt, { tenantId }) {
+  if (!receipt) throw new Error('receipt is required');
+  if (receipt.status === 'COMPLETED') {
+    return { alreadyCompleted: true, receipt };
+  }
+  if (receipt.status === 'CANCELLED') {
+    const err = new Error('취소된 입고는 완료 처리할 수 없습니다.');
+    err.status = 400;
+    throw err;
+  }
+
+  const product = await getProductBySku(conn, tenantId, receipt.sku);
+  if (!product) {
+    const err = new Error(`상품을 찾을 수 없습니다: ${receipt.sku}`);
+    err.status = 400;
+    throw err;
+  }
+
+  const nowText = mysqlDateTime(new Date());
+  const receiptDate = receipt.receipt_date || todayDateKst();
+  const memo = receipt.memo || '';
+  const stockInNote = memo || `Dashboard stock receipt ${receipt.receipt_code}`;
+
+  const [movementResult] = await conn.query(
+    `INSERT INTO inventory_movements
+       (tenant_id, sku, movement_type, qty_delta, note)
+     VALUES (?, ?, 'STOCK_IN', ?, ?)`,
+    [tenantId, receipt.sku, receipt.quantity, stockInNote]
+  );
+  const movementId = movementResult.insertId;
+
+  const [batchResult] = await conn.query(
+    `INSERT INTO inventory_batches
+       (tenant_id, receipt_id, receipt_no, source_sku, sku, received_at,
+        receipt_type, initial_qty, remaining_qty, unit_cost, source_unit_cost,
+        conversion_factor, note, sheet_row)
+     VALUES (?, ?, NULL, ?, ?, ?, 'DASHBOARD', ?, ?, ?, ?, 1.0000, ?, NULL)`,
+    [
+      tenantId,
+      receipt.receipt_code,
+      receipt.sku,
+      receipt.sku,
+      `${receiptDate} 00:00:00`,
+      receipt.quantity,
+      receipt.quantity,
+      receipt.unit_cost,
+      receipt.unit_price_vat_included,
+      stockInNote,
+    ]
+  );
+  const batchId = batchResult.insertId;
+
+  await conn.query(
+    `UPDATE products
+     SET stock_quantity = stock_quantity + ?
+     WHERE tenant_id = ?
+       AND sku = ?`,
+    [receipt.quantity, tenantId, receipt.sku]
+  );
+
+  const shortageAllocation = await allocateOpenShortagesForBatch(conn, {
+    tenantId,
+    batchId,
+    sku: receipt.sku,
+    receiptId: receipt.receipt_code,
+  });
+
+  await conn.query(
+    `UPDATE stock_receipts
+     SET status = 'COMPLETED',
+         completed_at = ?,
+         receipt_date = ?,
+         movement_id = ?,
+         batch_id = ?,
+         allocated_shortage_qty = ?
+     WHERE tenant_id = ?
+       AND id = ?`,
+    [
+      nowText,
+      receiptDate,
+      movementId,
+      batchId,
+      Number(shortageAllocation?.allocatedQty || 0),
+      tenantId,
+      receipt.id,
+    ]
+  );
+
+  return {
+    movementId,
+    batchId,
+    allocatedShortageQty: Number(shortageAllocation?.allocatedQty || 0),
+  };
+}
+
 
 router.post('/sku-compositions', async (req, res) => {
   const tenantId = getCurrentTenantId(req);

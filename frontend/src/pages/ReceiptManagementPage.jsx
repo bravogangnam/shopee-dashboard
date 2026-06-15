@@ -213,7 +213,7 @@ function StockInTab({ dashboard }) {
                 <th>상품명</th>
                 <th>입고수량</th>
                 <th>남은수량</th>
-                <th>부가세제외 원가</th>
+                <th>부가세포함 원가</th>
                 <th>메모</th>
               </tr>
             </thead>
@@ -225,7 +225,7 @@ function StockInTab({ dashboard }) {
                   <td>{row.product_name_kr || row.product_name_en || '-'}</td>
                   <td>{formatNumber(row.initial_qty)}</td>
                   <td>{formatNumber(row.remaining_qty)}</td>
-                  <td>{formatKrw(row.unit_cost)}</td>
+                  <td>{formatKrw(Number(row.unit_cost || 0) * 1.1)}</td>
                   <td>{row.note || '-'}</td>
                 </tr>
               )) : (

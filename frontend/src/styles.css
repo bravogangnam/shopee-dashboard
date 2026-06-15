@@ -3910,3 +3910,48 @@ label {
 .receipt-message {
   margin-top: 8px;
 }
+
+.receipt-planned-qty {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.receipt-status-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.receipt-status-badge.good {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.receipt-status-badge.warn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.receipt-status-badge.danger {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.receipt-muted {
+  color: #94a3b8;
+}
+
+.receipt-positive {
+  color: #15803d;
+  font-weight: 900;
+}

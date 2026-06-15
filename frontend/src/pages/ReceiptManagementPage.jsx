@@ -158,7 +158,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
   const [receiptMessage, setReceiptMessage] = useState('');
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [form, setForm] = useState({
-    status: 'COMPLETED',
+    status: 'PENDING',
     receipt_date: new Date().toISOString().slice(0, 10),
     expected_date: '',
     quantity: '',
@@ -237,7 +237,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
   function resetReceiptForm() {
     setSelectedProduct(null);
     setForm({
-      status: 'COMPLETED',
+      status: 'PENDING',
       receipt_date: new Date().toISOString().slice(0, 10),
       expected_date: '',
       quantity: '',
@@ -341,8 +341,11 @@ function StockInTab({ dashboard, reloadDashboard }) {
                 <th>옵션</th>
                 <th>현재재고</th>
                 <th>구매필요</th>
+                <th>입고예정</th>
+                <th>예정 후 재고</th>
                 <th>최근 원가</th>
                 <th>공급률</th>
+                <th>상태</th>
                 <th>작업</th>
               </tr>
             </thead>
@@ -354,17 +357,36 @@ function StockInTab({ dashboard, reloadDashboard }) {
                   <td>{product.option_name || '-'}</td>
                   <td className="receipt-negative">{formatNumber(product.stock_quantity)}</td>
                   <td><strong>{formatNumber(product.purchase_needed_qty)}</strong></td>
+                  <td>
+                    {Number(product.pending_receipt_qty || 0) > 0 ? (
+                      <span className="receipt-planned-qty">{formatNumber(product.pending_receipt_qty)}개 / {formatNumber(product.pending_receipt_count)}건</span>
+                    ) : (
+                      <span className="receipt-muted">-</span>
+                    )}
+                  </td>
+                  <td className={Number(product.stock_quantity || 0) + Number(product.pending_receipt_qty || 0) < 0 ? 'receipt-negative' : 'receipt-positive'}>
+                    {formatNumber(Number(product.stock_quantity || 0) + Number(product.pending_receipt_qty || 0))}
+                  </td>
                   <td>{formatKrw(product.cost_price_with_vat || product.discounted_price_with_vat || 0)}</td>
                   <td>{formatSupplyRate(product.supply_rate)}</td>
                   <td>
-                    <button type="button" className="receipt-inline-button" onClick={() => fillProduct(product, product.purchase_needed_qty)}>
-                      입고등록
+                    {Number(product.pending_receipt_qty || 0) >= Number(product.purchase_needed_qty || 0) ? (
+                      <span className="receipt-status-badge good">입고예정 충분</span>
+                    ) : Number(product.pending_receipt_qty || 0) > 0 ? (
+                      <span className="receipt-status-badge warn">입고예정 부족</span>
+                    ) : (
+                      <span className="receipt-status-badge danger">입고예정 없음</span>
+                    )}
+                  </td>
+                  <td>
+                    <button type="button" className="receipt-inline-button" onClick={() => fillProduct(product, Math.max(Number(product.purchase_needed_qty || 0) - Number(product.pending_receipt_qty || 0), 1))}>
+                      {Number(product.pending_receipt_qty || 0) > 0 ? '추가입고' : '입고등록'}
                     </button>
                   </td>
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="8" className="receipt-empty">구매필요 상품이 없습니다.</td>
+                  <td colSpan="10" className="receipt-empty">구매필요 상품이 없습니다.</td>
                 </tr>
               )}
             </tbody>
@@ -384,7 +406,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
         <div className="receipt-section-header">
           <div>
             <h2>신규 입고 등록</h2>
-            <p>상품 검색 또는 구매필요 상품의 입고등록 버튼으로 시작합니다.</p>
+            <p>기본은 입고예정입니다. 실제 도착한 상품만 입고완료로 저장하세요.</p>
           </div>
         </div>
 

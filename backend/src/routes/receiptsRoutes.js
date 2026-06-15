@@ -145,11 +145,21 @@ router.get('/dashboard', async (req, res) => {
        p.supply_rate,
        p.discounted_price_with_vat,
        p.cost_price,
+       COALESCE(pending_receipts.pending_receipt_qty, 0) AS pending_receipt_qty,
+       COALESCE(pending_receipts.pending_receipt_count, 0) AS pending_receipt_count,
        CASE
          WHEN p.stock_quantity < 0 THEN ABS(p.stock_quantity)
          ELSE 0
        END AS purchase_needed_qty
      FROM products p
+     LEFT JOIN (
+       SELECT tenant_id, sku, SUM(quantity) AS pending_receipt_qty, COUNT(*) AS pending_receipt_count
+       FROM stock_receipts
+       WHERE status = 'PENDING'
+       GROUP BY tenant_id, sku
+     ) pending_receipts
+       ON pending_receipts.tenant_id = p.tenant_id
+      AND pending_receipts.sku COLLATE utf8mb4_unicode_ci = p.sku COLLATE utf8mb4_unicode_ci
      WHERE p.tenant_id = ?
        AND p.stock_quantity < 0
      ORDER BY

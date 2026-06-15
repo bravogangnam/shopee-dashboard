@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchReceiptDashboard, fetchSkuCompositions } from '../api/receipts.js';
+import { createSkuComposition, deleteSkuComposition, fetchReceiptDashboard, fetchSkuCompositions, searchReceiptProducts, updateSkuComposition } from '../api/receipts.js';
 
 function formatNumber(value, digits = 0) {
   const number = Number(value || 0);
@@ -44,6 +44,85 @@ function compositionTone(type) {
   if (type === '세트') return 'receipt-pill receipt-pill-set';
   return 'receipt-pill';
 }
+
+function ProductPicker({ label, value, onChange, placeholder }) {
+  const [query, setQuery] = useState(value || '');
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    setQuery(value || '');
+  }, [value]);
+
+  useEffect(() => {
+    let alive = true;
+    const keyword = query.trim();
+
+    if (!open || keyword.length < 2) {
+      setResults([]);
+      return () => {
+        alive = false;
+      };
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const result = await searchReceiptProducts(keyword);
+        if (alive) setResults(result.data || []);
+      } catch {
+        if (alive) setResults([]);
+      }
+    }, 180);
+
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [query, open]);
+
+  function selectProduct(product) {
+    onChange(product.sku);
+    setQuery(product.sku);
+    setOpen(false);
+  }
+
+  return (
+    <label className="composition-field product-picker">
+      <span>{label}</span>
+      <input
+        type="text"
+        value={query}
+        placeholder={placeholder}
+        onFocus={() => setOpen(true)}
+        onChange={event => {
+          setQuery(event.target.value);
+          onChange(event.target.value);
+          setOpen(true);
+        }}
+      />
+      {open && results.length > 0 && (
+        <div className="product-picker-results">
+          {results.map(product => (
+            <button type="button" key={product.sku} onClick={() => selectProduct(product)}>
+              <strong>{product.sku}</strong>
+              <span>{product.product_name_kr || product.product_name_en || '-'}</span>
+              <small>{product.option_name || '-'}</small>
+            </button>
+          ))}
+        </div>
+      )}
+    </label>
+  );
+}
+
+const EMPTY_COMPOSITION_FORM = {
+  id: null,
+  source_sku: '',
+  base_sku: '',
+  factor: '1',
+  composition_type: '공통',
+  note: '',
+};
 
 function ReceiptOverview({ dashboard }) {
   const summary = dashboard?.summary || {};
@@ -263,7 +342,11 @@ function StockInTab({ dashboard }) {
   );
 }
 
-function CompositionTab({ rows, summary, search, setSearch, loading }) {
+function CompositionTab({ rows, summary, search, setSearch, loading, reload }) {
+  const [form, setForm] = useState(EMPTY_COMPOSITION_FORM);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
   const visibleSummary = [
     { label: '전체 구성', value: summary?.total_count || 0 },
     { label: '공통', value: summary?.common_count || 0 },
@@ -271,12 +354,84 @@ function CompositionTab({ rows, summary, search, setSearch, loading }) {
     { label: '세트', value: summary?.set_count || 0 },
   ];
 
+  const isEditing = Boolean(form.id);
+
+  function updateForm(field, value) {
+    setForm(current => ({ ...current, [field]: value }));
+  }
+
+  function resetForm() {
+    setForm(EMPTY_COMPOSITION_FORM);
+    setMessage('');
+  }
+
+  function startEdit(row) {
+    setForm({
+      id: row.id,
+      source_sku: row.source_sku || '',
+      base_sku: row.base_sku || '',
+      factor: String(Number(row.factor || 1)),
+      composition_type: row.composition_type || '공통',
+      note: row.note || '',
+    });
+    setMessage('수정할 내용을 입력하고 저장하세요.');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function submitForm(event) {
+    event.preventDefault();
+
+    const payload = {
+      source_sku: form.source_sku,
+      base_sku: form.base_sku,
+      factor: form.factor,
+      composition_type: form.composition_type,
+      note: form.note,
+    };
+
+    try {
+      setSaving(true);
+      setMessage('');
+
+      if (form.id) {
+        await updateSkuComposition(form.id, payload);
+        setMessage('상품구성을 수정했습니다.');
+      } else {
+        await createSkuComposition(payload);
+        setMessage('상품구성을 추가했습니다.');
+      }
+
+      setForm(EMPTY_COMPOSITION_FORM);
+      await reload();
+    } catch (err) {
+      setMessage(err.message || '저장에 실패했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeRow(row) {
+    if (!window.confirm(`${row.source_sku} → ${row.base_sku} 구성을 삭제할까요?`)) return;
+
+    try {
+      setSaving(true);
+      await deleteSkuComposition(row.id);
+      setMessage('상품구성을 삭제했습니다.');
+      if (form.id === row.id) setForm(EMPTY_COMPOSITION_FORM);
+      await reload();
+    } catch (err) {
+      setMessage(err.message || '삭제에 실패했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <section className="receipt-card">
       <div className="receipt-section-header receipt-section-header-row">
         <div>
           <h2>상품구성표</h2>
-          <p>기존 시트 동기화 데이터인 sku_compositions를 시트형으로 표시합니다. 수정 기능은 검증 후 엽니다.</p>
+          <p>기존 시트처럼 한 줄씩 추가·수정합니다. 저장 즉시 FIFO가 읽는 sku_compositions 기준에 반영됩니다.</p>
         </div>
       </div>
 
@@ -288,6 +443,72 @@ function CompositionTab({ rows, summary, search, setSearch, loading }) {
           </div>
         ))}
       </div>
+
+      <form className="composition-editor" onSubmit={submitForm}>
+        <div className="composition-editor-title">
+          <strong>{isEditing ? '상품구성 수정' : '상품구성 추가'}</strong>
+          <span>예: GS_01552 → GS_01511 × 2</span>
+        </div>
+
+        <div className="composition-editor-grid">
+          <ProductPicker
+            label="SKU"
+            value={form.source_sku}
+            onChange={value => updateForm('source_sku', value)}
+            placeholder="판매 SKU 또는 상품명 검색"
+          />
+
+          <ProductPicker
+            label="기준재고SKU"
+            value={form.base_sku}
+            onChange={value => updateForm('base_sku', value)}
+            placeholder="실제 차감할 SKU 검색"
+          />
+
+          <label className="composition-field">
+            <span>기준수량</span>
+            <input
+              type="number"
+              min="0.0001"
+              step="0.0001"
+              value={form.factor}
+              onChange={event => updateForm('factor', event.target.value)}
+            />
+          </label>
+
+          <label className="composition-field">
+            <span>구분</span>
+            <select
+              value={form.composition_type}
+              onChange={event => updateForm('composition_type', event.target.value)}
+            >
+              <option value="공통">공통</option>
+              <option value="판매">판매</option>
+              <option value="세트">세트</option>
+            </select>
+          </label>
+
+          <label className="composition-field composition-note-field">
+            <span>메모</span>
+            <input
+              type="text"
+              value={form.note}
+              onChange={event => updateForm('note', event.target.value)}
+              placeholder="예: 2개 판매, 세트 구성 등"
+            />
+          </label>
+        </div>
+
+        <div className="composition-editor-actions">
+          <button type="submit" className="primary-button" disabled={saving}>
+            {saving ? '저장 중...' : isEditing ? '수정 저장' : '구성 추가'}
+          </button>
+          <button type="button" className="secondary-button" onClick={resetForm} disabled={saving}>
+            초기화
+          </button>
+          {message && <span className="composition-message">{message}</span>}
+        </div>
+      </form>
 
       <div className="receipt-toolbar">
         <input
@@ -310,7 +531,7 @@ function CompositionTab({ rows, summary, search, setSearch, loading }) {
               <th>기준수량</th>
               <th>구분</th>
               <th>메모</th>
-              <th>시트행</th>
+              <th>작업</th>
             </tr>
           </thead>
           <tbody>
@@ -329,11 +550,16 @@ function CompositionTab({ rows, summary, search, setSearch, loading }) {
                 <td>{formatNumber(row.factor, 2)}</td>
                 <td><span className={compositionTone(row.composition_type)}>{row.composition_type || '-'}</span></td>
                 <td>{row.note || '-'}</td>
-                <td>{row.sheet_row || '-'}</td>
+                <td>
+                  <div className="composition-row-actions">
+                    <button type="button" onClick={() => startEdit(row)}>수정</button>
+                    <button type="button" className="danger" onClick={() => removeRow(row)}>삭제</button>
+                  </div>
+                </td>
               </tr>
             )) : (
               <tr>
-                <td colSpan="7" className="receipt-empty">상품구성표 데이터가 없습니다.</td>
+                <td colSpan="8" className="receipt-empty">상품구성표 데이터가 없습니다.</td>
               </tr>
             )}
           </tbody>
@@ -375,26 +601,25 @@ export default function ReceiptManagementPage() {
     };
   }, []);
 
+  async function loadCompositions(keyword = compositionSearch) {
+    try {
+      setCompositionLoading(true);
+      const result = await fetchSkuCompositions(keyword);
+      setCompositionRows(result.data || []);
+      setCompositionSummary(result.summary || null);
+    } catch (err) {
+      setError(err.message || '상품구성표를 불러오지 못했습니다.');
+    } finally {
+      setCompositionLoading(false);
+    }
+  }
+
   useEffect(() => {
-    let alive = true;
-    const timer = setTimeout(async () => {
-      try {
-        setCompositionLoading(true);
-        const result = await fetchSkuCompositions(compositionSearch);
-        if (!alive) return;
-        setCompositionRows(result.data || []);
-        setCompositionSummary(result.summary || null);
-      } catch (err) {
-        if (alive) setError(err.message || '상품구성표를 불러오지 못했습니다.');
-      } finally {
-        if (alive) setCompositionLoading(false);
-      }
+    const timer = setTimeout(() => {
+      loadCompositions(compositionSearch);
     }, 250);
 
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
+    return () => clearTimeout(timer);
   }, [compositionSearch]);
 
   const tabLabel = useMemo(() => {
@@ -447,6 +672,7 @@ export default function ReceiptManagementPage() {
           search={compositionSearch}
           setSearch={setCompositionSearch}
           loading={compositionLoading}
+          reload={() => loadCompositions(compositionSearch)}
         />
       )}
     </div>

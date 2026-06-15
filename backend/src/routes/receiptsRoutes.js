@@ -438,6 +438,106 @@ router.patch('/stock-batches/:id/cost', async (req, res) => {
   }
 });
 
+router.get('/stock-receipts/summary', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const month = cleanText(req.query.month) || todayDateKst().slice(0, 7);
+  const monthStart = `${month}-01`;
+  const monthEnd = new Date(`${monthStart}T00:00:00Z`);
+  monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
+  const nextMonth = monthEnd.toISOString().slice(0, 10);
+
+  const [completedRows] = await db.query(
+    `SELECT
+       COUNT(*) AS receipt_count,
+       COALESCE(SUM(initial_qty), 0) AS total_qty,
+       COALESCE(SUM(initial_qty * unit_cost * 1.1), 0) AS total_amount_vat_included
+     FROM inventory_batches
+     WHERE tenant_id = ?
+       AND COALESCE(received_at, created_at) >= ?
+       AND COALESCE(received_at, created_at) < ?`,
+    [tenantId, monthStart, nextMonth]
+  );
+
+  const [pendingRows] = await db.query(
+    `SELECT
+       COUNT(*) AS pending_count,
+       COALESCE(SUM(quantity), 0) AS pending_qty,
+       COALESCE(SUM(quantity * unit_price_vat_included), 0) AS pending_amount_vat_included
+     FROM stock_receipts
+     WHERE tenant_id = ?
+       AND status = 'PENDING'`,
+    [tenantId]
+  );
+
+  return res.json({
+    success: true,
+    month,
+    completed: completedRows[0] || {},
+    pending: pendingRows[0] || {},
+  });
+});
+
+router.get('/stock-receipts/history', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const month = cleanText(req.query.month);
+  const keyword = likeKeyword(req.query.q);
+  const params = [tenantId];
+
+  let where = 'WHERE b.tenant_id = ?';
+
+  if (month) {
+    const monthStart = `${month}-01`;
+    const monthEnd = new Date(`${monthStart}T00:00:00Z`);
+    monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
+    const nextMonth = monthEnd.toISOString().slice(0, 10);
+    where += ' AND COALESCE(b.received_at, b.created_at) >= ? AND COALESCE(b.received_at, b.created_at) < ?';
+    params.push(monthStart, nextMonth);
+  }
+
+  if (keyword) {
+    where += ` AND (
+      b.receipt_id LIKE ?
+      OR b.sku LIKE ?
+      OR b.note LIKE ?
+      OR p.product_name_kr LIKE ?
+      OR p.product_name_en LIKE ?
+      OR p.option_name LIKE ?
+    )`;
+    params.push(keyword, keyword, keyword, keyword, keyword, keyword);
+  }
+
+  const [rows] = await db.query(
+    `SELECT
+       b.id,
+       b.receipt_id,
+       b.source_sku,
+       b.sku,
+       p.product_name_kr,
+       p.product_name_en,
+       p.option_name,
+       b.received_at,
+       b.receipt_type,
+       b.initial_qty,
+       b.remaining_qty,
+       b.unit_cost,
+       b.source_unit_cost,
+       b.conversion_factor,
+       b.note,
+       b.sheet_row,
+       b.created_at
+     FROM inventory_batches b
+     LEFT JOIN products p
+       ON p.tenant_id = b.tenant_id
+      AND p.sku COLLATE utf8mb4_unicode_ci = b.sku COLLATE utf8mb4_unicode_ci
+     ${where}
+     ORDER BY COALESCE(b.received_at, b.created_at) DESC, b.id DESC
+     LIMIT 500`,
+    params
+  );
+
+  return res.json({ success: true, data: rows });
+});
+
 router.get('/stock-receipts', async (req, res) => {
   const tenantId = getCurrentTenantId(req);
   const status = cleanText(req.query.status);

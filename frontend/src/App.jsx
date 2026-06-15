@@ -4,6 +4,7 @@ import AppLayout from './layout/AppLayout.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import RegisterPage from './pages/RegisterPage.jsx';
 import InventoryPage from './pages/InventoryPage.jsx';
+import ReceiptManagementPage from './pages/ReceiptManagementPage.jsx';
 import LedgerPage from './pages/LedgerPage.jsx';
 import OrderManagementPage from './pages/OrderManagementPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/orders" element={<OrderManagementPage />} />
           <Route path="/ledger" element={<LedgerPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/receipts" element={<ReceiptManagementPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/product-capture" element={<ProductCapturePage />} />
           <Route path="/mass-upload" element={<MassUploadPage />} />

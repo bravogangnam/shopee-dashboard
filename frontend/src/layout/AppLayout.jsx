@@ -28,6 +28,15 @@ function InventoryIcon() {
   );
 }
 
+function ReceiptIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 5h16v14H4z" />
+      <path d="M8 9h8M8 13h8M8 17h5M7 5V3h10v2" />
+    </svg>
+  );
+}
+
 function AdminIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -58,6 +67,7 @@ const navItems = [
   { to: '/orders', label: '주문 관리', icon: <ListIcon /> },
   { to: '/ledger', label: '정산 관리', icon: <LedgerIcon /> },
   { to: '/inventory', label: '재고 관리', icon: <InventoryIcon /> },
+  { to: '/receipts', label: '입고 관리', icon: <ReceiptIcon /> },
   { to: '/product-capture', label: '상품 수집', icon: <ListIcon /> },
   { to: '/mass-upload', label: '대량등록', icon: <ListIcon /> },
   { to: '/admin', label: '관리자', icon: <AdminIcon />, adminOnly: true },

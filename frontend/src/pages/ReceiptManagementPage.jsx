@@ -694,9 +694,9 @@ function StockInTab({ dashboard, reloadDashboard }) {
                   <td>{row.memo || '-'}</td>
                   <td>
                     <div className="composition-row-actions">
-                      <button type="button" onClick={() => startEditPending(row)}>수정</button>
-                      <button type="button" onClick={() => handleComplete(row)}>입고완료</button>
-                      <button type="button" className="danger" onClick={() => handleCancel(row)}>취소</button>
+                      <button type="button" onClick={() => startEditPending(row)} disabled={receiptLoading}>수정</button>
+                      <button type="button" onClick={() => handleComplete(row)} disabled={receiptLoading}>입고완료</button>
+                      <button type="button" className="danger" onClick={() => handleCancel(row)} disabled={receiptLoading}>취소</button>
                     </div>
                   </td>
                 </tr>

@@ -25,6 +25,28 @@ function todayDateKst() {
   return kst.toISOString().slice(0, 10);
 }
 
+
+function toDateOnly(value) {
+  if (!value) return null;
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  const text = String(value).trim();
+  if (!text) return null;
+
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+
+  const date = new Date(text);
+  if (!Number.isNaN(date.getTime())) {
+    return date.toISOString().slice(0, 10);
+  }
+
+  return null;
+}
+
 function mysqlDateTime(date = new Date()) {
   const pad = value => String(value).padStart(2, '0');
   return [
@@ -845,7 +867,7 @@ async function completeStockReceipt(conn, receipt, { tenantId }) {
   }
 
   const nowText = mysqlDateTime(new Date());
-  const receiptDate = receipt.receipt_date || todayDateKst();
+  const receiptDate = toDateOnly(receipt.receipt_date) || todayDateKst();
   const memo = receipt.memo || '';
   const stockInNote = memo || `Dashboard stock receipt ${receipt.receipt_code}`;
 

@@ -24,7 +24,7 @@ function formatSupplyRate(value) {
 
 function formatDate(value) {
   if (!value) return '-';
-  return String(value).replace('T', ' ').replace('.000Z', '').slice(0, 16);
+  return String(value).replace('T', ' ').replace('.000Z', '').slice(0, 10);
 }
 
 function productName(row, prefix = '') {
@@ -200,7 +200,7 @@ function StockInTab({ dashboard }) {
         <div className="receipt-section-header">
           <div>
             <h2>최근 입고 이력</h2>
-            <p>현재 inventory_batches 기준 최근 입고 배치를 그대로 표시합니다.</p>
+            <p>입고 완료된 내역을 날짜 기준으로 표시합니다.</p>
           </div>
         </div>
 
@@ -209,7 +209,6 @@ function StockInTab({ dashboard }) {
             <thead>
               <tr>
                 <th>입고일</th>
-                <th>입고번호</th>
                 <th>SKU</th>
                 <th>상품명</th>
                 <th>입고수량</th>
@@ -222,7 +221,6 @@ function StockInTab({ dashboard }) {
               {pagedReceipts.length ? pagedReceipts.map(row => (
                 <tr key={row.id}>
                   <td>{formatDate(row.received_at || row.created_at)}</td>
-                  <td>{row.receipt_id || '-'}</td>
                   <td><strong>{row.sku}</strong></td>
                   <td>{row.product_name_kr || row.product_name_en || '-'}</td>
                   <td>{formatNumber(row.initial_qty)}</td>
@@ -232,7 +230,7 @@ function StockInTab({ dashboard }) {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="8" className="receipt-empty">입고 이력이 없습니다.</td>
+                  <td colSpan="7" className="receipt-empty">입고 이력이 없습니다.</td>
                 </tr>
               )}
             </tbody>
@@ -335,7 +333,7 @@ function CompositionTab({ rows, summary, search, setSearch, loading }) {
               </tr>
             )) : (
               <tr>
-                <td colSpan="8" className="receipt-empty">상품구성표 데이터가 없습니다.</td>
+                <td colSpan="7" className="receipt-empty">상품구성표 데이터가 없습니다.</td>
               </tr>
             )}
           </tbody>

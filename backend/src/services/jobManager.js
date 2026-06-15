@@ -146,10 +146,29 @@ async function failJob(job_id, error_message, { tenantId = CURRENT_TENANT_ID } =
 
 /**
  * 오래된 pending/running invoice Job 자동 복구
- * - Shopee 처리는 끝났지만 finalization 실패 등으로 running에 남은 송장 job을 해제한다.
+ * - 0건 진행 상태는 3분만 지나도 stuck으로 본다.
+ * - 일부 진행된 상태는 Shopee 응답 지연 가능성을 고려해 10분까지 허용한다.
  */
-async function recoverStaleInvoiceJobs({ staleMinutes = 10, tenantId = CURRENT_TENANT_ID } = {}) {
-  const [result] = await db.query(
+async function recoverStaleInvoiceJobs({
+  zeroProgressMinutes = 3,
+  staleMinutes = 10,
+  tenantId = CURRENT_TENANT_ID,
+} = {}) {
+  const [zeroProgressResult] = await db.query(
+    `UPDATE jobs
+     SET status='failed',
+         error_message=COALESCE(error_message, 'auto recovery: invoice job stuck at 0 progress'),
+         progress_message='자동 복구됨: 송장 작업이 0건 진행 상태로 멈춤',
+         updated_at=NOW()
+     WHERE tenant_id = ?
+       AND job_type='invoice'
+       AND status IN ('pending','running')
+       AND COALESCE(progress_current, 0) = 0
+       AND updated_at < DATE_SUB(NOW(), INTERVAL ? MINUTE)`,
+    [tenantId, zeroProgressMinutes]
+  );
+
+  const [partialProgressResult] = await db.query(
     `UPDATE jobs
      SET status='failed',
          error_message=COALESCE(error_message, 'auto recovery: invoice job stale running'),
@@ -158,13 +177,20 @@ async function recoverStaleInvoiceJobs({ staleMinutes = 10, tenantId = CURRENT_T
      WHERE tenant_id = ?
        AND job_type='invoice'
        AND status IN ('pending','running')
+       AND COALESCE(progress_current, 0) > 0
        AND updated_at < DATE_SUB(NOW(), INTERVAL ? MINUTE)`,
     [tenantId, staleMinutes]
   );
-  if (result.affectedRows > 0) {
-    console.log(`[JobManager] Recovered ${result.affectedRows} stale invoice job(s) (>${staleMinutes}min)`);
+
+  const recovered = Number(zeroProgressResult.affectedRows || 0) + Number(partialProgressResult.affectedRows || 0);
+  if (recovered > 0) {
+    console.log(
+      `[JobManager] Recovered ${recovered} stale invoice job(s) ` +
+      `(0-progress>${zeroProgressMinutes}min, partial>${staleMinutes}min)`
+    );
   }
-  return result.affectedRows;
+
+  return recovered;
 }
 
 /**

@@ -227,7 +227,7 @@ async function startInvoiceJob(req, res, { legacy = false } = {}) {
     return res.status(400).json({ success: false, error: '한 번에 최대 50건까지 가능합니다.' });
   }
 
-  await recoverStaleInvoiceJobs({ staleMinutes: 10, tenantId });
+  await recoverStaleInvoiceJobs({ zeroProgressMinutes: 3, staleMinutes: 10, tenantId });
 
   const running = await getRunningJob('invoice', { tenantId });
   if (running) {

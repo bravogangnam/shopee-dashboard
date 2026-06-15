@@ -35,6 +35,9 @@ function optionName(row, prefix = '') {
   return row?.[`${prefix}option_name`] || row?.option_name || '-';
 }
 
+const RECEIPT_PAGE_SIZE = 20;
+const PURCHASE_PAGE_SIZE = 20;
+
 function compositionTone(type) {
   if (type === '공통') return 'receipt-pill receipt-pill-common';
   if (type === '판매') return 'receipt-pill receipt-pill-sale';
@@ -67,6 +70,30 @@ function ReceiptOverview({ dashboard }) {
 function StockInTab({ dashboard }) {
   const purchaseNeeded = dashboard?.purchase_needed || [];
   const recentReceipts = dashboard?.recent_receipts || [];
+  const [purchasePage, setPurchasePage] = useState(1);
+  const [receiptPage, setReceiptPage] = useState(1);
+
+  const purchaseTotalPages = Math.max(1, Math.ceil(purchaseNeeded.length / PURCHASE_PAGE_SIZE));
+  const safePurchasePage = Math.min(purchasePage, purchaseTotalPages);
+  const pagedPurchaseNeeded = purchaseNeeded.slice(
+    (safePurchasePage - 1) * PURCHASE_PAGE_SIZE,
+    safePurchasePage * PURCHASE_PAGE_SIZE
+  );
+
+  const receiptTotalPages = Math.max(1, Math.ceil(recentReceipts.length / RECEIPT_PAGE_SIZE));
+  const safeReceiptPage = Math.min(receiptPage, receiptTotalPages);
+  const pagedReceipts = recentReceipts.slice(
+    (safeReceiptPage - 1) * RECEIPT_PAGE_SIZE,
+    safeReceiptPage * RECEIPT_PAGE_SIZE
+  );
+
+  useEffect(() => {
+    setPurchasePage(1);
+  }, [purchaseNeeded.length]);
+
+  useEffect(() => {
+    setReceiptPage(1);
+  }, [recentReceipts.length]);
 
   return (
     <div className="receipt-tab-grid">
@@ -92,7 +119,7 @@ function StockInTab({ dashboard }) {
               </tr>
             </thead>
             <tbody>
-              {purchaseNeeded.length ? purchaseNeeded.map(product => (
+              {pagedPurchaseNeeded.length ? pagedPurchaseNeeded.map(product => (
                 <tr key={product.sku}>
                   <td><strong>{product.sku}</strong></td>
                   <td>{product.product_name_kr || product.product_name_en || '-'}</td>
@@ -111,6 +138,28 @@ function StockInTab({ dashboard }) {
               )}
             </tbody>
           </table>
+        </div>
+
+        <div className="receipt-pagination">
+          <span>
+            구매필요 상품 {formatNumber(purchaseNeeded.length)}개 · {formatNumber(safePurchasePage)} / {formatNumber(purchaseTotalPages)} 페이지
+          </span>
+          <div>
+            <button
+              type="button"
+              onClick={() => setPurchasePage(page => Math.max(1, page - 1))}
+              disabled={safePurchasePage <= 1}
+            >
+              이전
+            </button>
+            <button
+              type="button"
+              onClick={() => setPurchasePage(page => Math.min(purchaseTotalPages, page + 1))}
+              disabled={safePurchasePage >= purchaseTotalPages}
+            >
+              다음
+            </button>
+          </div>
         </div>
       </section>
 
@@ -170,7 +219,7 @@ function StockInTab({ dashboard }) {
               </tr>
             </thead>
             <tbody>
-              {recentReceipts.length ? recentReceipts.map(row => (
+              {pagedReceipts.length ? pagedReceipts.map(row => (
                 <tr key={row.id}>
                   <td>{formatDate(row.received_at || row.created_at)}</td>
                   <td>{row.receipt_id || '-'}</td>
@@ -188,6 +237,28 @@ function StockInTab({ dashboard }) {
               )}
             </tbody>
           </table>
+        </div>
+
+        <div className="receipt-pagination">
+          <span>
+            최근 입고 이력 {formatNumber(recentReceipts.length)}건 · {formatNumber(safeReceiptPage)} / {formatNumber(receiptTotalPages)} 페이지
+          </span>
+          <div>
+            <button
+              type="button"
+              onClick={() => setReceiptPage(page => Math.max(1, page - 1))}
+              disabled={safeReceiptPage <= 1}
+            >
+              이전
+            </button>
+            <button
+              type="button"
+              onClick={() => setReceiptPage(page => Math.min(receiptTotalPages, page + 1))}
+              disabled={safeReceiptPage >= receiptTotalPages}
+            >
+              다음
+            </button>
+          </div>
         </div>
       </section>
     </div>

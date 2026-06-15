@@ -3645,3 +3645,41 @@ label {
     max-width: none;
   }
 }
+
+
+.receipt-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.receipt-pagination div {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.receipt-pagination button {
+  border: 1px solid #dbe3ef;
+  background: #ffffff;
+  color: #1f2937;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.receipt-pagination button:hover:not(:disabled) {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+.receipt-pagination button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

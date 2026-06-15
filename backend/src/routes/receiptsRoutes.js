@@ -38,7 +38,7 @@ router.get('/dashboard', async (req, res) => {
      ORDER BY
        purchase_needed_qty DESC,
        p.sku ASC
-     LIMIT 50`,
+     LIMIT 500`,
     [tenantId]
   );
 
@@ -79,7 +79,7 @@ router.get('/dashboard', async (req, res) => {
       AND p.sku COLLATE utf8mb4_unicode_ci = b.sku COLLATE utf8mb4_unicode_ci
      WHERE b.tenant_id = ?
      ORDER BY COALESCE(b.received_at, b.created_at) DESC, b.id DESC
-     LIMIT 30`,
+     LIMIT 200`,
     [tenantId]
   );
 

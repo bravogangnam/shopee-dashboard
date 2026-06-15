@@ -61,23 +61,74 @@ function mysqlDateTime(date = new Date()) {
 }
 
 function parsePositiveInt(value) {
+  const text = String(value ?? '').trim();
+  if (!/^\\d+$/.test(text)) return null;
+  const number = Number(text);
+  if (!Number.isSafeInteger(number) || number <= 0) return null;
+  return number;
+}
+
+function parsePositiveMoney(value) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return null;
-  return Math.trunc(number);
+  return roundMoney(number);
 }
 
 function parseSupplyRate(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number) || number <= 0) return 1;
-  return number > 1 ? number / 100 : number;
+  const raw = value === undefined || value === null || String(value).trim() === ''
+    ? 100
+    : Number(value);
+
+  if (!Number.isFinite(raw) || raw <= 0 || raw > 100) return null;
+
+  return raw > 1 ? raw / 100 : raw;
 }
 
 function computeCosts({ priceVatIncluded, supplyRate }) {
-  const priceVat = Number(priceVatIncluded || 0);
+  const priceVat = parsePositiveMoney(priceVatIncluded);
   const rate = parseSupplyRate(supplyRate);
+
+  if (!priceVat || !rate) return null;
+
   const unitPriceVatIncluded = roundMoney(priceVat * rate);
   const unitCost = roundMoney(unitPriceVatIncluded / 1.1);
   return { supplyRate: rate, unitPriceVatIncluded, unitCost };
+}
+
+function validateReceiptPayload({ sku, quantity, priceVatIncluded, costs, status, expectedDate, receiptDate, requireId = false, id = null }) {
+  if (requireId && !id) {
+    return 'ID가 필요합니다.';
+  }
+
+  if (!sku) {
+    return 'SKU는 필수입니다.';
+  }
+
+  if (!quantity) {
+    return '입고수량은 1 이상의 정수만 입력할 수 있습니다.';
+  }
+
+  if (!priceVatIncluded || priceVatIncluded <= 0) {
+    return '부가세포함 단가는 1원 이상이어야 합니다.';
+  }
+
+  if (!costs) {
+    return '공급률은 0보다 크고 100 이하만 입력할 수 있습니다.';
+  }
+
+  if (!['PENDING', 'COMPLETED'].includes(status)) {
+    return '입고 상태는 입고예정 또는 입고완료만 가능합니다.';
+  }
+
+  if (status === 'PENDING' && !expectedDate && !receiptDate) {
+    return '입고예정일이 필요합니다.';
+  }
+
+  if (status === 'COMPLETED' && !receiptDate) {
+    return '입고완료일이 필요합니다.';
+  }
+
+  return null;
 }
 
 
@@ -591,24 +642,29 @@ router.post('/stock-receipts', async (req, res) => {
   const memo = cleanText(req.body.memo);
   const expectedDate = cleanText(req.body.expected_date);
   const receiptDate = cleanText(req.body.receipt_date) || todayDateKst();
-  const priceVatIncluded = Number(req.body.price_vat_included || 0);
-  const { supplyRate, unitPriceVatIncluded, unitCost } = computeCosts({
+  const priceVatIncluded = parsePositiveMoney(req.body.price_vat_included);
+  const costs = computeCosts({
     priceVatIncluded,
     supplyRate: req.body.supply_rate,
   });
+  const validationError = validateReceiptPayload({
+    sku,
+    quantity,
+    priceVatIncluded,
+    costs,
+    status,
+    expectedDate,
+    receiptDate,
+  });
 
-  if (!sku || !quantity || priceVatIncluded <= 0) {
+  if (validationError) {
     return res.status(400).json({
       success: false,
-      error: 'SKU, 입고수량, 부가세포함 단가는 필수입니다.',
+      error: validationError,
     });
   }
-  if (!['PENDING', 'COMPLETED'].includes(status)) {
-    return res.status(400).json({
-      success: false,
-      error: '신규 입고 상태는 PENDING 또는 COMPLETED만 가능합니다.',
-    });
-  }
+
+  const { supplyRate, unitPriceVatIncluded, unitCost } = costs;
 
   const conn = await db.getConnection();
   try {
@@ -692,18 +748,31 @@ router.patch('/stock-receipts/:id', async (req, res) => {
   const receiptDate = cleanText(req.body.receipt_date);
   const supplier = cleanText(req.body.supplier);
   const memo = cleanText(req.body.memo);
-  const priceVatIncluded = Number(req.body.price_vat_included || 0);
-  const { supplyRate, unitPriceVatIncluded, unitCost } = computeCosts({
+  const priceVatIncluded = parsePositiveMoney(req.body.price_vat_included);
+  const costs = computeCosts({
     priceVatIncluded,
     supplyRate: req.body.supply_rate,
   });
+  const validationError = validateReceiptPayload({
+    id,
+    requireId: true,
+    sku,
+    quantity,
+    priceVatIncluded,
+    costs,
+    status: 'PENDING',
+    expectedDate,
+    receiptDate,
+  });
 
-  if (!id || !sku || !quantity || priceVatIncluded <= 0) {
+  if (validationError) {
     return res.status(400).json({
       success: false,
-      error: 'ID, SKU, 입고수량, 부가세포함 단가는 필수입니다.',
+      error: validationError,
     });
   }
+
+  const { supplyRate, unitPriceVatIncluded, unitCost } = costs;
 
   const product = await getProductBySku(db, tenantId, sku);
   if (!product) {

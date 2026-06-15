@@ -266,6 +266,20 @@ async function assertNoDuplicateComposition({ tenantId, sourceSku, baseSku, excl
   }
 }
 
+function validateCompositionSelfMapping({ sourceSku, baseSku, factor, confirmSelfSku = false }) {
+  if (!sourceSku || !baseSku || sourceSku !== baseSku) return null;
+
+  if (Number(factor) === 1) {
+    return null;
+  }
+
+  if (confirmSelfSku === true || String(confirmSelfSku).toLowerCase() === 'true') {
+    return null;
+  }
+
+  return `판매 SKU와 기준재고 SKU가 같습니다. ${sourceSku} 판매 시 자기 자신 재고가 ${factor}개 차감됩니다. 정말 필요한 구성이라면 다시 확인 후 저장하세요.`;
+}
+
 router.get('/dashboard', async (req, res) => {
   const tenantId = getCurrentTenantId(req);
 
@@ -1128,6 +1142,20 @@ router.post('/sku-compositions', async (req, res) => {
     });
   }
 
+  const selfMappingError = validateCompositionSelfMapping({
+    sourceSku,
+    baseSku,
+    factor,
+    confirmSelfSku: req.body.confirm_self_sku,
+  });
+  if (selfMappingError) {
+    return res.status(400).json({
+      success: false,
+      code: 'SELF_COMPOSITION_CONFIRM_REQUIRED',
+      error: selfMappingError,
+    });
+  }
+
   await assertProductExists(tenantId, sourceSku, '판매 SKU');
   await assertProductExists(tenantId, baseSku, '기준재고 SKU');
   await assertNoDuplicateComposition({ tenantId, sourceSku, baseSku });
@@ -1155,6 +1183,20 @@ router.patch('/sku-compositions/:id', async (req, res) => {
     return res.status(400).json({
       success: false,
       error: 'ID, SKU, 기준재고SKU, 기준수량은 필수입니다. 기준수량은 1 이상이어야 합니다.',
+    });
+  }
+
+  const selfMappingError = validateCompositionSelfMapping({
+    sourceSku,
+    baseSku,
+    factor,
+    confirmSelfSku: req.body.confirm_self_sku,
+  });
+  if (selfMappingError) {
+    return res.status(400).json({
+      success: false,
+      code: 'SELF_COMPOSITION_CONFIRM_REQUIRED',
+      error: selfMappingError,
     });
   }
 

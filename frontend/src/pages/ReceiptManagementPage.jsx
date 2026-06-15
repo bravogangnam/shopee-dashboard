@@ -890,6 +890,31 @@ function CompositionTab({ rows, summary, search, setSearch, loading, reload }) {
       note: form.note,
     };
 
+    const normalizedSourceSku = String(form.source_sku || '').trim().toUpperCase();
+    const normalizedBaseSku = String(form.base_sku || '').trim().toUpperCase();
+    const numericFactor = Number(form.factor || 0);
+
+    if (normalizedSourceSku && normalizedBaseSku && normalizedSourceSku === normalizedBaseSku) {
+      const confirmText = numericFactor === 1
+        ? [
+            '상품구성표 확인',
+            '',
+            `${normalizedSourceSku} → ${normalizedBaseSku} × 1 구성은 없어도 기본적으로 같은 SKU 1개가 차감됩니다.`,
+            '그래도 명시적으로 저장할까요?',
+          ].join('\n')
+        : [
+            '상품구성표 강한 확인',
+            '',
+            `${normalizedSourceSku} 판매 시 같은 SKU 재고가 ${numericFactor}개 차감됩니다.`,
+            '예: GS001 → GS001 × 2 이면 GS001 1개 판매 시 GS001 재고 2개가 빠집니다.',
+            '',
+            '정말 필요한 구성일 때만 저장하세요.',
+          ].join('\n');
+
+      if (!window.confirm(confirmText)) return;
+      payload.confirm_self_sku = true;
+    }
+
     try {
       setSaving(true);
       setMessage('');
@@ -948,7 +973,7 @@ function CompositionTab({ rows, summary, search, setSearch, loading, reload }) {
       <form className="composition-editor" onSubmit={submitForm}>
         <div className="composition-editor-title">
           <strong>{isEditing ? '상품구성 수정' : '상품구성 추가'}</strong>
-          <span>예: GS_01552 → GS_01511 × 2</span>
+          <span>예: 묶음상품 GS002 → 기준재고 GS001 × 2</span>
         </div>
 
         <div className="composition-editor-grid">

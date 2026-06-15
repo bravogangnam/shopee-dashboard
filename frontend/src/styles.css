@@ -4104,3 +4104,7 @@ label {
 .receipt-table .positive {
   color: #2563eb;
 }
+
+.composition-editor-title span {
+  color: #64748b;
+}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { cancelStockReceipt, completeStockReceipt, createSkuComposition, createStockReceipt, deleteSkuComposition, fetchReceiptDashboard, fetchSkuCompositions, fetchStockReceipts, searchReceiptProducts, updateSkuComposition } from '../api/receipts.js';
+import { cancelStockReceipt, completeStockReceipt, createSkuComposition, createStockReceipt, deleteSkuComposition, fetchReceiptDashboard, fetchSkuCompositions, fetchStockReceipts, searchReceiptProducts, updateSkuComposition, updateStockReceipt } from '../api/receipts.js';
 
 function formatNumber(value, digits = 0) {
   const number = Number(value || 0);
@@ -166,6 +166,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
   const [receiptLoading, setReceiptLoading] = useState(false);
   const [receiptMessage, setReceiptMessage] = useState('');
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [editingReceipt, setEditingReceipt] = useState(null);
   const [form, setForm] = useState({
     status: 'PENDING',
     receipt_date: new Date().toISOString().slice(0, 10),
@@ -209,6 +210,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
   const pendingRows = stockReceipts.filter(row => row.status === 'PENDING');
 
   const selectedSku = selectedProduct?.sku || '';
+  const editingReceiptId = editingReceipt?.id || null;
   const targetDate = form.status === 'COMPLETED'
     ? form.receipt_date
     : (form.expected_date || form.receipt_date);
@@ -216,6 +218,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
   const duplicatePendingRows = selectedSku
     ? stockReceipts.filter(row =>
         row.status === 'PENDING' &&
+        row.id !== editingReceiptId &&
         row.sku === selectedSku &&
         formatDate(row.expected_date || row.receipt_date) === targetDate
       )
@@ -273,6 +276,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
 
   function resetReceiptForm() {
     setSelectedProduct(null);
+    setEditingReceipt(null);
     setForm({
       status: 'PENDING',
       receipt_date: new Date().toISOString().slice(0, 10),
@@ -321,7 +325,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
       setReceiptLoading(true);
       setReceiptMessage('');
 
-      const result = await createStockReceipt({
+      const payload = {
         sku: selectedProduct.sku,
         status: form.status,
         receipt_date: form.status === 'COMPLETED' ? form.receipt_date : null,
@@ -331,12 +335,18 @@ function StockInTab({ dashboard, reloadDashboard }) {
         supply_rate: form.supply_rate,
         supplier: form.supplier,
         memo: form.memo,
-      });
+      };
+
+      const result = editingReceipt
+        ? await updateStockReceipt(editingReceipt.id, payload)
+        : await createStockReceipt(payload);
 
       setReceiptMessage(
-        form.status === 'COMPLETED'
-          ? `입고완료 저장됨 · 배치 ${result.completion?.batchId || '-'} · 부족분 배정 ${result.completion?.allocatedShortageQty || 0}개`
-          : '입고예정으로 저장했습니다.'
+        editingReceipt
+          ? '입고예정을 수정했습니다.'
+          : form.status === 'COMPLETED'
+            ? `입고완료 저장됨 · 배치 ${result.completion?.batchId || '-'} · 부족분 배정 ${result.completion?.allocatedShortageQty || 0}개`
+            : '입고예정으로 저장했습니다.'
       );
 
       resetReceiptForm();
@@ -347,6 +357,31 @@ function StockInTab({ dashboard, reloadDashboard }) {
     } finally {
       setReceiptLoading(false);
     }
+  }
+
+  function startEditPending(row) {
+    setEditingReceipt(row);
+    setSelectedProduct({
+      sku: row.sku,
+      product_name_kr: row.product_name_kr,
+      product_name_en: row.product_name_en,
+      option_name: row.option_name,
+      stock_quantity: row.stock_quantity,
+      cost_price_with_vat: row.price_vat_included,
+      supply_rate: row.supply_rate,
+    });
+    setForm({
+      status: 'PENDING',
+      receipt_date: formatDate(row.receipt_date) || new Date().toISOString().slice(0, 10),
+      expected_date: formatDate(row.expected_date || row.receipt_date),
+      quantity: String(row.quantity || ''),
+      price_vat_included: String(Math.round(Number(row.price_vat_included || row.unit_price_vat_included || 0))),
+      supply_rate: String(Math.round(Number(row.supply_rate || 1) <= 1 ? Number(row.supply_rate || 1) * 100 : Number(row.supply_rate || 1))),
+      supplier: row.supplier || '',
+      memo: row.memo || '추가입고',
+    });
+    setReceiptMessage('입고예정을 수정 중입니다. 수정 후 저장하세요.');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   async function handleComplete(row) {
@@ -465,7 +500,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
       <section className="receipt-card">
         <div className="receipt-section-header">
           <div>
-            <h2>신규 입고 등록</h2>
+            <h2>{editingReceipt ? '입고예정 수정' : '신규 입고 등록'}</h2>
             <p>기본은 입고예정입니다. 실제 도착한 상품만 입고완료로 저장하세요.</p>
           </div>
         </div>
@@ -568,7 +603,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
 
           <div className="composition-editor-actions">
             <button type="submit" className="primary-button" disabled={receiptLoading}>
-              {receiptLoading ? '저장 중...' : '입고 저장'}
+              {receiptLoading ? '저장 중...' : editingReceipt ? '수정 저장' : '입고 저장'}
             </button>
             <button type="button" className="secondary-button" onClick={resetReceiptForm} disabled={receiptLoading}>
               초기화
@@ -613,6 +648,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
                   <td>{row.memo || '-'}</td>
                   <td>
                     <div className="composition-row-actions">
+                      <button type="button" onClick={() => startEditPending(row)}>수정</button>
                       <button type="button" onClick={() => handleComplete(row)}>입고완료</button>
                       <button type="button" className="danger" onClick={() => handleCancel(row)}>취소</button>
                     </div>

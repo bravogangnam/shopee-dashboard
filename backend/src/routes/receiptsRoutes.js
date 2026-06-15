@@ -380,6 +380,74 @@ router.post('/stock-receipts', async (req, res) => {
   }
 });
 
+router.patch('/stock-receipts/:id', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const id = Number(req.params.id);
+  const sku = normalizeInputSku(req.body.sku);
+  const quantity = parsePositiveInt(req.body.quantity);
+  const expectedDate = cleanText(req.body.expected_date);
+  const receiptDate = cleanText(req.body.receipt_date);
+  const supplier = cleanText(req.body.supplier);
+  const memo = cleanText(req.body.memo);
+  const priceVatIncluded = Number(req.body.price_vat_included || 0);
+  const { supplyRate, unitPriceVatIncluded, unitCost } = computeCosts({
+    priceVatIncluded,
+    supplyRate: req.body.supply_rate,
+  });
+
+  if (!id || !sku || !quantity || priceVatIncluded <= 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'ID, SKU, 입고수량, 부가세포함 단가는 필수입니다.',
+    });
+  }
+
+  const product = await getProductBySku(db, tenantId, sku);
+  if (!product) {
+    return res.status(400).json({ success: false, error: `상품을 찾을 수 없습니다: ${sku}` });
+  }
+
+  const [result] = await db.query(
+    `UPDATE stock_receipts
+     SET sku = ?,
+         expected_date = ?,
+         receipt_date = COALESCE(?, receipt_date),
+         quantity = ?,
+         supplier = ?,
+         price_vat_included = ?,
+         supply_rate = ?,
+         unit_price_vat_included = ?,
+         unit_cost = ?,
+         memo = ?
+     WHERE tenant_id = ?
+       AND id = ?
+       AND status = 'PENDING'`,
+    [
+      sku,
+      expectedDate || receiptDate || null,
+      receiptDate || null,
+      quantity,
+      supplier,
+      priceVatIncluded,
+      supplyRate,
+      unitPriceVatIncluded,
+      unitCost,
+      memo,
+      tenantId,
+      id,
+    ]
+  );
+
+  if (result.affectedRows !== 1) {
+    return res.status(400).json({
+      success: false,
+      error: '입고예정 상태의 입고건만 수정할 수 있습니다.',
+    });
+  }
+
+  return res.json({ success: true });
+});
+
 router.post('/stock-receipts/:id/complete', async (req, res) => {
   const tenantId = getCurrentTenantId(req);
   const id = Number(req.params.id);

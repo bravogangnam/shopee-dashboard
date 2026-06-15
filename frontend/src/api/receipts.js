@@ -43,6 +43,14 @@ export function createStockReceipt(payload) {
   });
 }
 
+
+export function updateStockReceipt(id, payload) {
+  return apiRequest(`/api/receipts/stock-receipts/${id}`, {
+    method: 'PATCH',
+    body: payload,
+  });
+}
+
 export function completeStockReceipt(id) {
   return apiRequest(`/api/receipts/stock-receipts/${id}/complete`, {
     method: 'POST',

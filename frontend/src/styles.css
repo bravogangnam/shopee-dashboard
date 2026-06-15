@@ -4004,3 +4004,16 @@ label {
 .receipt-sync-disabled p {
   color: #64748b;
 }
+
+.receipt-sync-disabled {
+  background: #f8fafc;
+  border-color: #e5e7eb;
+}
+
+.receipt-sync-disabled strong {
+  color: #334155;
+}
+
+.receipt-sync-disabled p {
+  color: #64748b;
+}

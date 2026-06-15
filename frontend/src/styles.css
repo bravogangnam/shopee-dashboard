@@ -4034,3 +4034,73 @@ label {
 .receipt-history-toolbar input[type="search"] {
   max-width: 360px;
 }
+
+/* Receipt page summary cards - calmer dashboard tone */
+.receipt-summary-card {
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+}
+
+.receipt-summary-card span {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.receipt-summary-card strong {
+  color: #1e293b;
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.03em;
+}
+
+.receipt-summary-card small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.receipt-month-summary .receipt-summary-card strong {
+  font-size: 18px;
+}
+
+.receipt-month-summary .receipt-summary-card {
+  padding: 16px 18px;
+}
+
+.receipt-card h2 {
+  color: #334155;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.receipt-card p {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.receipt-table th {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.receipt-table td {
+  color: #334155;
+}
+
+.receipt-table td strong,
+.receipt-table .money,
+.receipt-table .negative,
+.receipt-table .positive {
+  font-weight: 600;
+}
+
+.receipt-table .negative {
+  color: #dc2626;
+}
+
+.receipt-table .positive {
+  color: #2563eb;
+}

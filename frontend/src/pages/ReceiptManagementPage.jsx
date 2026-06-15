@@ -191,7 +191,7 @@ function StockInTab({ dashboard }) {
             <input type="text" placeholder="최근 입고가 자동입력 예정" disabled />
           </label>
           <div className="receipt-preview-box">
-            <span>실제 입고단가 / 부가세제외 원가 / 저장 후 재고를 자동 계산합니다.</span>
+            <span>입력한 부가세포함 단가 기준으로 입고단가와 저장 후 재고를 자동 계산합니다.</span>
           </div>
         </div>
       </section>

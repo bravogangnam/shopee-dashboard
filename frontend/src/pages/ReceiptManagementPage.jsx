@@ -370,7 +370,7 @@ function CompositionTab({ rows, summary, search, setSearch, loading, reload }) {
       id: row.id,
       source_sku: row.source_sku || '',
       base_sku: row.base_sku || '',
-      factor: String(Number(row.factor || 1)),
+      factor: String(Math.trunc(Number(row.factor || 1))),
       composition_type: row.composition_type || '공통',
       note: row.note || '',
     });
@@ -469,8 +469,8 @@ function CompositionTab({ rows, summary, search, setSearch, loading, reload }) {
             <span>기준수량</span>
             <input
               type="number"
-              min="0.0001"
-              step="0.0001"
+              min="1"
+              step="1"
               value={form.factor}
               onChange={event => updateForm('factor', event.target.value)}
             />
@@ -547,7 +547,7 @@ function CompositionTab({ rows, summary, search, setSearch, loading, reload }) {
                   <div className="receipt-product-name">{productName(row, 'base_')}</div>
                   <small>현재재고 {formatNumber(row.base_stock_quantity)}</small>
                 </td>
-                <td>{formatNumber(row.factor, 2)}</td>
+                <td>{formatNumber(row.factor, 0)}</td>
                 <td><span className={compositionTone(row.composition_type)}>{row.composition_type || '-'}</span></td>
                 <td>{row.note || '-'}</td>
                 <td>

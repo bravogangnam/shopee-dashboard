@@ -26,7 +26,7 @@ function normalizeInputSku(value) {
 function toPositiveFactor(value) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return null;
-  return Math.round(number * 10000) / 10000;
+  return Math.trunc(number);
 }
 
 async function assertProductExists(tenantId, sku, label) {

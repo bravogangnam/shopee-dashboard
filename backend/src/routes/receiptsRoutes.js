@@ -30,23 +30,12 @@ router.get('/dashboard', async (req, res) => {
        p.cost_price,
        CASE
          WHEN p.stock_quantity < 0 THEN ABS(p.stock_quantity)
-         WHEN p.stock_quantity = 0 THEN GREATEST(p.low_stock_threshold, 1)
-         WHEN p.stock_quantity > 0 AND p.stock_quantity <= p.low_stock_threshold THEN GREATEST(p.low_stock_threshold - p.stock_quantity, 1)
          ELSE 0
        END AS purchase_needed_qty
      FROM products p
      WHERE p.tenant_id = ?
-       AND (
-         p.stock_quantity < 0
-         OR p.stock_quantity = 0
-         OR (p.stock_quantity > 0 AND p.stock_quantity <= p.low_stock_threshold)
-       )
+       AND p.stock_quantity < 0
      ORDER BY
-       CASE
-         WHEN p.stock_quantity < 0 THEN 0
-         WHEN p.stock_quantity = 0 THEN 1
-         ELSE 2
-       END,
        purchase_needed_qty DESC,
        p.sku ASC
      LIMIT 50`,

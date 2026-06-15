@@ -14,6 +14,14 @@ function formatKrw(value) {
   return `₩${number.toLocaleString('ko-KR')}`;
 }
 
+
+function formatSupplyRate(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return '100%';
+  const percent = number <= 1 ? number * 100 : number;
+  return `${Math.round(percent).toLocaleString('ko-KR')}%`;
+}
+
 function formatDate(value) {
   if (!value) return '-';
   return String(value).replace('T', ' ').replace('.000Z', '').slice(0, 16);
@@ -66,7 +74,7 @@ function StockInTab({ dashboard }) {
         <div className="receipt-section-header">
           <div>
             <h2>구매필요 상품</h2>
-            <p>재고가 부족한 상품을 자동으로 표시합니다. 다음 단계에서 여기서 바로 입고등록을 연결합니다.</p>
+            <p>현재재고가 마이너스인 실제 구매필요 상품만 표시합니다.</p>
           </div>
         </div>
 
@@ -94,7 +102,7 @@ function StockInTab({ dashboard }) {
                   </td>
                   <td><strong>{formatNumber(product.purchase_needed_qty)}</strong></td>
                   <td>{formatKrw(product.cost_price_with_vat || product.discounted_price_with_vat || 0)}</td>
-                  <td>{product.supply_rate ? `${formatNumber(product.supply_rate, 2)}%` : '100%'}</td>
+                  <td>{formatSupplyRate(product.supply_rate)}</td>
                 </tr>
               )) : (
                 <tr>

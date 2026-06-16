@@ -368,7 +368,15 @@ export default function OrderManagementPage() {
         message: '송장 생성 작업을 시작했습니다.',
         errors: [],
       });
-      setMessage('송장 생성 중입니다. 새 창에서 진행 상황을 확인하세요.');
+      
+      // 송장 job이 정상 시작된 뒤에는 선택 주문을 비워 중복 출력을 방지한다.
+      if (typeof setSelectedOrderSns === 'function') setSelectedOrderSns([]);
+      if (typeof setSelectedOrders === 'function') setSelectedOrders([]);
+      if (typeof setCheckedOrderSns === 'function') setCheckedOrderSns([]);
+      if (typeof setCheckedOrders === 'function') setCheckedOrders([]);
+      if (typeof setSelectedOrderIds === 'function') setSelectedOrderIds([]);
+      if (typeof setSelectedIds === 'function') setSelectedIds([]);
+setMessage('송장 생성 중입니다. 새 창에서 진행 상황을 확인하세요.');
     } catch (err) {
       if (err.code === 'ALREADY_RUNNING' && (err.job || err.jobId)) {
         setInvoiceJob(err.job || {

@@ -755,8 +755,8 @@ function StockInTab({ dashboard, reloadDashboard }) {
           </div>
           <div className="receipt-summary-card">
             <span>입고완료 금액</span>
-            <strong>{formatKrw(receiptSummary?.completed?.total_amount_vat_included || 0)}</strong>
-            <small>부가세포함</small>
+            <strong>{formatKrw(receiptSummary?.completed?.total_amount_vat_excluded || 0)}</strong>
+            <small>VAT 제외 · 입력가 {formatKrw(receiptSummary?.completed?.total_amount_vat_included || 0)}</small>
           </div>
           <div className="receipt-summary-card">
             <span>입고예정 수량</span>
@@ -765,8 +765,8 @@ function StockInTab({ dashboard, reloadDashboard }) {
           </div>
           <div className="receipt-summary-card">
             <span>입고예정 금액</span>
-            <strong>{formatKrw(receiptSummary?.pending?.pending_amount_vat_included || 0)}</strong>
-            <small>부가세포함</small>
+            <strong>{formatKrw(receiptSummary?.pending?.pending_amount_vat_excluded || 0)}</strong>
+            <small>VAT 제외 · 입력가 {formatKrw(receiptSummary?.pending?.pending_amount_vat_included || 0)}</small>
           </div>
         </div>
       </section>
@@ -791,6 +791,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
             onChange={event => setHistorySearch(event.target.value)}
             placeholder="SKU / 상품명 / 메모 검색"
           />
+          <span>{receiptLoading ? '검색 중...' : `검색 결과 ${formatNumber(historyRows.length)}건`}</span>
         </div>
 
         <div className="receipt-table-wrap">
@@ -802,7 +803,8 @@ function StockInTab({ dashboard, reloadDashboard }) {
                 <th>상품명</th>
                 <th>입고수량</th>
                 <th>남은수량</th>
-                <th>부가세포함 원가</th>
+                <th>VAT 제외 원가</th>
+                <th>VAT 포함 입력가</th>
                 <th>메모</th>
                 <th>작업</th>
               </tr>
@@ -815,7 +817,8 @@ function StockInTab({ dashboard, reloadDashboard }) {
                   <td>{row.product_name_kr || row.product_name_en || '-'}</td>
                   <td>{formatNumber(row.initial_qty)}</td>
                   <td>{formatNumber(row.remaining_qty)}</td>
-                  <td>{formatKrw(Number(row.unit_cost || 0) * 1.1)}</td>
+                  <td>{formatKrw(row.unit_cost)}</td>
+                  <td>{formatKrw(row.source_unit_cost || Number(row.unit_cost || 0) * 1.1)}</td>
                   <td>{row.note || '-'}</td>
                   <td>
                     <button type="button" className="receipt-inline-button" onClick={() => handleEditBatchCost(row)}>
@@ -825,7 +828,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="8" className="receipt-empty">입고 이력이 없습니다.</td>
+                  <td colSpan="9" className="receipt-empty">입고 이력이 없습니다.</td>
                 </tr>
               )}
             </tbody>

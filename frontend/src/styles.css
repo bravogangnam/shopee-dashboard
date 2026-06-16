@@ -4108,3 +4108,14 @@ label {
 .composition-editor-title span {
   color: #64748b;
 }
+
+.receipt-history-toolbar span {
+  color: #64748b;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.receipt-summary-card small {
+  display: block;
+  margin-top: 4px;
+}

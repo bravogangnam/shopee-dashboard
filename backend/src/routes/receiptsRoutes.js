@@ -515,6 +515,7 @@ router.get('/stock-receipts/summary', async (req, res) => {
     `SELECT
        COUNT(*) AS receipt_count,
        COALESCE(SUM(initial_qty), 0) AS total_qty,
+       COALESCE(SUM(initial_qty * unit_cost), 0) AS total_amount_vat_excluded,
        COALESCE(SUM(initial_qty * unit_cost * 1.1), 0) AS total_amount_vat_included
      FROM inventory_batches
      WHERE tenant_id = ?
@@ -527,6 +528,7 @@ router.get('/stock-receipts/summary', async (req, res) => {
     `SELECT
        COUNT(*) AS pending_count,
        COALESCE(SUM(quantity), 0) AS pending_qty,
+       COALESCE(SUM(quantity * unit_cost), 0) AS pending_amount_vat_excluded,
        COALESCE(SUM(quantity * unit_price_vat_included), 0) AS pending_amount_vat_included
      FROM stock_receipts
      WHERE tenant_id = ?

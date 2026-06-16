@@ -169,6 +169,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
   const [historyMonth, setHistoryMonth] = useState(new Date().toISOString().slice(0, 7));
   const [receiptLoading, setReceiptLoading] = useState(false);
   const [receiptMessage, setReceiptMessage] = useState('');
+  const [previewImage, setPreviewImage] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [editingReceipt, setEditingReceipt] = useState(null);
   const [form, setForm] = useState({
@@ -492,6 +493,33 @@ function StockInTab({ dashboard, reloadDashboard }) {
     }
   }
 
+  async function copyText(value, label) {
+    const text = String(value || '').trim();
+    if (!text) return;
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setReceiptMessage(`${label} 복사됨: ${text}`);
+    } catch (err) {
+      setReceiptMessage(`${label} 복사 실패: ${text}`);
+    }
+  }
+
+  function openProductImage(product) {
+    const imageUrl = product?.image_info_image_url || product?.item_image_url;
+    if (!imageUrl) {
+      setReceiptMessage('표시할 상품 이미지가 없습니다.');
+      return;
+    }
+
+    setPreviewImage({
+      url: imageUrl,
+      sku: product.sku,
+      name: product.product_name_kr || product.product_name_en || '',
+      option: product.option_name || '',
+    });
+  }
+
   return (
     <div className="receipt-tab-grid">
       <section className="receipt-card receipt-card-wide">
@@ -522,9 +550,23 @@ function StockInTab({ dashboard, reloadDashboard }) {
             <tbody>
               {pagedPurchaseNeeded.length ? pagedPurchaseNeeded.map(product => (
                 <tr key={product.sku}>
-                  <td><strong>{product.sku}</strong></td>
-                  <td>{product.product_name_kr || product.product_name_en || '-'}</td>
-                  <td>{product.option_name || '-'}</td>
+                  <td>
+                    <div className="receipt-copy-cell">
+                      <strong>{product.sku}</strong>
+                      <button type="button" className="receipt-copy-button" onClick={() => copyText(product.sku, 'SKU')}>복사</button>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="receipt-copy-cell">
+                      <span>{product.product_name_kr || product.product_name_en || '-'}</span>
+                      <button type="button" className="receipt-copy-button" onClick={() => copyText(product.product_name_kr || product.product_name_en, '상품명')}>복사</button>
+                    </div>
+                  </td>
+                  <td>
+                    <button type="button" className="receipt-option-image-button" onClick={() => openProductImage(product)}>
+                      {product.option_name || '-'}
+                    </button>
+                  </td>
                   <td className="receipt-negative">{formatNumber(product.stock_quantity)}</td>
                   <td><strong>{formatNumber(product.purchase_needed_qty)}</strong></td>
                   <td>
@@ -843,6 +885,22 @@ function StockInTab({ dashboard, reloadDashboard }) {
           </div>
         </div>
       </section>
+
+      {previewImage && (
+        <div className="receipt-image-modal" role="dialog" aria-modal="true" onClick={() => setPreviewImage(null)}>
+          <div className="receipt-image-modal-card" onClick={event => event.stopPropagation()}>
+            <div className="receipt-image-modal-header">
+              <div>
+                <strong>{previewImage.sku}</strong>
+                <p>{previewImage.name}</p>
+                <small>{previewImage.option}</small>
+              </div>
+              <button type="button" onClick={() => setPreviewImage(null)}>닫기</button>
+            </div>
+            <img src={previewImage.url} alt={previewImage.name || previewImage.sku} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

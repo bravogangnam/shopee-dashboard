@@ -289,6 +289,8 @@ router.get('/dashboard', async (req, res) => {
        p.product_name_kr,
        p.product_name_en,
        p.option_name,
+       p.image_info_image_url,
+       p.item_image_url,
        p.stock_quantity,
        p.low_stock_threshold,
        p.cost_price_with_vat,

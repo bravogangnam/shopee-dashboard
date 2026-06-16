@@ -62,7 +62,7 @@ function mysqlDateTime(date = new Date()) {
 
 function parsePositiveInt(value) {
   const text = String(value ?? '').trim();
-  if (!/^\\d+$/.test(text)) return null;
+  if (!/^\d+$/.test(text)) return null;
   const number = Number(text);
   if (!Number.isSafeInteger(number) || number <= 0) return null;
   return number;

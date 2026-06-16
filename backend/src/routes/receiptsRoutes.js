@@ -289,8 +289,26 @@ router.get('/dashboard', async (req, res) => {
        p.product_name_kr,
        p.product_name_en,
        p.option_name,
-       p.image_info_image_url,
-       p.item_image_url,
+       (
+         SELECT oi.image_info_image_url
+         FROM order_items oi
+         WHERE oi.tenant_id = p.tenant_id
+           AND oi.model_sku COLLATE utf8mb4_unicode_ci = p.sku COLLATE utf8mb4_unicode_ci
+           AND oi.image_info_image_url IS NOT NULL
+           AND oi.image_info_image_url <> ''
+         ORDER BY oi.id DESC
+         LIMIT 1
+       ) AS image_info_image_url,
+       (
+         SELECT oi.item_image_url
+         FROM order_items oi
+         WHERE oi.tenant_id = p.tenant_id
+           AND oi.model_sku COLLATE utf8mb4_unicode_ci = p.sku COLLATE utf8mb4_unicode_ci
+           AND oi.item_image_url IS NOT NULL
+           AND oi.item_image_url <> ''
+         ORDER BY oi.id DESC
+         LIMIT 1
+       ) AS item_image_url,
        p.stock_quantity,
        p.low_stock_threshold,
        p.cost_price_with_vat,

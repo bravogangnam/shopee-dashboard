@@ -1342,7 +1342,25 @@ router.post('/mass-upload/generate-template-files', async (req, res) => {
         colByHeader.set(key, value);
       }
     });
-    const col = (header) => colByHeader.get(String(header).toLowerCase()) || 0;
+
+    // Some KRSC attribute columns are not included in template mapping candidates.
+    // Read the actual Template row 3 headers so saved required values like Expiry Date
+    // can still be written to their real column.
+    try {
+      const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1:A1');
+      const headerRowIndex = 2; // Excel row 3
+      for (let c = range.s.c; c <= range.e.c; c += 1) {
+        const cell = sheet[XLSX.utils.encode_cell({ r: headerRowIndex, c })];
+        const key = String(cell?.v || '').trim().toLowerCase();
+        if (key && !colByHeader.has(key)) {
+          colByHeader.set(key, c + 1);
+        }
+      }
+    } catch {
+      // Best-effort header scan only.
+    }
+
+    const col = (header) => colByHeader.get(String(header).trim().toLowerCase()) || 0;
     const put = (row, colIdx, value) => {
       if (!colIdx) return;
       XLSX.utils.sheet_add_aoa(sheet, [[value]], { origin: { r: row - 1, c: colIdx - 1 } });

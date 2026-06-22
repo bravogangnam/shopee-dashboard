@@ -504,9 +504,7 @@ export default function MassUploadPage() {
       row.productCount += 1;
       row.products.push(p);
 
-      if (p.brand?.brandId !== null && p.brand?.brandId !== undefined && p.brand?.brandId !== '') {
-        row.brandProcessedCount += 1;
-      }
+      row.brandProcessedCount += 1;
     });
 
     return Array.from(map.values()).map((row) => {
@@ -535,7 +533,10 @@ export default function MassUploadPage() {
       const result = byProductKey.get(String(p.id || ''));
       const categoryId = String(result?.category?.categoryId || '').trim() || '미확정';
       const categoryPath = result?.category?.categoryPath || result?.category?.categoryName || categoryId;
-      const brandId = result?.brand?.brandId ?? '';
+      const rawBrandId = result?.brand?.brandId;
+      const brandId = rawBrandId === null || rawBrandId === undefined || String(rawBrandId).trim() === ''
+        ? '0'
+        : String(rawBrandId).trim();
       const integrationNo = padProductKey(seq++);
       const repImages = Array.isArray(p.representativeImages) ? p.representativeImages : [];
       const coverImage = repImages[0] || '';
@@ -581,7 +582,7 @@ export default function MassUploadPage() {
           Width: String(o.width || '').trim(),
           Height: String(o.height || '').trim(),
           'Days to ship': '1',
-          Brand: brandId === null || brandId === undefined ? '' : String(brandId).trim(),
+          Brand: brandId,
           _missing: [],
         };
 

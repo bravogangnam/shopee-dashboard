@@ -1194,9 +1194,10 @@ router.post('/mass-upload/generate-template-files', async (req, res) => {
 
     const integrationNo = padNo(seq++);
     const rep = Array.isArray(product.representativeImages) ? product.representativeImages : [];
-    const brand = meta?.brand?.brandId === null || meta?.brand?.brandId === undefined
-      ? ''
-      : String(meta.brand.brandId).trim();
+    const rawBrandId = meta?.brand?.brandId;
+    const brand = rawBrandId === null || rawBrandId === undefined || String(rawBrandId).trim() === ''
+      ? '0'
+      : String(rawBrandId).trim();
 
     (product.options || []).forEach((option, optionIndex) => {
       const first = optionIndex === 0;

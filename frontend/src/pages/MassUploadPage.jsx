@@ -367,9 +367,69 @@ export default function MassUploadPage() {
     };
   }, [uploadedImages]);
 
+  const productsWithUploadedImages = useMemo(() => {
+    const images = Array.isArray(uploadedImages) ? uploadedImages : [];
+
+    if (!products.length || !images.length) return products;
+
+    const imagesBySku = new Map();
+
+    images.forEach((image) => {
+      const stem = String(image?.stem || '').trim();
+      const publicUrl = String(image?.publicUrl || '').trim();
+
+      if (!stem || !publicUrl) return;
+
+      const mainMatch = stem.match(/^(.+)-m(\d*)$/i);
+      const sku = (mainMatch ? mainMatch[1] : stem).trim().toUpperCase();
+      if (!sku) return;
+
+      if (!imagesBySku.has(sku)) {
+        imagesBySku.set(sku, { representative: [], option: [] });
+      }
+
+      const bucket = imagesBySku.get(sku);
+
+      if (mainMatch) {
+        const order = mainMatch[2] === '' ? 0 : Number(mainMatch[2]);
+        bucket.representative.push({ ...image, order: Number.isFinite(order) ? order : 999 });
+      } else {
+        bucket.option.push(image);
+      }
+    });
+
+    imagesBySku.forEach((bucket) => {
+      bucket.representative.sort((a, b) => (a.order - b.order) || String(a.fileName || '').localeCompare(String(b.fileName || '')));
+    });
+
+    return products.map((product) => {
+      const options = Array.isArray(product.options) ? product.options : [];
+      const firstSku = String(options[0]?.sku || '').trim().toUpperCase();
+      const repBucket = firstSku ? imagesBySku.get(firstSku) : null;
+      const uploadedRepImages = repBucket?.representative?.map((img) => img.publicUrl).filter(Boolean) || [];
+      const currentRepImages = Array.isArray(product.representativeImages) ? product.representativeImages.filter(Boolean) : [];
+      const representativeImages = uploadedRepImages.length ? uploadedRepImages : currentRepImages;
+
+      return {
+        ...product,
+        representativeImages,
+        options: options.map((option) => {
+          const optionSku = String(option.sku || '').trim().toUpperCase();
+          const optionBucket = optionSku ? imagesBySku.get(optionSku) : null;
+          const uploadedOptionImage = optionBucket?.option?.[0]?.publicUrl || '';
+
+          return {
+            ...option,
+            optionImage: uploadedOptionImage || option.optionImage || '',
+          };
+        }),
+      };
+    });
+  }, [products, uploadedImages]);
+
   const massUploadProgressSummary = useMemo(() => {
-    const productCount = products.length;
-    const optionCount = products.reduce((sum, product) => sum + (Array.isArray(product.options) ? product.options.length : 0), 0);
+    const productCount = productsWithUploadedImages.length;
+    const optionCount = productsWithUploadedImages.reduce((sum, product) => sum + (Array.isArray(product.options) ? product.options.length : 0), 0);
     const effectiveRows = Array.isArray(effectiveMetaResults) ? effectiveMetaResults : [];
     const confirmedCategoryCount = effectiveRows.filter((row) => String(row?.category?.categoryId || '').trim()).length;
     const requiredCategoryIds = Array.from(new Set(effectiveRows.map((row) => String(row?.category?.categoryId || '').trim()).filter(Boolean)));
@@ -402,7 +462,7 @@ export default function MassUploadPage() {
   }, [products, effectiveMetaResults, templateRegistry, requiredValuesRegistry, uploadedImages, preflightSummary]);
   const displayRows = useMemo(() => {
     const out = [];
-    products.forEach((p, pi) => {
+    productsWithUploadedImages.forEach((p, pi) => {
       const v = validateProduct(p);
       p.options.forEach((o, oi) => out.push({
         productIndex: pi, optionIndex: oi,
@@ -413,13 +473,13 @@ export default function MassUploadPage() {
       }));
     });
     return out;
-  }, [products]);
+  }, [productsWithUploadedImages]);
 
   const summary = useMemo(() => {
-    const out = { products: products.length, options: 0, ready: 0, review: 0, error: 0 };
-    products.forEach((p) => { const v = validateProduct(p); out.options += p.options.length; out[v.status] += 1; });
+    const out = { products: productsWithUploadedImages.length, options: 0, ready: 0, review: 0, error: 0 };
+    productsWithUploadedImages.forEach((p) => { const v = validateProduct(p); out.options += p.options.length; out[v.status] += 1; });
     return out;
-  }, [products]);
+  }, [productsWithUploadedImages]);
 
 
   const categoryRegistryRows = useMemo(() => {
@@ -471,7 +531,7 @@ export default function MassUploadPage() {
     const grouped = new Map();
     let seq = 1;
 
-    products.forEach((p) => {
+    productsWithUploadedImages.forEach((p) => {
       const result = byProductKey.get(String(p.id || ''));
       const categoryId = String(result?.category?.categoryId || '').trim() || '미확정';
       const categoryPath = result?.category?.categoryPath || result?.category?.categoryName || categoryId;
@@ -539,15 +599,15 @@ export default function MassUploadPage() {
       rowCount: group.rows.length,
       missingCount: group.rows.reduce((sum, row) => sum + row._missing.length, 0),
     }));
-  }, [effectiveMetaResults, products, templateRegistry]);
+  }, [effectiveMetaResults, productsWithUploadedImages, templateRegistry]);
 
 
   const canGenerateTemplateFiles = useMemo(() => {
-    if (!products.length || !effectiveMetaResults.length || !categoryPreviewRows.length) return false;
+    if (!productsWithUploadedImages.length || !effectiveMetaResults.length || !categoryPreviewRows.length) return false;
     return categoryPreviewRows.every((group) =>
       group.categoryId !== '미확정' && Boolean(templateRegistry[group.categoryId]?.fileName)
     );
-  }, [products, effectiveMetaResults, categoryPreviewRows, templateRegistry]);
+  }, [productsWithUploadedImages, effectiveMetaResults, categoryPreviewRows, templateRegistry]);
 
 
 
@@ -1373,7 +1433,7 @@ export default function MassUploadPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ products, metaResults: effectiveMetaResults, imageJobId }),
+        body: JSON.stringify({ products: productsWithUploadedImages, metaResults: effectiveMetaResults, imageJobId }),
       });
 
       const data = await res.json();

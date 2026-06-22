@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs/promises');
 const path = require('path');
+const XLSX = require('xlsx');
 const { requireAuth, requireApprovedTenant } = require('../middleware/auth');
 const {
   sanitizeObjectForMetaResponse,

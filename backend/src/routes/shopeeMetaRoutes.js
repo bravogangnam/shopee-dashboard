@@ -743,6 +743,40 @@ function monthsFromShelfLife(value) {
   return Math.round(number);
 }
 
+
+function normalizeShelfLifeValue(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return raw;
+
+  const match = raw.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return raw;
+
+  const number = Number(match[1]);
+  if (!Number.isFinite(number) || number <= 0) return raw;
+
+  const months = /year|yr|년/i.test(raw) ? Math.round(number * 12) : Math.round(number);
+  return `${months} Months`;
+}
+
+function ensureShelfLifeRequiredValue(requiredValueByHeader) {
+  if (!(requiredValueByHeader instanceof Map)) return;
+
+  const keys = ['shelf lifes', 'shelf life', 'shelf lives'];
+
+  for (const key of keys) {
+    const item = requiredValueByHeader.get(key);
+    if (!item?.value) continue;
+
+    const normalized = normalizeShelfLifeValue(item.value);
+    requiredValueByHeader.set(key, {
+      ...item,
+      value: normalized,
+      source: item.source || 'normalized_shelf_life',
+    });
+  }
+}
+
+
 function ensureExpiryDateRequiredValue(requiredValueByHeader) {
   if (!(requiredValueByHeader instanceof Map)) return;
 
@@ -1332,6 +1366,7 @@ router.post('/mass-upload/generate-template-files', async (req, res) => {
         item,
       ])
     );
+    ensureShelfLifeRequiredValue(requiredValueByHeader);
     ensureExpiryDateRequiredValue(requiredValueByHeader);
 
     const colByHeader = new Map();

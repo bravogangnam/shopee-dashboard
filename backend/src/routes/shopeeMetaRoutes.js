@@ -744,6 +744,66 @@ function monthsFromShelfLife(value) {
 }
 
 
+
+function findAttributeMappingValues(workbook, attributeName) {
+  const sheet = workbook?.Sheets?.['Attribute value mapping'];
+  if (!sheet) return [];
+
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+  const target = String(attributeName || '').trim().toLowerCase();
+  const out = [];
+  const seen = new Set();
+
+  rows.forEach((row, rowIndex) => {
+    if (!Array.isArray(row)) return;
+
+    row.forEach((cell, colIndex) => {
+      const name = String(cell || '').trim().toLowerCase();
+      if (name !== target) return;
+
+      for (let r = rowIndex + 1; r < rows.length; r += 1) {
+        const value = String(rows[r]?.[colIndex] || '').trim();
+        if (!value) continue;
+        if (/^attribute value/i.test(value)) continue;
+
+        const key = value.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(value);
+      }
+    });
+  });
+
+  return out;
+}
+
+function resolveShelfLifeValueFromWorkbook(workbook, value) {
+  const normalized = normalizeShelfLifeValue(value);
+  const candidates = [
+    ...findAttributeMappingValues(workbook, 'shelf lifes'),
+    ...findAttributeMappingValues(workbook, 'shelf life'),
+    ...findAttributeMappingValues(workbook, 'shelf lives'),
+  ];
+
+  if (!candidates.length) return normalized;
+
+  const normalizedKey = String(normalized || '').trim().toLowerCase();
+  const exact = candidates.find((candidate) => String(candidate || '').trim().toLowerCase() === normalizedKey);
+  if (exact) return exact;
+
+  const months = monthsFromShelfLife(normalized);
+  if (months) {
+    const byNumber = candidates.find((candidate) => {
+      const candidateMonths = monthsFromShelfLife(candidate);
+      return candidateMonths === months;
+    });
+    if (byNumber) return byNumber;
+  }
+
+  return normalized;
+}
+
+
 function normalizeShelfLifeValue(value) {
   const raw = String(value || '').trim();
   if (!raw) return raw;
@@ -758,7 +818,7 @@ function normalizeShelfLifeValue(value) {
   return `${months} Months`;
 }
 
-function ensureShelfLifeRequiredValue(requiredValueByHeader) {
+function ensureShelfLifeRequiredValue(requiredValueByHeader, workbook = null) {
   if (!(requiredValueByHeader instanceof Map)) return;
 
   const keys = ['shelf lifes', 'shelf life', 'shelf lives'];
@@ -767,7 +827,7 @@ function ensureShelfLifeRequiredValue(requiredValueByHeader) {
     const item = requiredValueByHeader.get(key);
     if (!item?.value) continue;
 
-    const normalized = normalizeShelfLifeValue(item.value);
+    const normalized = workbook ? resolveShelfLifeValueFromWorkbook(workbook, item.value) : normalizeShelfLifeValue(item.value);
     requiredValueByHeader.set(key, {
       ...item,
       value: normalized,
@@ -1366,7 +1426,7 @@ router.post('/mass-upload/generate-template-files', async (req, res) => {
         item,
       ])
     );
-    ensureShelfLifeRequiredValue(requiredValueByHeader);
+    ensureShelfLifeRequiredValue(requiredValueByHeader, workbook);
     ensureExpiryDateRequiredValue(requiredValueByHeader);
 
     const colByHeader = new Map();

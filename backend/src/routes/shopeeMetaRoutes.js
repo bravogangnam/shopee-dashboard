@@ -715,6 +715,60 @@ async function searchCategoryCatalog({ tenantId, q }) {
     }));
 }
 
+function addMonthsDateString(months, baseDate = new Date()) {
+  const count = Number(months);
+  if (!Number.isFinite(count) || count <= 0) return '';
+
+  const date = new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth(), baseDate.getUTCDate()));
+  date.setUTCMonth(date.getUTCMonth() + Math.trunc(count));
+
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+
+  return `${y}/${m}/${d}`;
+}
+
+function monthsFromShelfLife(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+
+  const match = text.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+
+  const number = Number(match[1]);
+  if (!Number.isFinite(number) || number <= 0) return null;
+
+  if (/year|yr|년/i.test(text)) return Math.round(number * 12);
+  return Math.round(number);
+}
+
+function ensureExpiryDateRequiredValue(requiredValueByHeader) {
+  if (!(requiredValueByHeader instanceof Map)) return;
+
+  const hasExpiryDate = requiredValueByHeader.has('expiry date');
+  if (hasExpiryDate) return;
+
+  const shelfEntry =
+    requiredValueByHeader.get('shelf lifes') ||
+    requiredValueByHeader.get('shelf life') ||
+    requiredValueByHeader.get('shelf lives');
+
+  const months = monthsFromShelfLife(shelfEntry?.value);
+  const expiryDate = addMonthsDateString(months);
+
+  if (!expiryDate) return;
+
+  requiredValueByHeader.set('expiry date', {
+    attributeName: 'Expiry Date',
+    value: expiryDate,
+    columnIndex: 0,
+    requirement: 'auto-derived',
+    rule: 'Date in format YYYY/MM/DD',
+    source: 'auto_from_shelf_life',
+  });
+}
+
 function sendResult(res, result) {
   return res.json(sanitizeObjectForMetaResponse(result || {}));
 }
@@ -1278,6 +1332,7 @@ router.post('/mass-upload/generate-template-files', async (req, res) => {
         item,
       ])
     );
+    ensureExpiryDateRequiredValue(requiredValueByHeader);
 
     const colByHeader = new Map();
     mappingCandidates.forEach((m) => {

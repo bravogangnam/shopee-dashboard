@@ -14,8 +14,8 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 // ─── 미들웨어 ─────────────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '80mb' }));
+app.use(express.urlencoded({ extended: true, limit: process.env.JSON_BODY_LIMIT || '80mb' }));
 app.use(cookieParser());
 
 // CORS 설정

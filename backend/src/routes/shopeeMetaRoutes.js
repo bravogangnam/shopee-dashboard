@@ -51,7 +51,7 @@ const getTenantId = (req) => req?.tenantId ?? req?.user?.tenant_id ?? req?.user?
 const TEMPLATE_ROOT = path.join(process.cwd(), 'storage', 'krsc-templates');
 const SHARED_TEMPLATE_ROOT = path.join(TEMPLATE_ROOT, 'shared');
 const MAX_TEMPLATE_SIZE_BYTES = 15 * 1024 * 1024;
-const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_IMAGE_FILES = 200;
 const GENERATED_ROOT = path.join(process.cwd(), 'storage', 'krsc-generated');
 const IMAGE_ROOT = path.join(process.cwd(), 'storage', 'mass-upload-images');

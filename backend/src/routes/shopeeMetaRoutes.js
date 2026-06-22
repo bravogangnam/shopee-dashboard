@@ -1337,7 +1337,9 @@ router.post('/mass-upload/generate-template-files', async (req, res) => {
       put(rowNo, col('Days to ship'), row.daysToShip);
       put(rowNo, col('Brand'), row.brand);
 
-      if (requiredValueByHeader.size > 0) {
+      // Product global attributes must be written only on the first option row.
+      // Repeating them on every variation row can make Shopee treat the product attribute as missing/invalid.
+      if (row.first && requiredValueByHeader.size > 0) {
         requiredValueByHeader.forEach((requiredValue, normalizedHeader) => {
           const explicitColumn = Number(requiredValue?.columnIndex || 0);
           const targetColumn = explicitColumn > 0 ? explicitColumn : col(normalizedHeader);

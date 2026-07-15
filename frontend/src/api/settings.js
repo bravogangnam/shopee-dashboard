@@ -46,6 +46,12 @@ export function updateShop(shopId, data) {
   });
 }
 
+export function syncShopProfiles() {
+  return apiRequest('/api/settings/shops/sync-profile', {
+    method: 'POST',
+  });
+}
+
 export function fetchTokenStatus() {
   return apiRequest('/api/auth/status');
 }

@@ -14,6 +14,7 @@ const router = express.Router();
 const { requireAuth, requireApprovedTenant, loadTenantAccessContext } = require('../middleware/auth');
 const db = require('../config/database');
 const { testMarginChartSheet, syncMarginChartSheet } = require('../services/tenantMarginChartSync');
+const { syncAllShopProfiles } = require('../services/shopeeShopProfileService');
 const { getCurrentTenantId } = require('../config/tenant');
 require('dotenv').config();
 
@@ -310,10 +311,28 @@ router.post('/google-sheet/chart/sync', async (req, res) => {
 router.get('/shops', async (req, res) => {
   const tenantId = getCurrentTenantId(req);
   const [rows] = await db.query(
-    'SELECT * FROM shops WHERE tenant_id = ? ORDER BY is_active DESC, id ASC',
+    `SELECT *, COALESCE(NULLIF(alias, ''), NULLIF(shop_name, ''), CAST(shop_id AS CHAR)) AS display_name
+     FROM shops
+     WHERE tenant_id = ?
+     ORDER BY is_active DESC, id ASC`,
     [tenantId]
   );
   return res.json({ success: true, data: rows });
+});
+
+router.post('/shops/sync-profile', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const summary = await syncAllShopProfiles({ tenantId });
+  return res.json({
+    success: summary.failed === 0,
+    message: summary.failed > 0
+      ? `샵 정보 동기화가 완료되었습니다. 성공 ${summary.updated}건, 실패 ${summary.failed}건.`
+      : '샵 정보 동기화가 완료되었습니다.',
+    total: summary.total,
+    updated: summary.updated,
+    failed: summary.failed,
+    results: summary.results,
+  });
 });
 
 // ─── 샵 정보 업데이트 ────────────────────────────────────────────

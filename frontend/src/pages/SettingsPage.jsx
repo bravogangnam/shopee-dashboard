@@ -14,6 +14,7 @@ import {
   startBackfill,
   testConnection,
   updateShop,
+  syncShopProfiles,
   fetchGoogleSheetSettings,
   updateGoogleSheetSettings,
   testMarginChartSheet,
@@ -261,6 +262,7 @@ export default function SettingsPage() {
     connection: false,
     backfill: false,
     refresh: false,
+    shopProfileSync: false,
   });
   const [connectionResults, setConnectionResults] = useState(null);
   const [backfillStatus, setBackfillStatus] = useState(null);
@@ -436,6 +438,24 @@ export default function SettingsPage() {
       region: shop.region || '',
       is_active: shop.is_active === undefined ? true : Boolean(Number(shop.is_active)),
     });
+  }
+
+  async function handleSyncShopProfiles() {
+    setLoadingKey('shopProfileSync', true);
+    try {
+      const result = await syncShopProfiles();
+      const failed = Number(result.failed || 0);
+      const updated = Number(result.updated || 0);
+      showMessage(
+        failed > 0 ? 'error' : 'success',
+        result.message || `샵 정보 동기화 완료: 성공 ${updated}건, 실패 ${failed}건`
+      );
+      await loadShops();
+    } catch (err) {
+      showMessage('error', err.message || '샵 정보 동기화에 실패했습니다.');
+    } finally {
+      setLoadingKey('shopProfileSync', false);
+    }
   }
 
   async function handleSaveShop() {
@@ -662,15 +682,22 @@ export default function SettingsPage() {
       </section>
 
       <section className="settings-section">
-        <h2>샵 관리 ({shops.length}개)</h2>
+        <div className="section-header">
+          <h2>샵 관리 ({shops.length}개)</h2>
+          <button type="button" className="btn btn-primary" onClick={handleSyncShopProfiles} disabled={loading.shopProfileSync || loading.shops}>
+            {loading.shopProfileSync ? '동기화 중...' : '샵 정보 동기화'}
+          </button>
+        </div>
         <table className="shop-table">
           <thead>
             <tr>
               <th>Shop ID</th>
-              <th>Alias</th>
+              <th>샵 이름</th>
+              <th>내부 별칭</th>
               <th>Region</th>
-              <th>활성</th>
-              <th>확인</th>
+              <th>연결 상태</th>
+              <th>정보 갱신일</th>
+              <th>편집</th>
             </tr>
           </thead>
           <tbody>
@@ -680,9 +707,11 @@ export default function SettingsPage() {
               return (
                 <tr key={shopId}>
                   <td>{shopId}</td>
+                  <td>{shop.shop_name || shop.alias || shopId || '-'}</td>
                   <td>
                     {isEditing ? (
                       <input
+                        aria-label="내부 별칭"
                         value={editingShop.alias}
                         onChange={event => setEditingShop(current => ({ ...current, alias: event.target.value }))}
                       />
@@ -701,23 +730,17 @@ export default function SettingsPage() {
                         <option value="MY">MY</option>
                         <option value="PH">PH</option>
                         <option value="TW">TW</option>
+                        <option value="TH">TH</option>
+                        <option value="VN">VN</option>
+                        <option value="BR">BR</option>
+                        <option value="MX">MX</option>
                       </select>
                     ) : (
                       <span className={regionClass(shop.region)}>{shop.region || '-'}</span>
                     )}
                   </td>
-                  <td>
-                    {isEditing ? (
-                      <button
-                        type="button"
-                        className={`toggle-switch ${editingShop.is_active ? 'on' : 'off'}`}
-                        onClick={() => setEditingShop(current => ({ ...current, is_active: !current.is_active }))}
-                        aria-label="활성 토글"
-                      />
-                    ) : (
-                      <span>{Number(shop.is_active) ? 'ON' : 'OFF'}</span>
-                    )}
-                  </td>
+                  <td>{Number(shop.is_active) ? (shop.token_status === 'active' ? '연결됨' : '활성/토큰 필요') : '비활성'}</td>
+                  <td>{shop.shop_info_synced_at ? formatDateTime(shop.shop_info_synced_at) : '-'}</td>
                   <td>
                     {isEditing ? (
                       <div className="table-actions">
@@ -733,7 +756,7 @@ export default function SettingsPage() {
             })}
             {!shops.length && (
               <tr>
-                <td colSpan="5" className="empty-cell">등록된 샵이 없습니다.</td>
+                <td colSpan="7" className="empty-cell">등록된 샵이 없습니다.</td>
               </tr>
             )}
           </tbody>

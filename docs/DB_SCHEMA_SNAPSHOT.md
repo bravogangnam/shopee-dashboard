@@ -162,7 +162,9 @@ id	int(11)	NO	PRI	NULL	auto_increment
 tenant_id	bigint(20)	NO		1	
 main_account_id	int(11)	NO		NULL	
 shop_id	bigint(20)	NO	UNI	NULL	
-shop_name	varchar(200)	YES		NULL	
+shop_name	varchar(255)	YES		NULL	
+shop_logo_url	varchar(1000)	YES		NULL	
+shop_info_synced_at	datetime	YES		NULL	
 region	varchar(5)	YES		NULL	
 alias	varchar(50)	YES		NULL	
 is_active	tinyint(1)	YES		0	

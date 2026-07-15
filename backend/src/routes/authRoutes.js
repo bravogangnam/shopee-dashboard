@@ -23,6 +23,7 @@ const {
 } = require('../services/shopeeAuth');
 const db = require('../config/database');
 const { verifyOAuthState } = require('../utils/oauthState');
+const { syncAllShopProfiles } = require('../services/shopeeShopProfileService');
 const { getCurrentTenantId } = require('../config/tenant');
 require('dotenv').config();
 
@@ -535,6 +536,16 @@ router.get('/shopee/callback', async (req, res) => {
       }
     }
     console.log(`[OAuth] shop_id_list=${JSON.stringify(shopIdList)}, shop_sync_summary=${JSON.stringify(shopSyncSummary)}`);
+
+    let profileSyncSummary = { total: 0, updated: 0, failed: 0, results: [] };
+    if (shopIdList.length > 0) {
+      profileSyncSummary = await syncAllShopProfiles({ tenantId, shopIds: shopIdList });
+    }
+    console.log('[OAuth] shop_profile_sync_summary=' + JSON.stringify({
+      discoveredShopCount: shopIdList.length,
+      profileUpdatedCount: profileSyncSummary.updated,
+      profileFailedCount: profileSyncSummary.failed,
+    }));
 
     // 나머지 미인증 shop 확인
     const [allShops] = await db.query(

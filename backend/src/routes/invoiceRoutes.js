@@ -12,6 +12,7 @@ const {
 } = require('../services/jobManager');
 const { runInvoice } = require('../jobs/invoiceWorker');
 const labelStorage = require('../services/labelStorageService');
+const { buildPackingLabelsPdf } = require('../services/packingLabelService');
 
 router.get('/jobs/:jobId/print', async (req, res) => {
   const jobId = String(req.params.jobId || '').trim();
@@ -285,6 +286,39 @@ async function sendInvoiceJobDownload(req, res, jobId) {
   res.setHeader('Cache-Control', 'no-store');
   return res.sendFile(mergedPath);
 }
+
+
+router.post('/packing-labels/test', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const orderSnList = normalizeOrderSnList(req.body);
+
+  if (orderSnList.length === 0) {
+    return res.status(400).json({ success: false, error: '주문 목록이 비어있습니다.' });
+  }
+  if (orderSnList.length > 50) {
+    return res.status(400).json({ success: false, error: '한 번에 최대 50건까지 가능합니다.' });
+  }
+
+  try {
+    const { buffer, tmpPath } = await buildPackingLabelsPdf(orderSnList, { tenantId, writeTmp: true });
+    const suffix = orderSnList.length === 1 ? orderSnList[0] : `${orderSnList.length}-orders`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="test-packing-label-${suffix}.pdf"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.on('finish', () => {
+      if (tmpPath) fs.promises.unlink(tmpPath).catch(() => {});
+    });
+    return res.send(buffer);
+  } catch (err) {
+    const status = err.code === 'TRACKING_NUMBER_MISSING' ? 409 : 400;
+    return res.status(status).json({
+      success: false,
+      code: err.code || 'PACKING_LABEL_FAILED',
+      error: err.message || '테스트 송장 생성에 실패했습니다.',
+      fallback: 'official_invoice',
+    });
+  }
+});
 
 router.post('/jobs', async (req, res) => {
   return startInvoiceJob(req, res);

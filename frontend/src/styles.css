@@ -2697,6 +2697,16 @@ label {
   min-width: 160px;
 }
 
+.max-profit-rate-filter-field {
+  width: 140px;
+  min-width: 140px;
+}
+
+.max-profit-rate-filter-field input {
+  width: 140px;
+  min-width: 140px;
+}
+
 .ledger-confirm-filter-row {
   display: none !important;
 }

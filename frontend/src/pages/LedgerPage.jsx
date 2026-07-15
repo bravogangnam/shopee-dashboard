@@ -21,6 +21,7 @@ const createDefaultFilters = () => ({
   region: '',
   order_status: '',
   order_sn: '',
+  max_profit_rate: '',
   ...getCurrentMonthRange(),
 });
 

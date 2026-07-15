@@ -95,6 +95,16 @@ export default function OrderFilters({
             <option value="settled">확정 {settlementCounts.confirmed.toLocaleString('ko-KR')}건</option>
           </select>
         </label>
+      <label className="filter-field max-profit-rate-filter-field">
+        순이익률 이하(%)
+        <input
+          type="number"
+          step="0.01"
+          value={filters.max_profit_rate ?? ''}
+          onChange={event => setField('max_profit_rate', event.target.value)}
+          placeholder="예: 12"
+        />
+      </label>
       <div className="filter-actions">
         <button type="submit">검색</button>
         <button type="button" className="ghost-button" onClick={onReset}>초기화</button>

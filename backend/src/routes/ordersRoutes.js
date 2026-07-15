@@ -60,6 +60,67 @@ const FIFO_COST_SELECT = `
           END AS product_profit
   `;
 
+const PROFIT_RATE_FILTER_EXPRESSION = `
+  (
+    CASE
+      WHEN (
+        SELECT SUM(a.total_cost)
+        FROM inventory_movements m
+        INNER JOIN inventory_allocations a
+          ON a.tenant_id = m.tenant_id
+         AND a.movement_id = m.id
+        WHERE m.tenant_id = o.tenant_id
+          AND m.order_sn = o.order_sn
+          AND m.shop_id = o.shop_id
+          AND m.movement_type = 'SALE'
+      ) IS NOT NULL
+      AND o.net_profit IS NOT NULL
+        THEN o.net_profit - (
+          (
+            SELECT SUM(a.total_cost)
+            FROM inventory_movements m
+            INNER JOIN inventory_allocations a
+              ON a.tenant_id = m.tenant_id
+             AND a.movement_id = m.id
+            WHERE m.tenant_id = o.tenant_id
+              AND m.order_sn = o.order_sn
+              AND m.shop_id = o.shop_id
+              AND m.movement_type = 'SALE'
+          ) - COALESCE(o.total_cost_price, 0)
+        )
+      ELSE o.net_profit
+    END
+  )
+  /
+  (
+    COALESCE(o.merchandise_subtotal, o.total_amount)
+    *
+    (
+      SELECT er.rate_to_krw
+      FROM exchange_rates er
+      WHERE o.currency COLLATE utf8mb4_general_ci = er.currency
+      LIMIT 1
+    )
+  )
+  * 100
+`;
+
+const SUMMARY_PROFIT_RATE_FILTER_EXPRESSION = `
+  (
+    CASE
+      WHEN fifo.fifo_cost_price IS NOT NULL AND o.net_profit IS NOT NULL
+        THEN o.net_profit - (fifo.fifo_cost_price - COALESCE(o.total_cost_price, 0))
+      ELSE o.net_profit
+    END
+  )
+  /
+  (
+    COALESCE(o.merchandise_subtotal, o.total_amount)
+    * er.rate_to_krw
+  )
+  * 100
+`;
+
 const ORDER_SEARCH_STOP_WORDS = new Set([
   'and', 'or', 'of', 'the', 'a', 'an', 'in', 'on', 'for', 'to', 'with',
   '&', '-', '/', '+'
@@ -147,6 +208,7 @@ router.get('/', async (req, res) => {
     search: searchQuery,
     order_sn: orderSnSearch,
     include_open_backlog,
+    max_profit_rate,
   } = req.query;
 
   const tenantId = getCurrentTenantId(req);
@@ -156,6 +218,15 @@ router.get('/', async (req, res) => {
   const offset = (pageNum - 1) * pageSize;
   const search = String(searchQuery || orderSnSearch || '').trim();
   const searchTerms = buildOrderSearchTerms(search);
+  const hasMaxProfitRate = max_profit_rate !== undefined && String(max_profit_rate).trim() !== '';
+  const maxProfitRate = hasMaxProfitRate ? Number(max_profit_rate) : null;
+
+  if (hasMaxProfitRate && !Number.isFinite(maxProfitRate)) {
+    return res.status(400).json({
+      success: false,
+      error: 'max_profit_rate must be a valid number',
+    });
+  }
 
   // ── 요청 파라미터 로그 ────────────────────────────────────────
   console.log(`[Orders] REQ page=${pageNum} pageSize=${pageSize} offset=${offset} | filters: region=${region||'-'} status=${order_status||'-'} date=${date_from||'-'}~${date_to||'-'} search=${search||'-'}`);
@@ -231,6 +302,31 @@ router.get('/', async (req, res) => {
     const unifiedSearch = buildUnifiedOrderSearchClause(searchTerms, 'o');
     whereClause += unifiedSearch.clause;
     params.push(...unifiedSearch.params);
+  }
+
+  if (hasMaxProfitRate) {
+    whereClause += `
+      AND o.net_profit IS NOT NULL
+      AND COALESCE(o.merchandise_subtotal, o.total_amount) IS NOT NULL
+      AND (
+        SELECT er.rate_to_krw
+        FROM exchange_rates er
+        WHERE o.currency COLLATE utf8mb4_general_ci = er.currency
+        LIMIT 1
+      ) IS NOT NULL
+      AND (
+        COALESCE(o.merchandise_subtotal, o.total_amount)
+        *
+        (
+          SELECT er.rate_to_krw
+          FROM exchange_rates er
+          WHERE o.currency COLLATE utf8mb4_general_ci = er.currency
+          LIMIT 1
+        )
+      ) <> 0
+      AND ${PROFIT_RATE_FILTER_EXPRESSION} <= ?
+    `;
+    params.push(maxProfitRate);
   }
 
   try {
@@ -577,7 +673,15 @@ router.get('/stats', async (req, res) => {
  * Settlement list summary.
  */
 router.get('/summary', async (req, res) => {
-  const { date_from, date_to, region, order_status, order_sn, search: searchQuery } = req.query;
+  const {
+    date_from,
+    date_to,
+    region,
+    order_status,
+    order_sn,
+    search: searchQuery,
+    max_profit_rate,
+  } = req.query;
   const dateFrom = date_from || null;
   const dateTo = date_to || null;
   const regionFilter = region || null;
@@ -585,6 +689,15 @@ router.get('/summary', async (req, res) => {
   const search = String(searchQuery || order_sn || '').trim();
   const searchTerms = buildOrderSearchTerms(search);
   const tenantId = getCurrentTenantId(req);
+  const hasMaxProfitRate = max_profit_rate !== undefined && String(max_profit_rate).trim() !== '';
+  const maxProfitRate = hasMaxProfitRate ? Number(max_profit_rate) : null;
+
+  if (hasMaxProfitRate && !Number.isFinite(maxProfitRate)) {
+    return res.status(400).json({
+      success: false,
+      error: 'max_profit_rate must be a valid number',
+    });
+  }
 
   try {
     const summarySql = `SELECT
@@ -635,14 +748,26 @@ router.get('/summary', async (req, res) => {
          AND (? IS NULL OR o.order_created_at >= ?)
          AND (? IS NULL OR o.order_created_at < DATE_ADD(?, INTERVAL 1 DAY))
          AND (? IS NULL OR o.region = ?)
-         AND (? IS NULL OR o.order_status = ?)`;
+         AND (? IS NULL OR o.order_status = ?)
+         AND (
+           ? IS NULL
+           OR (
+             o.net_profit IS NOT NULL
+             AND COALESCE(o.merchandise_subtotal, o.total_amount) IS NOT NULL
+             AND er.rate_to_krw IS NOT NULL
+             AND (COALESCE(o.merchandise_subtotal, o.total_amount) * er.rate_to_krw) <> 0
+             AND ${SUMMARY_PROFIT_RATE_FILTER_EXPRESSION} <= ?
+           )
+         )`;
 
     const buildSummaryParams = (from, to) => [
-        tenantId,
-        from, from,
+      tenantId,
+      from, from,
       to, to,
       regionFilter, regionFilter,
       statusFilter, statusFilter,
+      hasMaxProfitRate ? maxProfitRate : null,
+      hasMaxProfitRate ? maxProfitRate : null,
     ];
 
     const round2 = value => Math.round(Number(value || 0) * 100) / 100;

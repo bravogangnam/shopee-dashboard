@@ -134,28 +134,6 @@ const EMPTY_COMPOSITION_FORM = {
   note: '',
 };
 
-function ReceiptOverview({ dashboard }) {
-  const summary = dashboard?.summary || {};
-  const cards = [
-    { label: '마이너스 재고', value: `${formatNumber(summary.negative_stock_count)}개`, sub: '즉시 입고 필요' },
-    { label: '품절 SKU', value: `${formatNumber(summary.out_of_stock_count)}개`, sub: '재고 0' },
-    { label: '재고부족 SKU', value: `${formatNumber(summary.low_stock_count)}개`, sub: '부족 기준 이하' },
-    { label: '전체 상품', value: `${formatNumber(summary.total_product_count)}개`, sub: '등록 상품 기준' },
-  ];
-
-  return (
-    <div className="receipt-summary-grid">
-      {cards.map(card => (
-        <div className="receipt-summary-card" key={card.label}>
-          <span>{card.label}</span>
-          <strong>{card.value}</strong>
-          <small>{card.sub}</small>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function StockInTab({ dashboard, reloadDashboard }) {
   const purchaseNeeded = dashboard?.purchase_needed || [];
   const recentReceipts = dashboard?.recent_receipts || [];
@@ -1286,11 +1264,11 @@ export default function ReceiptManagementPage() {
 
       {activeTab === 'stock-in' && (
         <>
-          {loading ? <div className="receipt-card">입고관리 데이터를 불러오는 중입니다.</div> : <ReceiptOverview dashboard={dashboard} />}
-          <StockInTab dashboard={dashboard} reloadDashboard={async () => {
+          {loading && <div className="receipt-card">입고관리 데이터를 불러오는 중입니다.</div>}
+          {!loading && <StockInTab dashboard={dashboard} reloadDashboard={async () => {
             const result = await fetchReceiptDashboard();
             setDashboard(result);
-          }} />
+          }} />}
         </>
       )}
 

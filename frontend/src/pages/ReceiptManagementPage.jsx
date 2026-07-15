@@ -213,6 +213,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
   const stockAfter = selectedProduct ? Number(selectedProduct.stock_quantity || 0) + quantity : null;
 
   const pendingRows = stockReceipts.filter(row => row.status === 'PENDING');
+  const currentHistoryMonth = new Date().toISOString().slice(0, 7);
 
   const selectedSku = selectedProduct?.sku || '';
   const editingReceiptId = editingReceipt?.id || null;
@@ -246,12 +247,15 @@ function StockInTab({ dashboard, reloadDashboard }) {
     setReceiptPage(1);
   }, [recentReceipts.length]);
 
-  async function loadReceiptSummaryAndHistory() {
+  async function loadReceiptSummaryAndHistory(filters = {}) {
+    const month = filters.month ?? historyMonth;
+    const search = filters.search ?? historySearch;
+
     try {
       setReceiptLoading(true);
       const [summaryResult, historyResult] = await Promise.all([
-        fetchStockReceiptSummary({ month: historyMonth }),
-        fetchStockReceiptHistory({ month: historyMonth, q: historySearch }),
+        fetchStockReceiptSummary({ month }),
+        fetchStockReceiptHistory({ month, q: search }),
       ]);
       setReceiptSummary(summaryResult || null);
       setHistoryRows(historyResult.data || []);
@@ -491,6 +495,14 @@ function StockInTab({ dashboard, reloadDashboard }) {
     } finally {
       setReceiptLoading(false);
     }
+  }
+
+
+  function resetReceiptHistoryFilters() {
+    setHistorySearch('');
+    setHistoryMonth(currentHistoryMonth);
+    setReceiptPage(1);
+    loadReceiptSummaryAndHistory({ month: currentHistoryMonth, search: '' });
   }
 
   async function copyText(value, label) {
@@ -833,6 +845,13 @@ function StockInTab({ dashboard, reloadDashboard }) {
             onChange={event => setHistorySearch(event.target.value)}
             placeholder="SKU / 상품명 / 메모 검색"
           />
+          <button
+            type="button"
+            className="receipt-toolbar-button"
+            onClick={resetReceiptHistoryFilters}
+          >
+            초기화
+          </button>
           <span>{receiptLoading ? '검색 중...' : `검색 결과 ${formatNumber(historyRows.length)}건`}</span>
         </div>
 
@@ -853,11 +872,28 @@ function StockInTab({ dashboard, reloadDashboard }) {
               </tr>
             </thead>
             <tbody>
-              {pagedReceipts.length ? pagedReceipts.map(row => (
+              {pagedReceipts.length ? pagedReceipts.map(row => {
+                const skuText = String(row.sku || '').trim();
+                const productName = String(row.product_name_kr || row.product_name_en || '').trim();
+                return (
                 <tr key={row.id}>
                   <td>{formatDate(row.received_at || row.created_at)}</td>
-                  <td><strong>{row.sku}</strong></td>
-                  <td>{row.product_name_kr || row.product_name_en || '-'}</td>
+                  <td>
+                    <div className="receipt-copy-cell receipt-history-copy-cell">
+                      <strong>{skuText || '-'}</strong>
+                      {skuText ? (
+                        <button type="button" className="receipt-copy-button" onClick={() => copyText(skuText, 'SKU')} title="SKU 복사" aria-label="SKU 복사">📋</button>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="receipt-copy-cell receipt-history-copy-cell receipt-history-product-cell">
+                      <span className="receipt-product-name" title={productName || ''}>{productName || '-'}</span>
+                      {productName ? (
+                        <button type="button" className="receipt-copy-button" onClick={() => copyText(productName, '상품명')} title="상품명 복사" aria-label="상품명 복사">📋</button>
+                      ) : null}
+                    </div>
+                  </td>
                   <td>{formatNumber(row.initial_qty)}</td>
                   <td>{formatNumber(row.remaining_qty)}</td>
                   <td>{formatKrw(row.unit_cost)}</td>
@@ -870,7 +906,8 @@ function StockInTab({ dashboard, reloadDashboard }) {
                     </button>
                   </td>
                 </tr>
-              )) : (
+                );
+              }) : (
                 <tr>
                   <td colSpan="10" className="receipt-empty">입고 이력이 없습니다.</td>
                 </tr>

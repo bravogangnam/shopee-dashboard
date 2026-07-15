@@ -3586,6 +3586,22 @@ label {
   max-width: 420px;
 }
 
+.receipt-toolbar-button {
+  border: 1px solid #dbe3ef;
+  background: #ffffff;
+  color: #334155;
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.receipt-toolbar-button:hover {
+  background: #f8fafc;
+}
+
 .receipt-toolbar span {
   color: #64748b;
   font-size: 13px;
@@ -4141,13 +4157,27 @@ label {
   min-width: 0;
 }
 
+.receipt-history-copy-cell {
+  max-width: 260px;
+}
+
+.receipt-history-product-cell {
+  max-width: 320px;
+}
+
+.receipt-history-copy-cell .receipt-product-name {
+  max-width: 260px;
+}
+
 .receipt-copy-button {
   border: 1px solid #dbeafe;
   background: #f8fbff;
   color: #2563eb;
   border-radius: 8px;
+  min-width: 28px;
+  min-height: 26px;
   padding: 3px 7px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
 }

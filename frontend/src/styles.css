@@ -3113,7 +3113,34 @@ label {
   line-height: 1.5;
 }
 
-.product-capture-page .card{background:#fff;border:1px solid #dde3ec;border-radius:8px;padding:12px;margin-top:12px}.product-capture-page .table-wrap{max-height:320px;overflow:auto}.product-capture-page .table{width:100%;border-collapse:collapse}.product-capture-page .table th,.product-capture-page .table td{border:1px solid #e5e7eb;padding:6px}.product-capture-page textarea{width:100%;border:1px solid #d8dee8;border-radius:6px;padding:8px;margin:8px 0}
+.product-capture-page .card{background:#fff;border:1px solid #dde3ec;border-radius:8px;padding:12px;margin-top:12px}.product-capture-page .table-wrap{max-height:320px;overflow:auto}.product-capture-page .table{width:100%;border-collapse:collapse}.product-capture-page .table th,.product-capture-page .table td{border:1px solid #e5e7eb;padding:6px}.product-capture-page textarea{width:100%;min-height:110px;border:1px solid #d8dee8;border-radius:6px;padding:8px;margin:8px 0;resize:vertical}
+
+.product-capture-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.product-capture-paste-actions,
+.product-capture-copy-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.product-capture-reference-panel input {
+  width: 100%;
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+@media (max-width: 900px) {
+  .product-capture-workspace {
+    grid-template-columns: 1fr;
+  }
+}
 
 
 .product-capture-page .bookmarklet-actions {
@@ -3122,25 +3149,6 @@ label {
   gap: 8px;
 }
 
-.product-capture-page .product-list {
-  display: grid;
-  gap: 8px;
-}
-
-.product-capture-page .product-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 8px 10px;
-  background: #fff;
-}
-
-.product-capture-page .product-item.selected {
-  border-color: #93c5fd;
-  background: #eff6ff;
-}
 
 /* Mass Upload stronger stage/readability polish */
 .mass-upload-page {

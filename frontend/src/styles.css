@@ -5062,3 +5062,39 @@ label {
   align-items: center !important;
   justify-content: flex-start !important;
 }
+
+/* Order settlement product thumbnail */
+.order-settlement-product-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.order-settlement-product-thumb {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  object-fit: cover;
+  border: 1px solid #e5e7eb;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.order-settlement-product-info {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.order-settlement-product-info strong,
+.order-settlement-product-info small {
+  display: block;
+}
+
+.order-settlement-product-info strong {
+  line-height: 1.4;
+}
+
+.order-settlement-product-info small {
+  margin-top: 3px;
+}

@@ -52,6 +52,16 @@ function regionClass(region) {
   return `region-badge region-${String(region || '').toLowerCase()}`;
 }
 
+function getItemImageUrl(item) {
+  return (
+    item?.image_info_image_url ||
+    item?.item_image_url ||
+    item?.image_url ||
+    item?.image ||
+    ''
+  );
+}
+
 function getUnitPrice(item) {
   return numeric(item?.model_discounted_price) ?? numeric(item?.model_original_price);
 }
@@ -290,9 +300,22 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
                           <tr key={`${item.item_id || index}-${item.model_id || index}`}>
                             <td>{index + 1}</td>
                             <td>
-                              <strong>{item.item_name || '-'}</strong>
-                              <small>Variation: {item.model_name || '-'}</small>
-                              <small>SKU: {getSku(item)}</small>
+                              <div className="order-settlement-product-cell">
+                                {getItemImageUrl(item) ? (
+                                  <img
+                                    className="order-settlement-product-thumb"
+                                    src={getItemImageUrl(item)}
+                                    alt=""
+                                    loading="lazy"
+                                  />
+                                ) : null}
+
+                                <div className="order-settlement-product-info">
+                                  <strong>{item.item_name || '-'}</strong>
+                                  <small>Variation: {item.model_name || '-'}</small>
+                                  <small>SKU: {getSku(item)}</small>
+                                </div>
+                              </div>
                             </td>
                             <td>{formatMoney(unitPrice, currency)}</td>
                             <td>{quantity ?? '-'}</td>

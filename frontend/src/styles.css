@@ -4956,3 +4956,96 @@ label {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* =========================================================
+   Order Settlement Detail Modal - typography/badge correction
+   ========================================================= */
+
+.order-settlement-modal {
+  font-size: 14px;
+}
+
+.order-settlement-modal .order-settlement-title h2 {
+  font-size: 22px;
+}
+
+.order-settlement-modal .order-settlement-title p {
+  font-size: 14px;
+}
+
+.order-settlement-modal .order-settlement-meta span {
+  font-size: 13px;
+}
+
+.order-settlement-modal .order-settlement-meta strong {
+  font-size: 15px;
+}
+
+.order-settlement-modal .order-settlement-section > h3,
+.order-settlement-modal .order-settlement-finance-card > h3,
+.order-settlement-modal .order-settlement-internal > h3 {
+  font-size: 16px;
+}
+
+.order-settlement-modal .order-settlement-product-table th {
+  font-size: 13px;
+}
+
+.order-settlement-modal .order-settlement-product-table td,
+.order-settlement-modal .order-settlement-product-name {
+  font-size: 14px;
+}
+
+.order-settlement-modal .order-settlement-product-meta {
+  font-size: 13px;
+}
+
+.order-settlement-modal .order-settlement-detail-row span,
+.order-settlement-modal .order-settlement-detail-row strong {
+  font-size: 14px;
+}
+
+.order-settlement-modal .order-settlement-internal-card span {
+  font-size: 13px;
+}
+
+.order-settlement-modal .order-settlement-internal-card strong {
+  font-size: 18px;
+}
+
+.order-settlement-modal .order-settlement-internal-card small {
+  font-size: 11px;
+}
+
+/* Shop / Order Status 배지: 글자 길이만큼만 */
+.order-settlement-modal .order-settlement-meta .shop-badge,
+.order-settlement-modal .order-settlement-meta .status-badge {
+  display: inline-flex !important;
+  align-self: flex-start !important;
+  justify-self: flex-start !important;
+  flex: 0 0 auto !important;
+
+  width: fit-content !important;
+  min-width: 0 !important;
+  max-width: none !important;
+
+  height: auto !important;
+  min-height: 0 !important;
+
+  padding: 4px 9px !important;
+  margin: 0 !important;
+
+  font-size: 12px !important;
+  line-height: 1 !important;
+  font-weight: 600 !important;
+
+  border-radius: 5px !important;
+  white-space: nowrap !important;
+}
+
+/* badge를 감싼 strong이 늘어나더라도 badge 자체는 늘어나지 않게 */
+.order-settlement-modal .order-settlement-meta strong:has(.shop-badge),
+.order-settlement-modal .order-settlement-meta strong:has(.status-badge) {
+  display: block !important;
+  width: auto !important;
+}

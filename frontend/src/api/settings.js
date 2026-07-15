@@ -52,6 +52,13 @@ export function syncShopProfiles() {
   });
 }
 
+
+export function cleanupShippingLabels() {
+  return apiRequest('/api/settings/shipping-labels/cleanup', {
+    method: 'POST',
+  });
+}
+
 export function fetchTokenStatus() {
   return apiRequest('/api/auth/status');
 }

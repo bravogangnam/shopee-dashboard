@@ -3,7 +3,6 @@ import { fetchOrders, fetchStats } from '../api/orders.js';
 import {
   downloadBlob,
   downloadInvoiceJob,
-  downloadTestPackingLabels,
   formatInvoiceJobError,
   getInvoiceJob,
   startInvoiceJob,
@@ -113,7 +112,6 @@ export default function OrderManagementPage() {
   const [selectedOrders, setSelectedOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
-  const [testPackingLabelLoading, setTestPackingLabelLoading] = useState(false);
   const [invoiceJob, setInvoiceJob] = useState(null);
   const [invoicePollingError, setInvoicePollingError] = useState('');
   const [syncLoading, setSyncLoading] = useState(false);
@@ -397,26 +395,6 @@ setMessage('송장 생성 중입니다. 새 창에서 진행 상황을 확인하
   }
 
 
-  async function handleTestPackingLabel(orderSnList) {
-    if (!orderSnList.length) return;
-    setError('');
-    setMessage('');
-    setTestPackingLabelLoading(true);
-    try {
-      const blob = await downloadTestPackingLabels(orderSnList);
-      const suffix = orderSnList.length === 1 ? orderSnList[0] : `${orderSnList.length}-orders`;
-      downloadBlob(blob, `test-packing-label-${suffix}.pdf`);
-      setMessage('테스트 포장 송장 PDF를 열었습니다. 스캔 검증 전에는 공식 송장 대신 사용하지 마세요.');
-    } catch (err) {
-      const message = err.code === 'TRACKING_NUMBER_MISSING'
-        ? 'tracking_number가 없는 주문은 테스트 포장 송장을 만들 수 없습니다. 기존 공식 송장을 사용하세요.'
-        : err.message || '테스트 포장 송장 생성에 실패했습니다.';
-      setError(message);
-    } finally {
-      setTestPackingLabelLoading(false);
-    }
-  }
-
   async function handleInvoiceDownload() {
     if (!invoiceJob?.jobId) return;
     setError('');
@@ -488,15 +466,6 @@ setMessage('송장 생성 중입니다. 새 창에서 진행 상황을 확인하
             disabled={!selectedOrders.length || invoiceLoading || isInvoiceJobActive(invoiceJob)}
           >
             {invoiceLoading || isInvoiceJobActive(invoiceJob) ? '송장 생성 중...' : `송장출력 (${selectedOrders.length})`}
-          </button>
-          <button
-            type="button"
-            className="action-btn"
-            onClick={() => handleTestPackingLabel(selectedOrders)}
-            disabled={!selectedOrders.length || testPackingLabelLoading}
-            title="TEST PACKING LABEL - NOT VERIFIED"
-          >
-            {testPackingLabelLoading ? '테스트 송장 생성 중...' : `테스트 송장 출력 (${selectedOrders.length})`}
           </button>
           <button type="button" className="action-btn" onClick={handleSync} disabled={syncLoading}>
             {syncLoading ? '동기화 중' : '동기화'}

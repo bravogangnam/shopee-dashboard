@@ -19,6 +19,7 @@ import {
   updateGoogleSheetSettings,
   testMarginChartSheet,
   syncMarginChartSheet,
+  cleanupShippingLabels,
 } from '../api/settings.js';
 import { formatDateTime } from '../utils/format.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -263,6 +264,7 @@ export default function SettingsPage() {
     backfill: false,
     refresh: false,
     shopProfileSync: false,
+    shippingLabelCleanup: false,
   });
   const [connectionResults, setConnectionResults] = useState(null);
   const [backfillStatus, setBackfillStatus] = useState(null);
@@ -455,6 +457,27 @@ export default function SettingsPage() {
       showMessage('error', err.message || '샵 정보 동기화에 실패했습니다.');
     } finally {
       setLoadingKey('shopProfileSync', false);
+    }
+  }
+
+
+  async function handleShippingLabelCleanup() {
+    const confirmed = window.confirm('합본 송장과 45일 초과 개별 공식 송장 PDF만 정리합니다. 주문/FIFO/정산/재고 데이터는 삭제하지 않습니다. 계속할까요?');
+    if (!confirmed) return;
+
+    setLoadingKey('shippingLabelCleanup', true);
+    try {
+      const result = await cleanupShippingLabels();
+      const deletedFiles = Number(result.deletedFiles || 0);
+      const failedFiles = Number(result.failedFiles || 0);
+      showMessage(
+        failedFiles > 0 ? 'error' : 'success',
+        result.message || `송장 파일 정리 완료: 삭제 ${deletedFiles}개, 실패 ${failedFiles}개`
+      );
+    } catch (err) {
+      showMessage('error', err.message || '송장 파일 정리에 실패했습니다.');
+    } finally {
+      setLoadingKey('shippingLabelCleanup', false);
     }
   }
 
@@ -679,6 +702,22 @@ export default function SettingsPage() {
             </tbody>
           </table>
         )}
+      </section>
+
+
+      <section className="settings-section">
+        <h2>송장 파일 정리</h2>
+        <p className="settings-help-text">
+          Shopee 공식 개별 송장 PDF는 기본 45일간 보관하고, 합본 송장은 영구 보관하지 않습니다. 이 작업은 송장 PDF 파일만 삭제하며 주문, 상품, FIFO, 재고, 정산 데이터는 삭제하지 않습니다.
+        </p>
+        <button
+          type="button"
+          className="btn btn-outline"
+          onClick={handleShippingLabelCleanup}
+          disabled={loading.shippingLabelCleanup}
+        >
+          {loading.shippingLabelCleanup ? '정리 중...' : '송장 파일 정리 실행'}
+        </button>
       </section>
 
       <section className="settings-section">

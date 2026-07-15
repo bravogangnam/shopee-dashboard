@@ -79,33 +79,6 @@ export async function getInvoiceJobStatus(jobId) {
   return getInvoiceJob(jobId);
 }
 
-export async function downloadTestPackingLabels(orderSnList) {
-  const response = await fetch('/api/invoices/packing-labels/test', {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      ...authHeaders(),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ order_sns: orderSnList }),
-  });
-
-  if (!response.ok) {
-    const contentType = response.headers.get('Content-Type') || '';
-    if (contentType.includes('application/json')) {
-      const payload = await response.json().catch(() => ({}));
-      const error = new Error(formatInvoiceError(payload.error || payload.message || `Request failed: ${response.status}`));
-      error.code = payload.code || payload.error;
-      error.payload = payload;
-      throw error;
-    }
-    const message = await response.text().catch(() => '');
-    throw new Error(formatInvoiceError(message || `Request failed: ${response.status}`));
-  }
-
-  return response.blob();
-}
-
 export async function downloadInvoiceJob(jobId) {
   const response = await fetch(`/api/invoices/jobs/${encodeURIComponent(jobId)}/download`, {
     credentials: 'include',

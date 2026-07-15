@@ -15,6 +15,7 @@ const { requireAuth, requireApprovedTenant, loadTenantAccessContext } = require(
 const db = require('../config/database');
 const { testMarginChartSheet, syncMarginChartSheet } = require('../services/tenantMarginChartSync');
 const { syncAllShopProfiles } = require('../services/shopeeShopProfileService');
+const { cleanupShippingLabelFiles, getRetentionDays } = require('../services/shippingLabelCleanupService');
 const { getCurrentTenantId } = require('../config/tenant');
 require('dotenv').config();
 
@@ -333,6 +334,34 @@ router.post('/shops/sync-profile', async (req, res) => {
     failed: summary.failed,
     results: summary.results,
   });
+});
+
+
+router.post('/shipping-labels/cleanup', async (req, res) => {
+  try {
+    const result = await cleanupShippingLabelFiles();
+    return res.json({
+      success: result.success,
+      message: result.failedFiles > 0
+        ? `송장 파일 정리가 완료되었지만 ${result.failedFiles}개 파일을 삭제하지 못했습니다.`
+        : '송장 파일 정리가 완료되었습니다.',
+      retentionDays: result.retentionDays,
+      cutoffAt: result.cutoffAt,
+      deletedFiles: result.deletedFiles,
+      deletedBytes: result.deletedBytes,
+      failedFiles: result.failedFiles,
+      merged: result.merged,
+      individual: result.individual,
+      errors: result.errors,
+    });
+  } catch (err) {
+    console.error('[Settings] shipping label cleanup failed:', err.message);
+    return res.status(500).json({
+      success: false,
+      error: '송장 파일 정리에 실패했습니다.',
+      retentionDays: getRetentionDays(),
+    });
+  }
 });
 
 // ─── 샵 정보 업데이트 ────────────────────────────────────────────

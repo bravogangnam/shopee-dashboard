@@ -133,6 +133,14 @@ app.listen(PORT, '0.0.0.0', () => {
     console.error('[App] googleSheetSync FAILED to load — product sync disabled:', e.message);
   }
 
+  // 송장 파일 정리 Cron 시작 (하루 1회)
+  try {
+    const { startShippingLabelCleanupJob } = require('./services/shippingLabelCleanupService');
+    startShippingLabelCleanupJob();
+  } catch (e) {
+    console.error('[App] shippingLabelCleanup FAILED to load — label cleanup disabled:', e.message);
+  }
+
   // 비정상 종료된 Job 복구
   const { recoverStaleJobs, recoverStaleInvoiceJobs } = require('./services/jobManager');
   recoverStaleJobs().catch(e => console.error('[App] recoverStaleJobs error:', e.message));

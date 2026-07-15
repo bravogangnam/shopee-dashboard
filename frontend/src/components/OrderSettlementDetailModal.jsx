@@ -64,9 +64,9 @@ function getSku(item) {
   return item?.model_sku || item?.item_sku || '-';
 }
 
-function DetailRows({ rows, currency }) {
+function DetailRows({ rows, currency, tone = '' }) {
   return (
-    <div className="order-settlement-detail-rows">
+    <div className={`order-settlement-detail-rows ${tone ? `tone-${tone}` : ''}`}>
       {rows.map(row => (
         <div
           className={`order-settlement-detail-row ${row.strong ? 'strong' : ''}`}
@@ -82,6 +82,21 @@ function DetailRows({ rows, currency }) {
       ))}
     </div>
   );
+}
+
+function formatPercent(value) {
+  const number = numeric(value);
+  if (number === null) return '-';
+  return `${number.toLocaleString('ko-KR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}%`;
+}
+
+function formatWeight(value) {
+  const number = numeric(value);
+  if (number === null || number <= 0) return null;
+  return `${Math.round(number).toLocaleString('ko-KR')}g`;
 }
 
 export default function OrderSettlementDetailModal({ orderSn, shopId, onClose }) {
@@ -144,6 +159,27 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
 
   const logisticProviderShippingFee =
     order?.actual_shipping_fee ?? order?.shipping_fee ?? null;
+
+  const salesKrw = useMemo(() => {
+    const sales = numeric(order?.merchandise_subtotal ?? order?.total_amount);
+    const rate = numeric(order?.krw_rate);
+    if (sales === null || rate === null || sales * rate === 0) return null;
+    return sales * rate;
+  }, [order]);
+
+  const profitRate = useMemo(() => {
+    const profit = numeric(order?.net_profit);
+    if (profit === null || salesKrw === null) return null;
+    return (profit / salesKrw) * 100;
+  }, [order, salesKrw]);
+
+  const productProfitRate = useMemo(() => {
+    const profit = numeric(order?.product_profit);
+    if (profit === null || salesKrw === null) return null;
+    return (profit / salesKrw) * 100;
+  }, [order, salesKrw]);
+
+  const chargeableWeight = formatWeight(order?.order_chargeable_weight_gram);
 
   return (
     <div className="modal-overlay order-settlement-overlay" onClick={onClose}>
@@ -270,102 +306,124 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
               </div>
             </section>
 
-            <section className="order-settlement-section">
-              <h3>Payment Information</h3>
-              <DetailRows
-                currency={currency}
-                rows={[
-                  { label: 'Merchandise Subtotal', value: order.merchandise_subtotal },
-                  { label: 'Product Price', value: order.merchandise_subtotal },
-                  { label: 'Estimated Shipping Subtotal', value: shippingFeePaidByBuyer },
-                  { label: 'Shipping Fee Paid by Buyer', value: shippingFeePaidByBuyer },
-                  {
-                    label: 'Estimated Shipping Fee Charged by Logistic Provider',
-                    value: logisticProviderShippingFee,
-                  },
-                  {
-                    label: 'Fees & Charges',
-                    value: feeValues,
-                    negative: true,
-                    strong: true,
-                  },
-                  {
-                    label: 'Estimated Order Income',
-                    value: order.escrow_amount,
-                    strong: true,
-                  },
-                  {
-                    label: 'Final Amount',
-                    value: order.escrow_amount,
-                    strong: true,
-                  },
-                ]}
-              />
+            <div className="order-settlement-finance-grid">
+              <section className="order-settlement-finance-card income">
+                <h3>
+                  <span className="order-settlement-section-icon">▣</span>
+                  Income Details
+                </h3>
+                <DetailRows
+                  currency={currency}
+                  tone="income"
+                  rows={[
+                    { label: 'Merchandise Subtotal', value: order.merchandise_subtotal },
+                    { label: 'Estimated Shipping Subtotal', value: shippingFeePaidByBuyer },
+                    { label: 'Shipping Fee Paid by Buyer', value: shippingFeePaidByBuyer },
+                    {
+                      label: 'Estimated Shipping Fee Charged by Logistic Provider',
+                      value: logisticProviderShippingFee,
+                    },
+                    { label: 'Vouchers & Rebates', value: order.voucher_from_seller, negative: true },
+                    { label: 'Fees & Charges', value: feeValues, negative: true },
+                    {
+                      label: 'Estimated Order Income',
+                      value: order.escrow_amount,
+                      strong: true,
+                    },
+                  ]}
+                />
+              </section>
+
+              <section className="order-settlement-finance-card fees">
+                <h3>
+                  <span className="order-settlement-section-icon">▣</span>
+                  Fees & Charges Details
+                </h3>
+                <DetailRows
+                  currency={currency}
+                  tone="fees"
+                  rows={[
+                    { label: 'Commission Fee', value: order.commission_fee, negative: true },
+                    { label: 'Service Fee', value: order.service_fee, negative: true },
+                    { label: 'Transaction Fee', value: order.transaction_fee, negative: true },
+                    {
+                      label: 'Total Fees & Charges',
+                      value: feeValues,
+                      negative: true,
+                      strong: true,
+                    },
+                  ]}
+                />
+              </section>
+
+              <section className="order-settlement-finance-card buyer">
+                <h3>
+                  <span className="order-settlement-section-icon">▣</span>
+                  Buyer Payment
+                </h3>
+                <DetailRows
+                  currency={currency}
+                  tone="buyer"
+                  rows={[
+                    { label: 'Merchandise Subtotal', value: order.merchandise_subtotal },
+                    { label: 'Shipping Fee', value: order.shipping_fee },
+                    { label: 'Shopee Voucher', value: order.voucher_from_shopee, negative: true },
+                    { label: 'Seller Voucher', value: order.voucher_from_seller, negative: true },
+                    {
+                      label: 'Total Buyer Payment',
+                      value: order.buyer_total_amount,
+                      strong: true,
+                    },
+                  ]}
+                />
+              </section>
+            </div>
+
+            <section className="order-settlement-total-bar">
+              <div>
+                <span className="order-settlement-total-icon">▣</span>
+                <strong>Total Buyer Payment</strong>
+              </div>
+              <strong>{formatMoney(order.buyer_total_amount, currency)}</strong>
             </section>
 
-            <section className="order-settlement-section">
-              <h3>Fees & Charges Details</h3>
-              <DetailRows
-                currency={currency}
-                rows={[
-                  { label: 'Commission Fee', value: order.commission_fee, negative: true },
-                  { label: 'Service Fee', value: order.service_fee, negative: true },
-                  { label: 'Transaction Fee', value: order.transaction_fee, negative: true },
-                ]}
-              />
-            </section>
+            <section className="order-settlement-internal">
+              <h3>
+                <span className="order-settlement-internal-icon">▣</span>
+                내부 정산 정보
+              </h3>
 
-            <section className="order-settlement-section">
-              <h3>Buyer Payment</h3>
-              <DetailRows
-                currency={currency}
-                rows={[
-                  {
-                    label: 'Total Buyer Payment',
-                    value: order.buyer_total_amount,
-                    strong: true,
-                  },
-                ]}
-              />
-            </section>
+              <div className={`order-settlement-internal-grid ${chargeableWeight ? 'has-weight' : ''}`}>
+                {chargeableWeight && (
+                  <div className="order-settlement-internal-card weight">
+                    <span>과금 무게</span>
+                    <strong>{chargeableWeight}</strong>
+                    <small>배송 처리 후 확정</small>
+                  </div>
+                )}
 
-            <section className="order-settlement-section">
-              <h3>Vouchers & Rebates Details</h3>
-              <DetailRows
-                currency={currency}
-                rows={[
-                  { label: 'Seller Discount', value: order.seller_discount },
-                  { label: 'Voucher From Seller', value: order.voucher_from_seller },
-                  { label: 'Voucher From Shopee', value: order.voucher_from_shopee },
-                  { label: 'Coins Offset', value: order.coins_offset },
-                ]}
-              />
-            </section>
+                <div className="order-settlement-internal-card">
+                  <span>실제 원가</span>
+                  <strong>{formatKrw(order.total_cost_price)}</strong>
+                </div>
 
-            <section className="order-settlement-section">
-              <h3>Shipping Details</h3>
-              <DetailRows
-                currency={currency}
-                rows={[
-                  { label: 'Shipping Fee', value: order.shipping_fee },
-                  { label: 'Actual Shipping Fee', value: order.actual_shipping_fee },
-                  { label: 'Estimated Shipping Fee', value: order.estimated_shipping_fee },
-                  { label: 'Shipping Fee Discount', value: order.shipping_fee_discount },
-                ]}
-              />
-            </section>
+                <div className="order-settlement-internal-card">
+                  <span>부가세</span>
+                  <strong>{formatKrw(order.total_vat)}</strong>
+                </div>
 
-            <section className="order-settlement-section internal">
-              <h3>내부 정산 정보</h3>
-              <DetailRows
-                currency={currency}
-                rows={[
-                  { label: '실제 원가', value: order.total_cost_price, krw: true },
-                  { label: '부가세', value: order.total_vat, krw: true },
-                  { label: '순이익', value: order.net_profit, krw: true },
-                  { label: '제품 순이익', value: order.product_profit, krw: true },
-                ]}
-              />
+                <div className="order-settlement-internal-card profit">
+                  <span>순이익</span>
+                  <strong>{formatKrw(order.net_profit)}</strong>
+                  <small>순이익률 {formatPercent(profitRate)}</small>
+                </div>
+
+                <div className="order-settlement-internal-card product-profit">
+                  <span>제품 순이익</span>
+                  <strong>{formatKrw(order.product_profit)}</strong>
+                  <small>제품 순이익률 {formatPercent(productProfitRate)}</small>
+                </div>
+              </div>
             </section>
 
             <div className="order-settlement-actions">

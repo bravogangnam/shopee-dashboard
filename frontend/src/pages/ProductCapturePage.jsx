@@ -65,24 +65,45 @@ export default function ProductCapturePage() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
   }
 
-  function applyPaste() {
-    try {
-      const arr = JSON.parse(pasteText);
-      if (!Array.isArray(arr) || !arr.length) throw new Error('JSON 배열이 아닙니다.');
-      arr.forEach((row) => {
-        if (!row['상품명'] && row['상품명'] !== '') throw new Error('상품명 누락');
-        if (row['옵션명'] == null) throw new Error('옵션명 누락');
-        if (row['수집가격'] == null) throw new Error('수집가격 누락');
-      });
+  function parseCaptureRows(text) {
+    const arr = JSON.parse(text);
+    if (!Array.isArray(arr) || !arr.length) throw new Error('JSON 배열이 아닙니다.');
+    arr.forEach((row) => {
+      if (!row['상품명'] && row['상품명'] !== '') throw new Error('상품명 누락');
+      if (row['옵션명'] == null) throw new Error('옵션명 누락');
+      if (row['수집가격'] == null) throw new Error('수집가격 누락');
+    });
+    return arr;
+  }
 
-      const id = `P${String(state.next).padStart(4, '0')}`;
-      const product = buildProductFromRows(arr, id);
-      persist({ products: [product], next: state.next + 1 });
+  function applyCaptureRows(arr) {
+    const existingId = state.products[0]?.id;
+    const id = existingId || `P${String(state.next).padStart(4, '0')}`;
+    const product = buildProductFromRows(arr, id);
+    persist({ products: [product], next: existingId ? state.next : state.next + 1 });
+    setError('');
+    setCopyMessage('붙여넣기 자동 적용 완료');
+  }
+
+  function handlePasteTextChange(nextValue) {
+    setPasteText(nextValue);
+    const text = nextValue.trim();
+
+    if (!text) {
+      persist({ products: [], next: 1 });
       setError('');
-      setCopyMessage('붙여넣기 적용 완료');
-    } catch (e) {
-      setError(`붙여넣기 오류: ${e.message}`);
       setCopyMessage('');
+      return;
+    }
+
+    try {
+      applyCaptureRows(parseCaptureRows(text));
+    } catch (e) {
+      const looksComplete = text.startsWith('[') && text.endsWith(']');
+      if (looksComplete) {
+        setError(`붙여넣기 오류: ${e.message}`);
+        setCopyMessage('');
+      }
     }
   }
 
@@ -157,18 +178,28 @@ export default function ProductCapturePage() {
 
       <div className="product-capture-workspace">
         <section className="card product-capture-paste-panel">
-          <h3>붙여넣기 영역</h3>
-          <textarea rows={3} value={pasteText} onChange={(e) => setPasteText(e.target.value)} placeholder="북마클릿 JSON 결과를 붙여넣으세요." />
+          <h3>상품정보 붙여넣기</h3>
+          <textarea rows={3} value={pasteText} onChange={(e) => handlePasteTextChange(e.target.value)} placeholder="북마클릿 JSON을 붙여넣으세요. 붙여넣으면 자동으로 적용됩니다." />
           <div className="product-capture-paste-actions">
-            <button type="button" className="action-btn primary" onClick={applyPaste}>붙여넣기 적용</button>
             <button type="button" className="action-btn" onClick={resetAll}>전체 초기화</button>
           </div>
         </section>
 
         <section className="card product-capture-reference-panel">
-          <h3>전체 기준표</h3>
+          <div className="product-capture-panel-header">
+            <h3>수집 결과</h3>
+            <div className="product-capture-result-actions">
+              <button type="button" className="action-btn" onClick={copyNamesAndOptions} disabled={!tableRows.length}>상품명+옵션명 복사</button>
+              <button type="button" className="action-btn" onClick={copyPrices} disabled={!tableRows.length}>가격 복사</button>
+            </div>
+          </div>
           <div className="table-wrap">
-            <table className="table">
+            <table className="table product-capture-result-table">
+              <colgroup>
+                <col className="product-capture-name-col" />
+                <col className="product-capture-option-col" />
+                <col className="product-capture-price-col" />
+              </colgroup>
               <thead>
                 <tr><th>상품명</th><th>옵션명</th><th>가격</th></tr>
               </thead>
@@ -180,7 +211,7 @@ export default function ProductCapturePage() {
                     <td><input value={row.price} onChange={(e) => updateRow(row.productId, row.rowIndex, { price: e.target.value })} /></td>
                   </tr>
                 )) : (
-                  <tr><td colSpan="3" className="empty-cell">붙여넣기 적용 후 기준표가 표시됩니다.</td></tr>
+                  <tr><td colSpan="3" className="empty-cell">북마클릿 JSON을 붙여넣으면 수집 결과가 자동 표시됩니다.</td></tr>
                 )}
               </tbody>
             </table>
@@ -191,11 +222,6 @@ export default function ProductCapturePage() {
       {error && <div className="alert">{error}</div>}
       {copyMessage && <div className="notice">{copyMessage}</div>}
 
-      <div className="card product-capture-copy-card">
-        <h3>복사 버튼</h3>
-        <button type="button" className="action-btn" onClick={copyNamesAndOptions} disabled={!tableRows.length}>상품명+옵션명 복사</button>
-        <button type="button" className="action-btn" onClick={copyPrices} disabled={!tableRows.length}>가격 복사</button>
-      </div>
     </section>
   );
 }

@@ -5098,3 +5098,15 @@ label {
 .order-settlement-product-info small {
   margin-top: 3px;
 }
+
+/* Enlarge settlement product thumbnail */
+.order-settlement-product-thumb {
+  width: 64px !important;
+  height: 64px !important;
+  flex: 0 0 64px !important;
+}
+
+.order-settlement-product-cell {
+  gap: 14px !important;
+  align-items: center !important;
+}

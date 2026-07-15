@@ -179,7 +179,11 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
     return (profit / salesKrw) * 100;
   }, [order, salesKrw]);
 
-  const chargeableWeight = formatWeight(order?.order_chargeable_weight_gram);
+  const chargeableWeight = formatWeight(
+    order?.order_chargeable_weight_gram
+    ?? order?.chargeable_weight_gram
+    ?? order?.chargeable_weight
+  );
 
   return (
     <div className="modal-overlay order-settlement-overlay" onClick={onClose}>
@@ -394,13 +398,15 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
               </h3>
 
               <div className={`order-settlement-internal-grid ${chargeableWeight ? 'has-weight' : ''}`}>
-                {chargeableWeight && (
-                  <div className="order-settlement-internal-card weight">
-                    <span>과금 무게</span>
-                    <strong>{chargeableWeight}</strong>
-                    <small>배송 처리 후 확정</small>
-                  </div>
-                )}
+                <div className="order-settlement-internal-card weight">
+                  <span>과금 무게</span>
+                  <strong>{chargeableWeight ?? '-'}</strong>
+                  <small>
+                    {chargeableWeight
+                      ? '배송 확정 무게'
+                      : '배송 처리 후 표시'}
+                  </small>
+                </div>
 
                 <div className="order-settlement-internal-card">
                   <span>실제 원가</span>

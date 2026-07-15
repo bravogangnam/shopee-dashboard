@@ -4782,3 +4782,80 @@ label {
     grid-template-columns: 1fr;
   }
 }
+
+/* Order settlement modal quick layout fix */
+.order-settlement-modal {
+  width: min(1380px, calc(100vw - 32px)) !important;
+}
+
+.order-settlement-meta {
+  grid-template-columns:
+    minmax(180px, 1.2fr)
+    minmax(130px, 0.8fr)
+    minmax(160px, 0.9fr)
+    minmax(130px, 0.7fr)
+    minmax(180px, 1fr) !important;
+}
+
+.order-settlement-meta > div {
+  padding: 11px 13px !important;
+}
+
+.order-settlement-meta strong {
+  font-size: 14px !important;
+}
+
+.order-settlement-meta .shop-badge,
+.order-settlement-meta .status-badge {
+  display: inline-flex !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  min-height: 22px !important;
+  padding: 2px 9px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 5px !important;
+  font-size: 11px !important;
+  line-height: 16px !important;
+  white-space: nowrap !important;
+  vertical-align: middle !important;
+}
+
+.order-settlement-meta .shop-badge {
+  justify-content: flex-start !important;
+}
+
+.order-settlement-product-table {
+  min-width: 960px !important;
+}
+
+.order-settlement-product-table th:nth-child(2),
+.order-settlement-product-table td:nth-child(2) {
+  width: auto !important;
+}
+
+.order-settlement-product-table th:nth-child(3),
+.order-settlement-product-table td:nth-child(3) {
+  width: 140px !important;
+}
+
+.order-settlement-product-table th:nth-child(4),
+.order-settlement-product-table td:nth-child(4) {
+  width: 100px !important;
+}
+
+.order-settlement-product-table th:nth-child(5),
+.order-settlement-product-table td:nth-child(5) {
+  width: 140px !important;
+}
+
+@media (max-width: 1000px) {
+  .order-settlement-modal {
+    width: calc(100vw - 20px) !important;
+  }
+
+  .order-settlement-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}

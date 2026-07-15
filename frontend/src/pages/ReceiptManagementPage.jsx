@@ -847,6 +847,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
                 <th>남은수량</th>
                 <th>VAT 제외 원가</th>
                 <th>VAT 포함 입력가</th>
+                <th>공급처</th>
                 <th>메모</th>
                 <th>작업</th>
               </tr>
@@ -861,6 +862,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
                   <td>{formatNumber(row.remaining_qty)}</td>
                   <td>{formatKrw(row.unit_cost)}</td>
                   <td>{formatKrw(row.source_unit_cost || Number(row.unit_cost || 0) * 1.1)}</td>
+                  <td><span className="receipt-supplier-cell" title={row.supplier || ''}>{row.supplier || '-'}</span></td>
                   <td>{row.note || '-'}</td>
                   <td>
                     <button type="button" className="receipt-inline-button" onClick={() => handleEditBatchCost(row)}>
@@ -870,7 +872,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="9" className="receipt-empty">입고 이력이 없습니다.</td>
+                  <td colSpan="10" className="receipt-empty">입고 이력이 없습니다.</td>
                 </tr>
               )}
             </tbody>

@@ -383,6 +383,7 @@ router.get('/dashboard', async (req, res) => {
        b.remaining_qty,
        b.unit_cost,
        b.source_unit_cost,
+       COALESCE(NULLIF(b.supplier, ''), NULLIF(r.supplier, '')) AS supplier,
        b.conversion_factor,
        b.note,
        b.sheet_row,
@@ -391,6 +392,9 @@ router.get('/dashboard', async (req, res) => {
      LEFT JOIN products p
        ON p.tenant_id = b.tenant_id
       AND p.sku COLLATE utf8mb4_unicode_ci = b.sku COLLATE utf8mb4_unicode_ci
+     LEFT JOIN stock_receipts r
+       ON r.tenant_id = b.tenant_id
+      AND r.receipt_code = b.receipt_id
      WHERE b.tenant_id = ?
      ORDER BY COALESCE(b.received_at, b.created_at) DESC, b.id DESC
      LIMIT 200`,
@@ -586,11 +590,13 @@ router.get('/stock-receipts/history', async (req, res) => {
       b.receipt_id LIKE ?
       OR b.sku LIKE ?
       OR b.note LIKE ?
+      OR b.supplier LIKE ?
+      OR r.supplier LIKE ?
       OR p.product_name_kr LIKE ?
       OR p.product_name_en LIKE ?
       OR p.option_name LIKE ?
     )`;
-    params.push(keyword, keyword, keyword, keyword, keyword, keyword);
+    params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword);
   }
 
   const [rows] = await db.query(
@@ -608,6 +614,7 @@ router.get('/stock-receipts/history', async (req, res) => {
        b.remaining_qty,
        b.unit_cost,
        b.source_unit_cost,
+       COALESCE(NULLIF(b.supplier, ''), NULLIF(r.supplier, '')) AS supplier,
        b.conversion_factor,
        b.note,
        b.sheet_row,
@@ -616,6 +623,9 @@ router.get('/stock-receipts/history', async (req, res) => {
      LEFT JOIN products p
        ON p.tenant_id = b.tenant_id
       AND p.sku COLLATE utf8mb4_unicode_ci = b.sku COLLATE utf8mb4_unicode_ci
+     LEFT JOIN stock_receipts r
+       ON r.tenant_id = b.tenant_id
+      AND r.receipt_code = b.receipt_id
      ${where}
      ORDER BY COALESCE(b.received_at, b.created_at) DESC, b.id DESC
      LIMIT 500`,
@@ -1088,8 +1098,8 @@ async function completeStockReceipt(conn, receipt, { tenantId }) {
     `INSERT INTO inventory_batches
        (tenant_id, receipt_id, receipt_no, source_sku, sku, received_at,
         receipt_type, initial_qty, remaining_qty, unit_cost, source_unit_cost,
-        conversion_factor, note, sheet_row)
-     VALUES (?, ?, NULL, ?, ?, ?, 'DASHBOARD', ?, ?, ?, ?, 1.0000, ?, NULL)`,
+        supplier, conversion_factor, note, sheet_row)
+     VALUES (?, ?, NULL, ?, ?, ?, 'DASHBOARD', ?, ?, ?, ?, ?, 1.0000, ?, NULL)`,
     [
       tenantId,
       receipt.receipt_code,
@@ -1100,6 +1110,7 @@ async function completeStockReceipt(conn, receipt, { tenantId }) {
       receipt.quantity,
       receipt.unit_cost,
       receipt.unit_price_vat_included,
+      receipt.supplier || null,
       stockInNote,
     ]
   );

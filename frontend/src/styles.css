@@ -3603,6 +3603,16 @@ label {
   color: #64748b;
 }
 
+
+.receipt-supplier-cell {
+  display: inline-block;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
 .receipt-pill {
   display: inline-flex;
   align-items: center;

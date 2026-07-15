@@ -7,3 +7,4 @@
 - Updated settings shop management UI to show Shop ID, Shopee shop name, internal alias, region, connection status, sync timestamp, and a manual profile sync button.
 - Removed the experimental self-generated Code 128 packing label flow; official Shopee invoice output remains the only active invoice path.
 - Added manual and daily cleanup for invoice PDF files: merged PDFs are removed, and individual official Shopee invoice PDFs older than `SHIPPING_LABEL_RETENTION_DAYS` are deleted with a safe 45-day default.
+- Added supplier display for recent receipt history and a safe migration for `inventory_batches.supplier`.

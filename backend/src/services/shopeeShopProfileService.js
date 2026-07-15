@@ -2,7 +2,6 @@ const db = require('../config/database');
 const { CURRENT_TENANT_ID } = require('../config/tenant');
 const { buildUrl } = require('../utils/shopeeSignature');
 const { callWithRetry, shopeeAxios } = require('../utils/apiWrapper');
-const { getOrRefreshShopToken } = require('./shopeeAuth');
 
 const PROFILE_PATH = '/api/v2/shop/get_profile';
 const SHOP_INFO_PATH = '/api/v2/shop/get_shop_info';
@@ -61,6 +60,7 @@ async function syncShopProfile({ tenantId = CURRENT_TENANT_ID, shopId, accessTok
       return { shop_id: shopIdText, success: false, error: 'Shop not found for tenant' };
     }
 
+    const { getOrRefreshShopToken } = require('./shopeeAuth');
     const token = accessToken || await getOrRefreshShopToken(shopIdText, { tenantId });
     if (!token) {
       return { shop_id: shopIdText, success: false, error: 'No active shop access token' };

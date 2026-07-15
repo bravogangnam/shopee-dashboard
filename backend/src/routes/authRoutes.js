@@ -538,8 +538,13 @@ router.get('/shopee/callback', async (req, res) => {
     console.log(`[OAuth] shop_id_list=${JSON.stringify(shopIdList)}, shop_sync_summary=${JSON.stringify(shopSyncSummary)}`);
 
     let profileSyncSummary = { total: 0, updated: 0, failed: 0, results: [] };
-    if (shopIdList.length > 0) {
-      profileSyncSummary = await syncAllShopProfiles({ tenantId, shopIds: shopIdList });
+    try {
+      if (shopIdList.length > 0) {
+        profileSyncSummary = await syncAllShopProfiles({ tenantId, shopIds: shopIdList });
+      }
+    } catch (profileErr) {
+      profileSyncSummary = { total: shopIdList.length, updated: 0, failed: shopIdList.length, results: [] };
+      console.warn(`[OAuth] shop profile sync skipped after token save: ${profileErr.message}`);
     }
     console.log('[OAuth] shop_profile_sync_summary=' + JSON.stringify({
       discoveredShopCount: shopIdList.length,

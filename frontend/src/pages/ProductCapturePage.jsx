@@ -182,16 +182,14 @@ export default function ProductCapturePage() {
           <textarea rows={3} value={pasteText} onChange={(e) => handlePasteTextChange(e.target.value)} placeholder="북마클릿 JSON을 붙여넣으세요. 붙여넣으면 자동으로 적용됩니다." />
           <div className="product-capture-paste-actions">
             <button type="button" className="action-btn" onClick={resetAll}>전체 초기화</button>
+            <button type="button" className="action-btn" onClick={copyNamesAndOptions} disabled={!tableRows.length}>상품명+옵션명 복사</button>
+            <button type="button" className="action-btn" onClick={copyPrices} disabled={!tableRows.length}>가격 복사</button>
           </div>
         </section>
 
         <section className="card product-capture-reference-panel">
           <div className="product-capture-panel-header">
             <h3>수집 결과</h3>
-            <div className="product-capture-result-actions">
-              <button type="button" className="action-btn" onClick={copyNamesAndOptions} disabled={!tableRows.length}>상품명+옵션명 복사</button>
-              <button type="button" className="action-btn" onClick={copyPrices} disabled={!tableRows.length}>가격 복사</button>
-            </div>
           </div>
           <div className="table-wrap">
             <table className="table product-capture-result-table">

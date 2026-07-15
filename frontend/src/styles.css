@@ -3122,8 +3122,7 @@ label {
   align-items: start;
 }
 
-.product-capture-paste-actions,
-.product-capture-result-actions {
+.product-capture-paste-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -3142,9 +3141,6 @@ label {
   margin: 0;
 }
 
-.product-capture-result-actions {
-  justify-content: flex-end;
-}
 
 .product-capture-name-col {
   width: 50%;

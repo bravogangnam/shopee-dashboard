@@ -4859,3 +4859,100 @@ label {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
+
+/* =========================================================
+   Order Settlement Detail Modal - width/card size correction
+   ========================================================= */
+
+.order-settlement-modal.modal-content {
+  width: min(1480px, calc(100vw - 40px)) !important;
+  max-width: 1480px !important;
+}
+
+.order-settlement-modal .order-settlement-meta {
+  grid-template-columns: 1.15fr 0.75fr 0.95fr 0.65fr 1fr;
+}
+
+.order-settlement-modal .order-settlement-meta > div {
+  padding: 10px 12px;
+}
+
+.order-settlement-modal .order-settlement-meta .shop-badge,
+.order-settlement-modal .order-settlement-meta .status-badge {
+  display: inline-flex !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: max-content !important;
+  height: 22px !important;
+  min-height: 22px !important;
+  padding: 2px 9px !important;
+  border-radius: 5px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+}
+
+.order-settlement-modal .order-settlement-finance-grid {
+  grid-template-columns: minmax(0, 1.55fr) minmax(360px, 0.75fr);
+  gap: 18px;
+}
+
+.order-settlement-modal .order-settlement-internal {
+  padding: 16px 18px;
+}
+
+.order-settlement-modal .order-settlement-internal-grid,
+.order-settlement-modal .order-settlement-internal-grid.has-weight {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.order-settlement-modal .order-settlement-internal-card {
+  min-height: 0 !important;
+  padding: 11px 14px !important;
+}
+
+.order-settlement-modal .order-settlement-internal-card span {
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+
+.order-settlement-modal .order-settlement-internal-card strong {
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.order-settlement-modal .order-settlement-internal-card small {
+  margin-top: 5px;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+@media (max-width: 1100px) {
+  .order-settlement-modal.modal-content {
+    width: calc(100vw - 24px) !important;
+  }
+
+  .order-settlement-modal .order-settlement-finance-grid {
+    grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  }
+
+  .order-settlement-modal .order-settlement-internal-grid,
+  .order-settlement-modal .order-settlement-internal-grid.has-weight {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 850px) {
+  .order-settlement-modal .order-settlement-finance-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .order-settlement-modal .order-settlement-internal-grid,
+  .order-settlement-modal .order-settlement-internal-grid.has-weight {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -1,5 +1,6 @@
 # Changelog
 
+- Removed the Shopee Dashboard Mass Upload / KRSC feature, including its frontend route/menu, backend shopee-meta runtime routes, dedicated source files, CSS, and xlsx dependencies. Product Capture and the separate Mass Upload Tool repository are unchanged.
 ## Unreleased
 
 - Added Shopee shop profile sync after OAuth shop token registration and via `POST /api/settings/shops/sync-profile`.

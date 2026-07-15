@@ -10,7 +10,6 @@ import OrderManagementPage from './pages/OrderManagementPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import ProductCapturePage from './pages/ProductCapturePage.jsx';
-import MassUploadPage from './pages/MassUploadPage.jsx';
 
 export default function App() {
   return (
@@ -27,7 +26,6 @@ export default function App() {
           <Route path="/receipts" element={<ReceiptManagementPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/product-capture" element={<ProductCapturePage />} />
-          <Route path="/mass-upload" element={<MassUploadPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/settings/rates" element={<Navigate to="/settings" replace />} />
           <Route path="/settings/*" element={<Navigate to="/settings" replace />} />

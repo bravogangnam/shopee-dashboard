@@ -6,6 +6,7 @@ import 'antd/dist/reset.css';
 import { fetchDailySales, fetchOrders, fetchSummary } from '../api/orders.js';
 import DailySalesChart from '../components/DailySalesChart.jsx';
 import OrderFilters from '../components/OrderFilters.jsx';
+import OrderSettlementDetailModal from '../components/OrderSettlementDetailModal.jsx';
 import OrderTable from '../components/OrderTable.jsx';
 import Pagination from '../components/Pagination.jsx';
 import { formatKrw, formatNumber } from '../utils/format.js';
@@ -105,6 +106,7 @@ export default function LedgerPage() {
   const [chartLoading, setChartLoading] = useState(false);
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [detailOrder, setDetailOrder] = useState(null);
 
   const queryKey = useMemo(() => JSON.stringify(query), [query]);
 
@@ -292,8 +294,17 @@ export default function LedgerPage() {
           <OrderTable
             orders={filteredOrders}
             loading={loading}
+            onOrderDetail={order => setDetailOrder(order)}
           />
         <Pagination pagination={pagination} onPageChange={handlePageChange} />
+
+        {detailOrder && (
+          <OrderSettlementDetailModal
+            orderSn={detailOrder.order_sn}
+            shopId={detailOrder.shop_id}
+            onClose={() => setDetailOrder(null)}
+          />
+        )}
       </section>
     </ConfigProvider>
   );

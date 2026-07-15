@@ -24,3 +24,12 @@ export async function fetchDailySales(month) {
     data: result.data || [],
   };
 }
+
+
+export function fetchOrderDetail(orderSn, shopId) {
+  const params = {};
+  if (shopId !== null && shopId !== undefined && shopId !== '') {
+    params.shop_id = shopId;
+  }
+  return apiRequest(`/api/orders/${encodeURIComponent(orderSn)}${buildQuery(params)}`);
+}

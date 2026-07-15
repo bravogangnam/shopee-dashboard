@@ -48,7 +48,7 @@ function isCancelledOrder(order) {
   return (order?.display_status || order?.order_status) === 'CANCELLED';
 }
 
-export default function OrderTable({ orders, loading }) {
+export default function OrderTable({ orders, loading, onOrderDetail }) {
   if (loading) {
     return <div className="table-state">주문을 불러오는 중...</div>;
   }
@@ -102,6 +102,22 @@ export default function OrderTable({ orders, loading }) {
               ));
             };
 
+            const renderProductLines = () => {
+              if (!items.length) return '-';
+              return items.map((item, index) => (
+                <button
+                  type="button"
+                  key={`product-${item.item_id || index}-${item.model_id || ''}`}
+                  className="item-line truncate order-product-detail-button"
+                  title={item.item_name || ''}
+                  aria-label={`${order.order_sn} ${item.item_name || '상품'} 주문 정산 상세 보기`}
+                  onClick={() => onOrderDetail(order)}
+                >
+                  {item.item_name || '-'}
+                </button>
+              ));
+            };
+
             const renderQuantityLines = () => {
               if (!items.length) return quantity;
               return items.map((item, index) => (
@@ -131,7 +147,7 @@ export default function OrderTable({ orders, loading }) {
                   <span className={regionClass(order.region)}>{region}</span>
                 </td>
                 <td><span className={statusClass(getDisplayStatus(order))}>{getDisplayStatus(order)}</span></td>
-                <td>{renderItemLines('item_name', 'truncate')}</td>
+                <td>{renderProductLines()}</td>
                 <td>{renderItemLines('model_name', 'truncate-short')}</td>
                 <td className="num">{renderQuantityLines()}</td>
                 <td className="num">{order.order_chargeable_weight_gram ?? "-"}</td>

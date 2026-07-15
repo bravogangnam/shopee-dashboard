@@ -1722,11 +1722,6 @@ label {
   width: 95px;
 }
 
-.order-management-table th:nth-child(9),
-.order-management-table td:nth-child(9) {
-  width: 60px;
-}
-
 .order-management-table .truncate,
 .order-management-table .truncate-short {
   max-width: none;
@@ -1831,25 +1826,6 @@ label {
 
 .modal-close:hover {
   color: #0f172a;
-}
-
-.fee-detail-btn {
-  background: none;
-  border: 1px solid #cbd5e1;
-  border-radius: 50%;
-  width: 28px;
-  height: 28px;
-  cursor: pointer;
-  font-size: 14px;
-  color: #3b82f6;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.fee-detail-btn:hover {
-  background: #eff6ff;
-  border-color: #3b82f6;
 }
 
 .fee-modal-title {
@@ -4120,4 +4096,245 @@ label {
   object-fit: contain;
   border-radius: 14px;
   background: #f8fafc;
+}
+
+
+/* Shared order settlement detail modal */
+.order-product-detail-button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.order-product-detail-button:hover {
+  text-decoration: underline;
+}
+
+.order-product-detail-button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.order-settlement-overlay {
+  z-index: 1200;
+}
+
+.order-settlement-modal {
+  width: min(900px, calc(100vw - 32px));
+  max-width: 900px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  padding: 26px;
+}
+
+.order-settlement-title {
+  padding-right: 44px;
+  margin-bottom: 18px;
+}
+
+.order-settlement-title h2 {
+  margin: 0 0 5px;
+  font-size: 22px;
+}
+
+.order-settlement-title p {
+  margin: 0;
+  color: #667085;
+}
+
+.order-settlement-state {
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.order-settlement-state.error {
+  color: #b42318;
+}
+
+.order-settlement-meta {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.order-settlement-meta > div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.order-settlement-meta span {
+  display: block;
+  margin-bottom: 5px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.order-settlement-meta strong {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.order-settlement-section {
+  margin-top: 22px;
+}
+
+.order-settlement-section h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.order-settlement-section.internal {
+  padding-top: 16px;
+  border-top: 2px solid #e4e7ec;
+}
+
+.order-settlement-product-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+}
+
+.order-settlement-product-table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.order-settlement-product-table .col-no {
+  width: 52px;
+}
+
+.order-settlement-product-table .col-product {
+  width: auto;
+}
+
+.order-settlement-product-table .col-price,
+.order-settlement-product-table .col-subtotal {
+  width: 130px;
+}
+
+.order-settlement-product-table .col-quantity {
+  width: 90px;
+}
+
+.order-settlement-product-table th,
+.order-settlement-product-table td {
+  padding: 12px;
+  border-bottom: 1px solid #e4e7ec;
+  text-align: right;
+  vertical-align: top;
+}
+
+.order-settlement-product-table th:first-child,
+.order-settlement-product-table td:first-child {
+  text-align: center;
+}
+
+.order-settlement-product-table th:nth-child(2),
+.order-settlement-product-table td:nth-child(2) {
+  text-align: left;
+}
+
+.order-settlement-product-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.order-settlement-product-table td strong,
+.order-settlement-product-table td small {
+  display: block;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.order-settlement-product-table td small {
+  margin-top: 4px;
+  color: #667085;
+}
+
+.order-settlement-detail-rows {
+  overflow: hidden;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+}
+
+.order-settlement-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 45px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e4e7ec;
+}
+
+.order-settlement-detail-row:last-child {
+  border-bottom: 0;
+}
+
+.order-settlement-detail-row > span {
+  color: #475467;
+}
+
+.order-settlement-detail-row > strong {
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.order-settlement-detail-row.strong {
+  background: #f9fafb;
+  font-size: 15px;
+}
+
+.order-settlement-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+@media (max-width: 900px) {
+  .order-settlement-modal {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+    padding: 20px;
+  }
+
+  .order-settlement-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .order-settlement-detail-row {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 520px) {
+  .order-settlement-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .order-settlement-detail-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+
+  .order-settlement-detail-row > strong {
+    text-align: left;
+  }
 }

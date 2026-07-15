@@ -957,9 +957,21 @@ router.get('/daily-sales', async (req, res) => {
 router.get('/:orderSn', async (req, res) => {
   const { orderSn } = req.params;
   const tenantId = getCurrentTenantId(req);
+  const shopId = req.query.shop_id ? Number(req.query.shop_id) : null;
+
+  if (req.query.shop_id && !Number.isFinite(shopId)) {
+    return res.status(400).json({ success: false, error: 'Invalid shop_id' });
+  }
 
   try {
-    // 주문 기본 정보
+    const orderWhere = ['o.tenant_id = ?', 'o.order_sn = ?'];
+    const orderParams = [tenantId, orderSn];
+
+    if (shopId !== null) {
+      orderWhere.push('o.shop_id = ?');
+      orderParams.push(shopId);
+    }
+
     const [orders] = await db.query(
       `SELECT
         o.*,
@@ -970,20 +982,25 @@ router.get('/:orderSn', async (req, res) => {
        ${FIFO_COST_JOIN}
        LEFT JOIN shops s ON s.tenant_id = o.tenant_id AND o.shop_id = s.shop_id
        LEFT JOIN exchange_rates r ON o.currency = r.currency
-       WHERE o.tenant_id = ?
-          AND o.order_sn = ?
-         LIMIT 1`,
-       [tenantId, orderSn]
+       WHERE ${orderWhere.join(' AND ')}
+       LIMIT 1`,
+      orderParams
     );
 
     if (!orders.length) {
       return res.status(404).json({ success: false, error: 'Order not found' });
     }
 
-    // order_items
+    const resolvedShopId = orders[0].shop_id;
+
     const [items] = await db.query(
-      `SELECT * FROM order_items WHERE tenant_id = ? AND order_sn = ? ORDER BY id ASC`,
-       [tenantId, orderSn]
+      `SELECT *
+         FROM order_items
+        WHERE tenant_id = ?
+          AND order_sn = ?
+          AND shop_id = ?
+        ORDER BY id ASC`,
+      [tenantId, orderSn, resolvedShopId]
     );
 
     return res.json({

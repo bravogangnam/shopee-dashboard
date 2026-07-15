@@ -8,7 +8,7 @@ import {
   startInvoiceJob,
 } from '../api/invoice.js';
 import { startSync } from '../api/sync.js';
-import FeeDetailModal from '../components/FeeDetailModal.jsx';
+import OrderSettlementDetailModal from '../components/OrderSettlementDetailModal.jsx';
 import ImagePreviewModal from '../components/ImagePreviewModal.jsx';
 import OrderManagementFilters from '../components/OrderManagementFilters.jsx';
 import OrderManagementTable from '../components/OrderManagementTable.jsx';
@@ -115,7 +115,7 @@ export default function OrderManagementPage() {
   const [invoiceJob, setInvoiceJob] = useState(null);
   const [invoicePollingError, setInvoicePollingError] = useState('');
   const [syncLoading, setSyncLoading] = useState(false);
-  const [feeOrder, setFeeOrder] = useState(null);
+  const [detailOrder, setDetailOrder] = useState(null);
   const [previewItem, setPreviewItem] = useState(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -512,14 +512,18 @@ setMessage('송장 생성 중입니다. 새 창에서 진행 상황을 확인하
         orders={orders}
         selectedOrders={selectedOrders}
         onSelectionChange={setSelectedOrders}
-        onFeeDetail={order => setFeeOrder(order)}
+        onOrderDetail={order => setDetailOrder(order)}
         onImagePreview={item => setPreviewItem(item)}
         loading={loading}
       />
       <Pagination pagination={pagination} onPageChange={handlePageChange} />
 
-      {feeOrder && (
-        <FeeDetailModal order={feeOrder} onClose={() => setFeeOrder(null)} />
+      {detailOrder && (
+        <OrderSettlementDetailModal
+          orderSn={detailOrder.order_sn}
+          shopId={detailOrder.shop_id}
+          onClose={() => setDetailOrder(null)}
+        />
       )}
       {previewItem && (
         <ImagePreviewModal item={previewItem} onClose={() => setPreviewItem(null)} />

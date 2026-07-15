@@ -323,14 +323,18 @@ function mapOrderToDb(order, shopId, region, escrow) {
     buyer_total_amount: income.buyer_total_amount ?? null,
     shipping_carrier: order.shipping_carrier ?? null,
     tracking_number: order.tracking_no ?? null,
-    shipping_fee: income.shipping_fee ?? null,
+    shipping_fee: buyerPaymentInfo.shipping_fee ?? income.shipping_fee ?? null,
     shipping_fee_discount: income.shipping_fee_discount ?? null,
     actual_shipping_fee: order.actual_shipping_fee ?? income.actual_shipping_fee ?? null,
     estimated_shipping_fee: order.estimated_shipping_fee ?? null,
     order_chargeable_weight_gram: order.order_chargeable_weight_gram ?? null,
     commission_fee: income.commission_fee ?? null,
     service_fee: income.service_fee ?? null,
-    transaction_fee: income.ams_commission_fee ?? income.transaction_fee ?? null,
+    transaction_fee:
+      income.seller_transaction_fee ??
+      income.ams_commission_fee ??
+      income.transaction_fee ??
+      null,
     escrow_amount: income.escrow_amount ?? null,
     create_time: order.create_time ?? null,
     order_created_at: order.create_time ? unixToKST(order.create_time) : null,

@@ -71,18 +71,21 @@ function getItemImageUrl(item) {
   );
 }
 
-function renderProductLines(items, order) {
+function renderProductLines(items, order, onOrderDetail) {
   const sourceItems = items.length ? items : [{}];
   return (
     <div className="order-item-lines">
       {sourceItems.map((item, index) => (
-        <div
-          className="order-item-line order-product-line"
+        <button
+          type="button"
+          className="order-item-line order-product-line order-product-detail-button"
           key={`${item.item_id || 'item'}-${item.model_id || index}-${index}`}
           title={getItemProductName(item, order)}
+          aria-label={`${getOrderSn(order)} ${getItemProductName(item, order)} 주문 정산 상세 보기`}
+          onClick={() => onOrderDetail(order)}
         >
           {getItemProductName(item, order)}
-        </div>
+        </button>
       ))}
     </div>
   );
@@ -134,7 +137,7 @@ export default function OrderManagementTable({
   orders,
   selectedOrders,
   onSelectionChange,
-  onFeeDetail,
+  onOrderDetail,
   onImagePreview,
   loading,
 }) {
@@ -183,7 +186,6 @@ export default function OrderManagementTable({
             <th>옵션명</th>
             <th className="num">수량</th>
             <th className="num">판매가</th>
-            <th className="num">수수료</th>
           </tr>
         </thead>
         <tbody>
@@ -216,20 +218,10 @@ export default function OrderManagementTable({
                 <td>
                   <span className={statusClass(getDisplayStatus(order))}>{getDisplayStatus(order)}</span>
                 </td>
-                <td>{renderProductLines(items, order)}</td>
+                <td>{renderProductLines(items, order, onOrderDetail)}</td>
                 <td>{renderOptionLines(items, onImagePreview)}</td>
                 <td className="num">{renderQuantityLines(items, order)}</td>
                 <td className="num">{formatCurrency(salesAmount, order.currency)}</td>
-                <td className="num">
-                  <button
-                    type="button"
-                    className="fee-detail-btn"
-                    onClick={() => onFeeDetail(order)}
-                    title="수수료 상세"
-                  >
-                    ⓘ
-                  </button>
-                </td>
               </tr>
             );
           })}

@@ -24,6 +24,16 @@ function orderStatusLabel(status) {
   return labels[status] || status || '-';
 }
 
+function getOrderDisplayStatus(order) {
+  // Return/Refund 주문만 TO_RETURN 화면 상태를 우선한다.
+  // 그 외 주문은 실제 Shopee order_status를 사용한다.
+  if (order?.display_status === 'TO_RETURN') {
+    return 'TO_RETURN';
+  }
+
+  return order?.order_status || order?.display_status;
+}
+
 function numeric(value) {
   if (!isPresent(value)) return null;
   const result = Number(value);
@@ -352,8 +362,8 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
               <div>
                 <span>Order Status</span>
                 <strong>
-                  <span className={statusClass(order.display_status || order.order_status)}>
-                    {orderStatusLabel(order.display_status || order.order_status)}
+                  <span className={statusClass(getOrderDisplayStatus(order))}>
+                    {orderStatusLabel(getOrderDisplayStatus(order))}
                   </span>
                 </strong>
               </div>

@@ -257,6 +257,12 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
                 </strong>
               </div>
               <div>
+                <span>Buyer ID</span>
+                <strong className="order-settlement-buyer-id">
+                  {order.buyer_username || order.buyer_user_id || '-'}
+                </strong>
+              </div>
+              <div>
                 <span>Currency</span>
                 <strong>{currency || '-'}</strong>
               </div>

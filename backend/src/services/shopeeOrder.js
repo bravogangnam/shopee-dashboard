@@ -308,6 +308,8 @@ function mapOrderToDb(order, shopId, region, escrow) {
     region: region,
     order_sn: order.order_sn,
     order_status: order.order_status,
+    buyer_user_id: order.buyer_user_id ?? null,
+    buyer_username: order.buyer_username ?? null,
       display_status: order.display_status ?? order.order_status,
       display_status_reason: order.display_status_reason ?? null,
       display_status_checked_at: order.display_status_checked_at ?? null,
@@ -365,6 +367,8 @@ function mapOrderToDb(order, shopId, region, escrow) {
 // 수동 동기화 Step2: 기존 주문 업데이트 대상 필드
 const UPDATE_FIELDS = [
   'order_status',
+  'buyer_user_id',
+  'buyer_username',
   'display_status',
   'display_status_reason',
   'merchandise_subtotal',
@@ -399,6 +403,8 @@ function diffOrderRow(dbRow, newRow) {
     'voucher_from_shopee',
     'coins_offset',
     'buyer_total_amount',
+    'buyer_user_id',
+    'buyer_username',
   ]);
 
   for (const field of UPDATE_FIELDS) {

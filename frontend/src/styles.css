@@ -5162,3 +5162,75 @@ label {
   line-height: 1.2;
   white-space: nowrap;
 }
+
+/* =========================================================
+   Settlement summary cards - align with order stats cards
+   ========================================================= */
+
+.summary-card-bottom {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  flex-wrap: nowrap !important;
+  gap: 8px !important;
+  margin-top: 6px !important;
+  min-height: 16px;
+}
+
+.summary-card .change-rate,
+.summary-card-count {
+  display: inline-flex !important;
+  align-items: center !important;
+  line-height: 1.2 !important;
+  font-family: inherit !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  white-space: nowrap !important;
+  margin: 0 !important;
+}
+
+/* 주문관리의 건수 글씨와 동일한 중립색 */
+.summary-card-count {
+  color: #64748b !important;
+  opacity: 1 !important;
+}
+
+/* 증감률 색상은 기존 정산관리 색상 유지 */
+.summary-card .change-rate.positive {
+  color: #389e0d !important;
+}
+
+.summary-card .change-rate.negative {
+  color: #cf1322 !important;
+}
+
+/* 값/전월값 줄도 카드마다 같은 높이로 정렬 */
+.summary-value-row {
+  display: flex !important;
+  align-items: baseline !important;
+  flex-wrap: nowrap !important;
+  gap: 8px !important;
+  min-height: 25px;
+}
+
+.summary-value-row > strong {
+  flex: 0 0 auto;
+}
+
+.summary-prev-value {
+  flex: 0 0 auto;
+  color: #94a3b8 !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  white-space: nowrap !important;
+}
+
+/* 주문건수 카드도 다른 카드와 하단 위치 동일하게 */
+.summary-card:last-child .summary-value-row {
+  min-height: 25px;
+}
+
+.summary-card:last-child .summary-card-bottom {
+  min-height: 16px;
+}

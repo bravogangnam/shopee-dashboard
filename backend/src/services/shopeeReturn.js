@@ -90,7 +90,7 @@ async function getReturnList(
   }
 
   const allReturns = [];
-  let pageNo = 1;
+  let pageNo = 0;
 
   while (true) {
     const params = {
@@ -153,10 +153,14 @@ async function getReturnList(
 
     if (!response.more) break;
 
-    pageNo += 1;
+    /*
+     * Shopee 문서의 page_no는 페이지 번호가 아니라
+     * 다음 조회 시작 위치(offset)로 동작한다.
+     */
+    pageNo += 100;
     await sleep(500);
 
-    if (pageNo > 1000) {
+    if (pageNo > 100000) {
       throw new Error(
         `get_return_list pagination safety limit exceeded: shop=${shopId}`
       );

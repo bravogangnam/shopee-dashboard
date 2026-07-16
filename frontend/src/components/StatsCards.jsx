@@ -18,16 +18,21 @@ function formatKrwValue(value) {
 
 function Growth({ value }) {
   const numericValue = Number(value || 0);
+
   if (!Number.isFinite(numericValue) || numericValue === 0) {
-    return <span className="stat-growth neutral">0.00%</span>;
+    return <span className="stat-growth neutral">0.0%</span>;
   }
 
   const tone = numericValue > 0 ? 'positive' : 'negative';
   const arrow = numericValue > 0 ? '▲' : '▼';
+  const formattedValue = numericValue.toLocaleString('ko-KR', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
 
   return (
     <span className={`stat-growth ${tone}`}>
-      {arrow} {formatNumber(numericValue, 2)}%
+      {arrow} {formattedValue}%
     </span>
   );
 }

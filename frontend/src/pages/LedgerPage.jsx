@@ -82,10 +82,14 @@ function ChangeRate({ value }) {
 
   const direction = numericValue > 0 ? 'positive' : 'negative';
   const arrow = numericValue > 0 ? '▲' : '▼';
+  const formattedValue = numericValue.toLocaleString('ko-KR', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
 
   return (
     <span className={`change-rate ${direction}`}>
-      전기간 대비 {arrow} {formatNumber(numericValue, 2)}%
+      전기간 대비 {arrow} {formattedValue}%
     </span>
   );
 }

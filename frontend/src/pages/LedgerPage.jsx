@@ -51,6 +51,29 @@ const ledgerPageCache = {
   chartLoaded: false,
 };
 
+function calculateRate(numerator, denominator) {
+  const numeratorNumber = Number(numerator);
+  const denominatorNumber = Number(denominator);
+
+  if (
+    !Number.isFinite(numeratorNumber) ||
+    !Number.isFinite(denominatorNumber) ||
+    denominatorNumber === 0
+  ) {
+    return null;
+  }
+
+  return (numeratorNumber / denominatorNumber) * 100;
+}
+
+function formatPreviousPercent(value) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+    return '-';
+  }
+
+  return `${formatNumber(value, 2)}%`;
+}
+
 function ChangeRate({ value }) {
   if (value === null || value === undefined) return null;
 
@@ -68,14 +91,62 @@ function ChangeRate({ value }) {
 }
 
 function SummaryCards({ summary }) {
+  const previousProfitRate = calculateRate(
+    summary?.prev_total_net_profit,
+    summary?.prev_confirmed_sales_krw
+  );
+
+  const previousProductProfitRate = calculateRate(
+    summary?.prev_total_product_profit,
+    summary?.prev_confirmed_sales_krw
+  );
+
   const cards = [
-    { label: '매출', value: formatKrw(summary?.total_sales_krw), changeRate: summary?.sales_change_rate },
-    { label: '확정 정산액', value: formatKrw(summary?.total_escrow_krw), changeRate: summary?.escrow_change_rate },
-    { label: '확정 순이익', value: formatKrw(summary?.total_net_profit), changeRate: summary?.profit_change_rate },
-    { label: '부가세', value: formatKrw(summary?.total_vat), changeRate: summary?.vat_change_rate },
-    { label: '확정 순이익률', value: summary ? `${formatNumber(summary.profit_rate, 2)}%` : '-', changeRate: summary?.profit_rate_change_rate },
-    { label: '확정 제품 순이익률', value: summary ? `${formatNumber(summary.product_profit_rate, 2)}%` : '-', changeRate: summary?.product_profit_rate_change_rate },
-    { label: '주문건수', value: summary ? `${formatNumber(summary.order_count, 0)}건` : '-', changeRate: summary?.count_change_rate },
+    {
+      label: '매출',
+      value: formatKrw(summary?.total_sales_krw),
+      previousValue: formatKrw(summary?.prev_total_sales_krw),
+      changeRate: summary?.sales_change_rate,
+    },
+    {
+      label: '확정 정산액',
+      value: formatKrw(summary?.total_escrow_krw),
+      previousValue: formatKrw(summary?.prev_total_escrow_krw),
+      changeRate: summary?.escrow_change_rate,
+    },
+    {
+      label: '확정 순이익',
+      value: formatKrw(summary?.total_net_profit),
+      previousValue: formatKrw(summary?.prev_total_net_profit),
+      changeRate: summary?.profit_change_rate,
+    },
+    {
+      label: '부가세',
+      value: formatKrw(summary?.total_vat),
+      previousValue: formatKrw(summary?.prev_total_vat),
+      changeRate: summary?.vat_change_rate,
+    },
+    {
+      label: '확정 순이익률',
+      value: summary ? `${formatNumber(summary.profit_rate, 2)}%` : '-',
+      previousValue: formatPreviousPercent(previousProfitRate),
+      changeRate: summary?.profit_rate_change_rate,
+    },
+    {
+      label: '확정 제품 순이익률',
+      value: summary ? `${formatNumber(summary.product_profit_rate, 2)}%` : '-',
+      previousValue: formatPreviousPercent(previousProductProfitRate),
+      changeRate: summary?.product_profit_rate_change_rate,
+    },
+    {
+      label: '주문건수',
+      value: summary ? `${formatNumber(summary.order_count, 0)}건` : '-',
+      previousValue:
+        summary?.prev_order_count === null || summary?.prev_order_count === undefined
+          ? '-'
+          : `${formatNumber(summary.prev_order_count, 0)}건`,
+      changeRate: summary?.count_change_rate,
+    },
   ];
 
   return (
@@ -83,7 +154,14 @@ function SummaryCards({ summary }) {
       {cards.map((card, index) => (
         <div className={`summary-card summary-card-${index + 1}`} key={card.label}>
           <span>{card.label}</span>
-          <strong>{card.value}</strong>
+
+          <div className="summary-value-row">
+            <strong>{card.value}</strong>
+            <span className="summary-prev-value">
+              전월 {card.previousValue}
+            </span>
+          </div>
+
           <ChangeRate value={card.changeRate} />
         </div>
       ))}

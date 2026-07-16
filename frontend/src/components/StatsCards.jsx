@@ -50,6 +50,24 @@ function getGrowth(stats) {
   );
 }
 
+function getPreviousTotalKrw(stats, monthly = false) {
+  if (monthly) {
+    return pickNumber(
+      stats?.monthly_prev_krw,
+      stats?.prev_total_krw,
+      stats?.summary?.monthly_prev_krw,
+      stats?.summary?.prev_total_krw,
+    );
+  }
+
+  return pickNumber(
+    stats?.prev_total_krw,
+    stats?.monthly_prev_krw,
+    stats?.summary?.prev_total_krw,
+    stats?.summary?.monthly_prev_krw,
+  );
+}
+
 function getRegionCards(stats) {
   const candidates = [
     stats?.region_cards,
@@ -71,6 +89,11 @@ function regionSalesKrw(card) {
     pickNumber(card?.rate_to_krw, card?.krw_rate);
 }
 
+function regionPreviousSalesKrw(card) {
+  return pickNumber(card?.prev_sales, card?.previous_sales) *
+    pickNumber(card?.rate_to_krw, card?.krw_rate);
+}
+
 export default function StatsCards({
   stats,
   monthlyStats,
@@ -88,6 +111,7 @@ export default function StatsCards({
       key: 'monthly-sales',
       label: '월 매출 (KRW)',
       value: formatKrwValue(getTotalKrw(currentMonthlyStats)),
+      previousValue: formatKrwValue(getPreviousTotalKrw(currentMonthlyStats, true)),
       sub: (
         <>
           <Growth value={getGrowth(currentMonthlyStats)} />
@@ -100,6 +124,7 @@ export default function StatsCards({
       key: 'daily-sales',
       label: '일 매출 (KRW)',
       value: formatKrwValue(getTotalKrw(currentFilterStats)),
+      previousValue: formatKrwValue(getPreviousTotalKrw(currentFilterStats)),
       sub: (
         <>
           <Growth value={getGrowth(currentFilterStats)} />
@@ -114,6 +139,7 @@ export default function StatsCards({
         key: region,
         label: region,
         value: formatKrwValue(regionSalesKrw(card)),
+        previousValue: formatKrwValue(regionPreviousSalesKrw(card)),
         sub: (
           <>
             <Growth value={card.growth_pct ?? card.growth_rate ?? card.sales_growth} />
@@ -130,7 +156,10 @@ export default function StatsCards({
       {cards.map(card => (
         <div className={`stat-card ${card.className}`} key={card.key}>
           <span className="stat-label">{card.label}</span>
-          <strong className="stat-value">{card.value}</strong>
+          <div className="stat-value-row">
+            <strong className="stat-value">{card.value}</strong>
+            <span className="stat-prev-value">전월 {card.previousValue}</span>
+          </div>
           <div className="stat-sub">{card.sub}</div>
         </div>
       ))}

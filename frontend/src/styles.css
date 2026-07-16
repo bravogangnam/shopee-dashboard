@@ -5110,3 +5110,38 @@ label {
   gap: 14px !important;
   align-items: center !important;
 }
+
+/* Current and previous-period values in sales/settlement cards */
+.stat-value-row,
+.summary-value-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px 9px;
+  min-width: 0;
+}
+
+.stat-prev-value,
+.summary-prev-value {
+  color: #64748b !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+
+.summary-value-row > strong {
+  color: inherit;
+  font-size: 21px;
+  line-height: 1.2;
+}
+
+@media (max-width: 1200px) {
+  .stat-value-row,
+  .summary-value-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+}

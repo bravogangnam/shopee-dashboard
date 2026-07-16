@@ -127,6 +127,84 @@ function formatWeight(value) {
   return `${Math.round(number).toLocaleString('ko-KR')}g`;
 }
 
+function returnStatusLabel(status) {
+  const labels = {
+    REQUESTED: '요청됨',
+    ACCEPTED: '승인됨',
+    CANCELLED: '취소됨',
+    JUDGING: '심사 중',
+    CLOSED: '종료됨',
+    PROCESSING: '처리 중',
+    SELLER_DISPUTE: '판매자 분쟁',
+  };
+
+  return labels[status] || status || '-';
+}
+
+function returnReasonLabel(reason) {
+  const labels = {
+    NONE: '사유 없음',
+    NOT_RECEIPT: '상품 미수령',
+    NON_RECEIPT: '상품 미수령',
+    WRONG_ITEM: '잘못된 상품',
+    ITEM_DAMAGED: '상품 파손',
+    DAMAGED_OTHERS: '상품 파손',
+    DIFFERENT_DESCRIPTION: '상품 설명과 다름',
+    MUTUAL_AGREE: '상호 합의',
+    OTHER: '기타',
+    ITEM_WRONGDAMAGED: '오배송 또는 파손',
+    CHANGE_MIND: '단순 변심',
+    CHANGE_OF_MIND: '단순 변심',
+    ITEM_MISSING: '상품 누락',
+    EXPECTATION_FAILED: '기대와 다름',
+    ITEM_FAKE: '가품 의심',
+    PHYSICAL_DMG: '외관 손상',
+    FUNCTIONAL_DMG: '기능 이상',
+  };
+
+  return labels[reason] || reason || '-';
+}
+
+function returnSolutionLabel(solution) {
+  const labels = {
+    RETURN_REFUND: '반품 후 환불',
+    REFUND: '반품 없는 환불',
+    1: '반품 후 환불',
+    2: '환불',
+  };
+
+  return labels[solution] || solution || '-';
+}
+
+function negotiationStatusLabel(status) {
+  const labels = {
+    PENDING_RESPOND: '판매자 응답 대기',
+    PENDING_BUYER_RESPOND: '구매자 응답 대기',
+    TERMINATED: '협상 종료',
+  };
+
+  return labels[status] || status || '-';
+}
+
+function formatReturnDate(value) {
+  const number = numeric(value);
+  if (number === null || number <= 0) return '-';
+
+  return new Date(number * 1000).toLocaleString('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function returnStatusClass(status) {
+  return `order-return-status order-return-status-${String(status || '').toLowerCase()}`;
+}
+
 export default function OrderSettlementDetailModal({ orderSn, shopId, onClose }) {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -169,6 +247,11 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
   }, [onClose]);
 
   const items = Array.isArray(order?.item_list) ? order.item_list : [];
+  const returnRefunds = Array.isArray(order?.return_refunds)
+    ? order.return_refunds
+    : order?.latest_return_refund
+      ? [order.latest_return_refund]
+      : [];
   const currency = order?.currency || order?.region || '';
 
   const feeValues = useMemo(() => {
@@ -356,6 +439,146 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
                 </table>
               </div>
             </section>
+
+            {returnRefunds.length > 0 && (
+              <section className="order-settlement-return-section">
+                <div className="order-settlement-return-heading">
+                  <div>
+                    <span className="order-settlement-return-icon">↩</span>
+                    <div>
+                      <h3>반품/환불</h3>
+                      <p>
+                        이 주문에 연결된 반품·환불 요청 {returnRefunds.length}건
+                      </p>
+                    </div>
+                  </div>
+
+                  <span className="order-settlement-return-count">
+                    {returnRefunds.length}건
+                  </span>
+                </div>
+
+                <div className="order-settlement-return-list">
+                  {returnRefunds.map((returnItem, index) => {
+                    const returnCurrency =
+                      returnItem.currency || currency;
+
+                    return (
+                      <article
+                        className="order-settlement-return-card"
+                        key={
+                          returnItem.return_sn ||
+                          `${returnItem.order_sn || orderSn}-${index}`
+                        }
+                      >
+                        <div className="order-settlement-return-card-head">
+                          <div>
+                            <span>Return SN</span>
+                            <strong>
+                              {returnItem.return_sn || '-'}
+                            </strong>
+                          </div>
+
+                          <span
+                            className={returnStatusClass(
+                              returnItem.return_status
+                            )}
+                          >
+                            {returnStatusLabel(
+                              returnItem.return_status
+                            )}
+                          </span>
+                        </div>
+
+                        <div className="order-settlement-return-grid">
+                          <div>
+                            <span>사유</span>
+                            <strong>
+                              {returnReasonLabel(
+                                returnItem.return_reason
+                              )}
+                            </strong>
+                            {returnItem.text_reason ? (
+                              <small>{returnItem.text_reason}</small>
+                            ) : null}
+                          </div>
+
+                          <div>
+                            <span>환불 금액</span>
+                            <strong>
+                              {formatMoney(
+                                returnItem.refund_amount,
+                                returnCurrency
+                              )}
+                            </strong>
+                          </div>
+
+                          <div>
+                            <span>처리 방식</span>
+                            <strong>
+                              {returnSolutionLabel(
+                                returnItem.return_refund_type ||
+                                returnItem.return_solution
+                              )}
+                            </strong>
+                          </div>
+
+                          <div>
+                            <span>협상 상태</span>
+                            <strong>
+                              {negotiationStatusLabel(
+                                returnItem.negotiation_status
+                              )}
+                            </strong>
+                          </div>
+
+                          <div>
+                            <span>요청일</span>
+                            <strong>
+                              {formatReturnDate(
+                                returnItem.create_time
+                              )}
+                            </strong>
+                          </div>
+
+                          <div>
+                            <span>최종 업데이트</span>
+                            <strong>
+                              {formatReturnDate(
+                                returnItem.update_time
+                              )}
+                            </strong>
+                          </div>
+                        </div>
+
+                        {returnItem.reverse_logistics_status ||
+                        returnItem.tracking_number ? (
+                          <div className="order-settlement-return-logistics">
+                            {returnItem.reverse_logistics_status ? (
+                              <span>
+                                반품 배송 상태
+                                <strong>
+                                  {returnItem.reverse_logistics_status}
+                                </strong>
+                              </span>
+                            ) : null}
+
+                            {returnItem.tracking_number ? (
+                              <span>
+                                반품 운송장
+                                <strong>
+                                  {returnItem.tracking_number}
+                                </strong>
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
             <div className="order-settlement-finance-grid">
               <section className="order-settlement-finance-card income">

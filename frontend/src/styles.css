@@ -5265,3 +5265,258 @@ label {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
+
+/* =========================================================
+   Order Settlement Detail - Return / Refund
+   ========================================================= */
+
+.order-settlement-return-section {
+  margin: 18px 0;
+  padding: 18px;
+  border: 1px solid #ffd2c8;
+  border-radius: 10px;
+  background: #fffaf8;
+}
+
+.order-settlement-return-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 14px;
+}
+
+.order-settlement-return-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.order-settlement-return-icon {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: #ffeee9;
+  color: #ee4d2d;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.order-settlement-return-heading h3 {
+  margin: 0;
+  color: #252525;
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.order-settlement-return-heading p {
+  margin: 3px 0 0;
+  color: #777;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.order-settlement-return-count {
+  display: inline-flex;
+  min-width: 42px;
+  padding: 5px 10px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #ffc5b7;
+  border-radius: 999px;
+  background: #fff;
+  color: #ee4d2d;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.order-settlement-return-list {
+  display: grid;
+  gap: 12px;
+}
+
+.order-settlement-return-card {
+  overflow: hidden;
+  border: 1px solid #eadfdc;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.order-settlement-return-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #f0e7e4;
+  background: #fffdfc;
+}
+
+.order-settlement-return-card-head > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.order-settlement-return-card-head > div > span {
+  color: #888;
+  font-size: 12px;
+}
+
+.order-settlement-return-card-head > div > strong {
+  overflow: hidden;
+  color: #333;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-return-status {
+  display: inline-flex;
+  width: fit-content;
+  min-width: 0;
+  padding: 4px 9px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.order-return-status-requested {
+  background: #fff1dd;
+  color: #b86a00;
+}
+
+.order-return-status-processing,
+.order-return-status-judging,
+.order-return-status-seller_dispute {
+  background: #fff4d6;
+  color: #9a6500;
+}
+
+.order-return-status-accepted {
+  background: #e9f8ef;
+  color: #16834b;
+}
+
+.order-return-status-cancelled,
+.order-return-status-closed {
+  background: #f1f2f4;
+  color: #686d76;
+}
+
+.order-settlement-return-grid {
+  display: grid;
+  grid-template-columns:
+    minmax(160px, 1.2fr)
+    minmax(130px, 0.8fr)
+    minmax(140px, 0.9fr)
+    minmax(150px, 1fr)
+    minmax(170px, 1fr)
+    minmax(170px, 1fr);
+}
+
+.order-settlement-return-grid > div {
+  min-width: 0;
+  padding: 13px 14px;
+  border-right: 1px solid #f0e7e4;
+}
+
+.order-settlement-return-grid > div:last-child {
+  border-right: 0;
+}
+
+.order-settlement-return-grid span,
+.order-settlement-return-logistics span {
+  display: block;
+  margin-bottom: 5px;
+  color: #888;
+  font-size: 12px;
+}
+
+.order-settlement-return-grid strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #333;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.order-settlement-return-grid small {
+  display: block;
+  margin-top: 4px;
+  color: #777;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.order-settlement-return-logistics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 11px 14px;
+  border-top: 1px solid #f0e7e4;
+  background: #fafafa;
+}
+
+.order-settlement-return-logistics span {
+  margin: 0;
+}
+
+.order-settlement-return-logistics strong {
+  margin-left: 7px;
+  color: #444;
+  font-size: 12px;
+}
+
+@media (max-width: 1180px) {
+  .order-settlement-return-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .order-settlement-return-grid > div:nth-child(3n) {
+    border-right: 0;
+  }
+
+  .order-settlement-return-grid > div:nth-child(-n + 3) {
+    border-bottom: 1px solid #f0e7e4;
+  }
+}
+
+@media (max-width: 700px) {
+  .order-settlement-return-section {
+    padding: 14px;
+  }
+
+  .order-settlement-return-heading {
+    align-items: flex-start;
+  }
+
+  .order-settlement-return-card-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .order-settlement-return-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .order-settlement-return-grid > div {
+    border-right: 0;
+    border-bottom: 1px solid #f0e7e4;
+  }
+
+  .order-settlement-return-grid > div:last-child {
+    border-bottom: 0;
+  }
+}

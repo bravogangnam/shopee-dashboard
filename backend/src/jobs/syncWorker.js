@@ -37,6 +37,7 @@ const {
 } = require('../services/jobManager');
 const { sleep } = require('../utils/apiWrapper');
 const { getShippingParameter } = require('../services/shopeeLogistics');
+const { syncReturnWindow } = require('../services/shopeeReturn');
 
 // ── 타이밍 헬퍼 ─────────────────────────────────────────────────
 const t = () => Date.now();
@@ -273,13 +274,18 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
 
     console.log(`[Sync] 활성 샵 ${shops.length}개: ${shops.map(s => s.alias || s.shop_id).join(', ')}`);
 
-    // 전체 스텝: 샵 × 3 (Step1 + Step2 + Step3)
-    const totalSteps = shops.length * 3;
+    // 전체 스텝: 샵 × 4
+    // Step1 주문 수집
+    // Step2 미완료 주문 갱신
+    // Step3 tracking 보완
+    // Step4 Return/Refund 동기화
+    const totalSteps = shops.length * 4;
     await startJob(jobId, totalSteps);
 
     let step = 0;
     let totalNewOrders = 0;
     let totalUpdated = 0;
+    let totalReturnRefundSynced = 0;
     const newOrdersByRegion = {}; // { MY: n, SG: n, TW: n }
     let totalReadyToShipAlertOrders = 0;
     const readyToShipAlertOrdersByRegion = {}; // 새주문 알림 대상: READY_TO_SHIP only
@@ -621,10 +627,106 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
 
     console.log(`[Sync] STEP 3 END  소요=${ms(step3Start)}`);
 
+    // ───────────────────────────────────────────────────────────
+    // STEP 4: Return/Refund 최근 15일 갱신
+    // 기존 주문 수동/자동 동기화와 함께 실행
+    // ───────────────────────────────────────────────────────────
+    console.log(`\n${'─'.repeat(60)}`);
+    console.log(`[Sync] STEP 4 START — Return/Refund 동기화`);
+    const step4Start = t();
+
+    for (const shop of shops) {
+      step++;
+
+      const shopAlias = shop.alias || shop.shop_id;
+      const shopStart = t();
+
+      await updateProgress(
+        jobId,
+        step,
+        totalSteps,
+        `[Step4] ${shopAlias} 반품/환불 동기화 중...`
+      );
+
+      console.log(
+        `\n[Sync][Step4] ┌─ shop=${shopAlias}`
+      );
+
+      try {
+        const shopToken4 = await getOrRefreshShopToken(
+          shop.shop_id
+        );
+
+        if (!shopToken4) {
+          throw new Error(
+            `shop_id=${shop.shop_id} 토큰 없음`
+          );
+        }
+
+        const now = Math.floor(Date.now() / 1000);
+
+        /*
+         * API 최대 범위가 15일이므로 14일 23시간 59분 사용.
+         * update_time 기준이라 기존 Return 상태 변경도 다시 가져온다.
+         */
+        const timeFrom = now - (15 * 86400) + 1;
+        const timeTo = now;
+
+        const result = await syncReturnWindow({
+          tenantId,
+          shopId: shop.shop_id,
+          accessToken: shopToken4,
+          timeFrom,
+          timeTo,
+          timeField: 'update_time',
+        });
+
+        totalReturnRefundSynced += result.synced;
+
+        console.log(
+          `[Sync][Step4] └─ shop=${shopAlias}` +
+          ` 목록=${result.listed}건` +
+          ` 저장=${result.synced}건` +
+          ` ${ms(shopStart)}`
+        );
+
+        await updateProgress(
+          jobId,
+          step,
+          totalSteps,
+          `[Step4] ${shopAlias} 완료 - 반품/환불 ${result.synced}건`
+        );
+      } catch (error) {
+        /*
+         * Return API 장애가 일반 주문 동기화 전체를 실패시키지 않도록
+         * 샵 단위로 로그만 남기고 다음 샵을 계속 진행한다.
+         */
+        console.error(
+          `[Sync][Step4] └─ shop=${shopAlias}` +
+          ` ERROR: ${error.message}` +
+          ` ${ms(shopStart)}`
+        );
+
+        await updateProgress(
+          jobId,
+          step,
+          totalSteps,
+          `[Step4] ${shopAlias} 반품/환불 동기화 실패`
+        );
+      }
+    }
+
+    console.log(
+      `[Sync] STEP 4 END` +
+      ` 저장=${totalReturnRefundSynced}건` +
+      ` 소요=${ms(step4Start)}`
+    );
+
     await completeJob(jobId, {
       new_orders: totalNewOrders,
       updated_orders: totalUpdated,
       tracking_updated: totalTrackingUpdated,
+      return_refunds_synced: totalReturnRefundSynced,
       new_orders_by_region: newOrdersByRegion,
       ready_to_ship_new_orders: totalReadyToShipAlertOrders,
       ready_to_ship_new_orders_by_region: readyToShipAlertOrdersByRegion,
@@ -633,12 +735,20 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
     });
 
     console.log(`\n${'═'.repeat(60)}`);
-    console.log(`[Sync] ■ DONE  new=${totalNewOrders}  updated=${totalUpdated}  tracking=${totalTrackingUpdated}  총소요=${ms(syncStart)}`);
+    console.log(
+      `[Sync] ■ DONE` +
+      ` new=${totalNewOrders}` +
+      ` updated=${totalUpdated}` +
+      ` tracking=${totalTrackingUpdated}` +
+      ` return_refund=${totalReturnRefundSynced}` +
+      ` 총소요=${ms(syncStart)}`
+    );
     console.log(`${'═'.repeat(60)}\n`);
 
     // 호출자(autoSyncJob)에서 텔레그램 알림에 활용할 수 있도록 결과 반환
     return {
       new_orders: totalNewOrders,
+      return_refunds_synced: totalReturnRefundSynced,
       new_orders_by_region: newOrdersByRegion,
       ready_to_ship_new_orders: totalReadyToShipAlertOrders,
       ready_to_ship_new_orders_by_region: readyToShipAlertOrdersByRegion,

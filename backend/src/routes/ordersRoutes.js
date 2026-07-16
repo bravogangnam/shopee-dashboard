@@ -255,8 +255,23 @@ router.get('/', async (req, res) => {
     // 쉼표 구분 여러 상태 허용
     statusFilters = order_status.split(',').map(s => s.trim()).filter(Boolean);
     if (statusFilters.length === 1) {
-      whereClause += ` AND o.order_status = ?`;
-      params.push(statusFilters[0]);
+      if (statusFilters[0] === 'TO_RETURN') {
+        whereClause += `
+          AND (
+            o.order_status = 'TO_RETURN'
+            OR EXISTS (
+              SELECT 1
+              FROM order_return_refunds rr
+              WHERE rr.tenant_id = o.tenant_id
+                AND rr.shop_id = o.shop_id
+                AND rr.order_sn = o.order_sn
+            )
+          )
+        `;
+      } else {
+        whereClause += ` AND o.order_status = ?`;
+        params.push(statusFilters[0]);
+      }
     } else if (statusFilters.length > 1) {
       const placeholders = statusFilters.map(() => '?').join(',');
       whereClause += ` AND o.order_status IN (${placeholders})`;
@@ -586,11 +601,32 @@ router.get('/stats', async (req, res) => {
     // 주문 상태별 집계 (현재 기간)
     const [byStatus] = await db.query(
       `SELECT
-        o.order_status,
-        COUNT(*) as count
+         CASE
+           WHEN EXISTS (
+             SELECT 1
+             FROM order_return_refunds rr
+             WHERE rr.tenant_id = o.tenant_id
+               AND rr.shop_id = o.shop_id
+               AND rr.order_sn = o.order_sn
+           )
+           THEN 'TO_RETURN'
+           ELSE o.order_status
+         END AS order_status,
+         COUNT(*) AS count
        FROM orders o
        WHERE 1=1 ${shopFilter} ${curFilter}
-       GROUP BY o.order_status
+       GROUP BY
+         CASE
+           WHEN EXISTS (
+             SELECT 1
+             FROM order_return_refunds rr
+             WHERE rr.tenant_id = o.tenant_id
+               AND rr.shop_id = o.shop_id
+               AND rr.order_sn = o.order_sn
+           )
+           THEN 'TO_RETURN'
+           ELSE o.order_status
+         END
        ORDER BY count DESC`,
       shopParams
     );
@@ -1070,11 +1106,49 @@ router.get('/:orderSn', async (req, res) => {
       [tenantId, orderSn, resolvedShopId]
     );
 
+    const [returnRefunds] = await db.query(
+      `SELECT
+         return_sn,
+         order_sn,
+         return_status,
+         return_reason,
+         reassessed_request_reason,
+         text_reason,
+         refund_amount,
+         currency,
+         create_time,
+         update_time,
+         due_date,
+         tracking_number,
+         needs_logistics,
+         buyer_username,
+         negotiation_status,
+         seller_proof_status,
+         seller_compensation_status,
+         return_refund_type,
+         return_solution,
+         return_refund_request_type,
+         validation_type,
+         reverse_logistics_status,
+         return_ship_due_date,
+         return_seller_due_date
+       FROM order_return_refunds
+       WHERE tenant_id = ?
+         AND order_sn = ?
+         AND shop_id = ?
+       ORDER BY
+         COALESCE(update_time, create_time, 0) DESC,
+         id DESC`,
+      [tenantId, orderSn, resolvedShopId]
+    );
+
     return res.json({
       success: true,
       data: {
         ...orders[0],
         item_list: items,
+        return_refunds: returnRefunds,
+        latest_return_refund: returnRefunds[0] || null,
       },
     });
   } catch (err) {

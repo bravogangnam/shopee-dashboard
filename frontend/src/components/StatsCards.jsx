@@ -120,7 +120,9 @@ export default function StatsCards({
       sub: (
         <>
           <Growth value={getGrowth(currentMonthlyStats)} />
-          {monthlyLabel && <span className="stat-count">{monthlyLabel}</span>}
+          <span className="stat-count">
+            {formatNumber(currentMonthlyStats?.total_order_count || 0, 0)}건
+          </span>
         </>
       ),
       className: 'stat-card-total',
@@ -133,7 +135,9 @@ export default function StatsCards({
       sub: (
         <>
           <Growth value={getGrowth(currentFilterStats)} />
-          {filterLabel && <span className="stat-count">{filterLabel}</span>}
+          <span className="stat-count">
+            {formatNumber(currentFilterStats?.total_order_count || 0, 0)}건
+          </span>
         </>
       ),
       className: 'stat-card-escrow',

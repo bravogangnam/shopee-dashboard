@@ -738,7 +738,54 @@ router.get('/summary', async (req, res) => {
               ELSE o.total_vat
             END
           ), 0) AS total_vat,
-        COUNT(*) AS order_count
+
+        COUNT(*) AS order_count,
+
+        SUM(
+          CASE
+            WHEN COALESCE(o.order_chargeable_weight_gram, 0) > 0
+              AND o.escrow_amount IS NOT NULL
+            THEN 1 ELSE 0
+          END
+        ) AS escrow_order_count,
+
+        SUM(
+          CASE
+            WHEN COALESCE(o.order_chargeable_weight_gram, 0) > 0
+              AND o.net_profit IS NOT NULL
+            THEN 1 ELSE 0
+          END
+        ) AS net_profit_order_count,
+
+        SUM(
+          CASE
+            WHEN fifo.fifo_cost_price IS NOT NULL
+              OR o.total_vat IS NOT NULL
+            THEN 1 ELSE 0
+          END
+        ) AS vat_order_count,
+
+        SUM(
+          CASE
+            WHEN COALESCE(o.order_chargeable_weight_gram, 0) > 0
+              AND o.net_profit IS NOT NULL
+              AND COALESCE(o.merchandise_subtotal, o.total_amount) IS NOT NULL
+              AND er.rate_to_krw IS NOT NULL
+              AND (COALESCE(o.merchandise_subtotal, o.total_amount) * er.rate_to_krw) <> 0
+            THEN 1 ELSE 0
+          END
+        ) AS profit_rate_order_count,
+
+        SUM(
+          CASE
+            WHEN COALESCE(o.order_chargeable_weight_gram, 0) > 0
+              AND o.product_profit IS NOT NULL
+              AND COALESCE(o.merchandise_subtotal, o.total_amount) IS NOT NULL
+              AND er.rate_to_krw IS NOT NULL
+              AND (COALESCE(o.merchandise_subtotal, o.total_amount) * er.rate_to_krw) <> 0
+            THEN 1 ELSE 0
+          END
+        ) AS product_profit_rate_order_count
        FROM orders o
        ${FIFO_COST_JOIN}
        LEFT JOIN exchange_rates er
@@ -779,6 +826,11 @@ router.get('/summary', async (req, res) => {
       total_product_profit: round2(row?.total_product_profit),
       total_vat: round2(row?.total_vat),
       order_count: parseInt(row?.order_count || 0),
+      escrow_order_count: parseInt(row?.escrow_order_count || 0),
+      net_profit_order_count: parseInt(row?.net_profit_order_count || 0),
+      vat_order_count: parseInt(row?.vat_order_count || 0),
+      profit_rate_order_count: parseInt(row?.profit_rate_order_count || 0),
+      product_profit_rate_order_count: parseInt(row?.product_profit_rate_order_count || 0),
     });
     const changeRate = (current, previous) => {
       if (previous === null || previous === undefined || Number(previous) === 0) return null;
@@ -808,6 +860,11 @@ router.get('/summary', async (req, res) => {
       total_product_profit: null,
       total_vat: null,
       order_count: null,
+      escrow_order_count: null,
+      net_profit_order_count: null,
+      vat_order_count: null,
+      profit_rate_order_count: null,
+      product_profit_rate_order_count: null,
     };
 
       if (dateFrom && dateTo) {
@@ -868,6 +925,11 @@ router.get('/summary', async (req, res) => {
         profit_rate: profitRate,
         product_profit_rate: productProfitRate,
         order_count: currentSummary.order_count,
+        escrow_order_count: currentSummary.escrow_order_count,
+        net_profit_order_count: currentSummary.net_profit_order_count,
+        vat_order_count: currentSummary.vat_order_count,
+        profit_rate_order_count: currentSummary.profit_rate_order_count,
+        product_profit_rate_order_count: currentSummary.product_profit_rate_order_count,
 
         prev_total_sales_krw: prevSummary.total_sales_krw,
         prev_total_escrow_krw: prevSummary.total_escrow_krw,
@@ -876,6 +938,11 @@ router.get('/summary', async (req, res) => {
         prev_total_product_profit: prevSummary.total_product_profit,
         prev_total_vat: prevSummary.total_vat,
         prev_order_count: prevSummary.order_count,
+        prev_escrow_order_count: prevSummary.escrow_order_count,
+        prev_net_profit_order_count: prevSummary.net_profit_order_count,
+        prev_vat_order_count: prevSummary.vat_order_count,
+        prev_profit_rate_order_count: prevSummary.profit_rate_order_count,
+        prev_product_profit_rate_order_count: prevSummary.product_profit_rate_order_count,
 
         sales_change_rate: changeRate(currentSummary.total_sales_krw, prevSummary.total_sales_krw),
         escrow_change_rate: changeRate(currentSummary.total_escrow_krw, prevSummary.total_escrow_krw),

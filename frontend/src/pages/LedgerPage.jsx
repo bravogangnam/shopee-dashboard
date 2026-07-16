@@ -89,7 +89,7 @@ function ChangeRate({ value }) {
 
   return (
     <span className={`change-rate ${direction}`}>
-      전기간 대비 {arrow} {formattedValue}%
+      {arrow} {formattedValue}%
     </span>
   );
 }
@@ -110,36 +110,42 @@ function SummaryCards({ summary }) {
       label: '매출',
       value: formatKrw(summary?.total_sales_krw),
       previousValue: formatKrw(summary?.prev_total_sales_krw),
+      count: summary?.order_count,
       changeRate: summary?.sales_change_rate,
     },
     {
       label: '확정 정산액',
       value: formatKrw(summary?.total_escrow_krw),
       previousValue: formatKrw(summary?.prev_total_escrow_krw),
+      count: summary?.escrow_order_count,
       changeRate: summary?.escrow_change_rate,
     },
     {
       label: '확정 순이익',
       value: formatKrw(summary?.total_net_profit),
       previousValue: formatKrw(summary?.prev_total_net_profit),
+      count: summary?.net_profit_order_count,
       changeRate: summary?.profit_change_rate,
     },
     {
       label: '부가세',
       value: formatKrw(summary?.total_vat),
       previousValue: formatKrw(summary?.prev_total_vat),
+      count: summary?.vat_order_count,
       changeRate: summary?.vat_change_rate,
     },
     {
       label: '확정 순이익률',
       value: summary ? `${formatNumber(summary.profit_rate, 2)}%` : '-',
       previousValue: formatPreviousPercent(previousProfitRate),
+      count: summary?.profit_rate_order_count,
       changeRate: summary?.profit_rate_change_rate,
     },
     {
       label: '확정 제품 순이익률',
       value: summary ? `${formatNumber(summary.product_profit_rate, 2)}%` : '-',
       previousValue: formatPreviousPercent(previousProductProfitRate),
+      count: summary?.product_profit_rate_order_count,
       changeRate: summary?.product_profit_rate_change_rate,
     },
     {
@@ -166,7 +172,14 @@ function SummaryCards({ summary }) {
             </span>
           </div>
 
-          <ChangeRate value={card.changeRate} />
+          <div className="summary-card-bottom">
+            <ChangeRate value={card.changeRate} />
+            {card.label !== '주문건수' && (
+              <span className="summary-card-count">
+                {formatNumber(card.count || 0, 0)}건
+              </span>
+            )}
+          </div>
         </div>
       ))}
     </div>

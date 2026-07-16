@@ -5145,3 +5145,20 @@ label {
     gap: 3px;
   }
 }
+
+/* Settlement card rate/count row */
+.summary-card-bottom {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 4px;
+}
+
+.summary-card-count {
+  color: #64748b !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  line-height: 1.2;
+  white-space: nowrap;
+}

@@ -6,12 +6,17 @@ const { RangePicker } = DatePicker;
 const REGIONS = ['ALL', 'SG', 'MY', 'PH', 'TW'];
 const STATUSES = [
   { value: '', label: '전체' },
-  { value: 'READY_TO_SHIP', label: 'READY_TO_SHIP' },
-  { value: 'PROCESSED', label: 'PROCESSED' },
-  { value: 'SHIPPED', label: 'SHIPPED' },
-  { value: 'TO_CONFIRM_RECEIVE', label: 'TO_CONFIRM_RECEIVE' },
-  { value: 'COMPLETED', label: 'COMPLETED' },
-  { value: 'CANCELLED', label: 'CANCELLED' },
+  { value: 'UNPAID', label: '결제 대기' },
+  { value: 'PENDING', label: '펜딩' },
+  { value: 'READY_TO_SHIP', label: '발송 대기' },
+  { value: 'PROCESSED', label: '발송 처리' },
+  { value: 'RETRY_SHIP', label: '재배송' },
+  { value: 'SHIPPED', label: '배송 중' },
+  { value: 'TO_CONFIRM_RECEIVE', label: '수취 확인' },
+  { value: 'COMPLETED', label: '배송 완료' },
+  { value: 'IN_CANCEL', label: '취소 요청' },
+  { value: 'TO_RETURN', label: '반품/환불' },
+  { value: 'CANCELLED', label: '취소 완료' },
 ];
 
 function getStatusCount(stats, status) {

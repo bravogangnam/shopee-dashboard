@@ -6,6 +6,24 @@ function isPresent(value) {
   return value !== null && value !== undefined && value !== '';
 }
 
+function orderStatusLabel(status) {
+  const labels = {
+    UNPAID: '결제 대기',
+    PENDING: '펜딩',
+    READY_TO_SHIP: '발송 대기',
+    PROCESSED: '발송 처리',
+    RETRY_SHIP: '재배송',
+    SHIPPED: '배송 중',
+    TO_CONFIRM_RECEIVE: '수취 확인',
+    COMPLETED: '배송 완료',
+    IN_CANCEL: '취소 요청',
+    TO_RETURN: '반품/환불',
+    CANCELLED: '취소 완료',
+  };
+
+  return labels[status] || status || '-';
+}
+
 function numeric(value) {
   if (!isPresent(value)) return null;
   const result = Number(value);
@@ -252,7 +270,7 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
                 <span>Order Status</span>
                 <strong>
                   <span className={statusClass(order.display_status || order.order_status)}>
-                    {order.display_status || order.order_status || '-'}
+                    {orderStatusLabel(order.display_status || order.order_status)}
                   </span>
                 </strong>
               </div>

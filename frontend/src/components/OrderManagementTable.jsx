@@ -20,6 +20,24 @@ function getDisplayStatus(order) {
   return order?.display_status || order?.order_status;
 }
 
+function orderStatusLabel(status) {
+  const labels = {
+    UNPAID: '결제 대기',
+    PENDING: '펜딩',
+    READY_TO_SHIP: '발송 대기',
+    PROCESSED: '발송 처리',
+    RETRY_SHIP: '재배송',
+    SHIPPED: '배송 중',
+    TO_CONFIRM_RECEIVE: '수취 확인',
+    COMPLETED: '배송 완료',
+    IN_CANCEL: '취소 요청',
+    TO_RETURN: '반품/환불',
+    CANCELLED: '취소 완료',
+  };
+
+  return labels[status] || status || '-';
+}
+
 function getOrderSn(order) {
   return order.order_sn || order.order_id || order.orderId || '';
 }
@@ -216,7 +234,9 @@ export default function OrderManagementTable({
                   <span className={regionClass(order.region)}>{order.region || order.shop_alias || order.shop_id}</span>
                 </td>
                 <td>
-                  <span className={statusClass(getDisplayStatus(order))}>{getDisplayStatus(order)}</span>
+                  <span className={statusClass(getDisplayStatus(order))}>
+                    {orderStatusLabel(getDisplayStatus(order))}
+                  </span>
                 </td>
                 <td>{renderProductLines(items, order, onOrderDetail)}</td>
                 <td>{renderOptionLines(items, onImagePreview)}</td>

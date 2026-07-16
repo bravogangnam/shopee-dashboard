@@ -4,6 +4,12 @@ import dayjs from 'dayjs';
 const { RangePicker } = DatePicker;
 
 const REGIONS = ['ALL', 'SG', 'MY', 'PH', 'TW'];
+
+const ALL_PERIOD_STATUSES = new Set([
+  'IN_CANCEL',
+  'TO_RETURN',
+  'CANCELLED',
+]);
 const STATUSES = [
   { value: '', label: '전체' },
   { value: 'UNPAID', label: '결제 대기' },
@@ -26,12 +32,31 @@ function getStatusCount(stats, status) {
 }
 
 export default function OrderManagementFilters({ filters, stats, onChange, onSubmit, onReset }) {
+  const isAllPeriodStatus = ALL_PERIOD_STATUSES.has(
+    filters.order_status
+  );
+
   const dateRangeValue = filters.date_from && filters.date_to
     ? [dayjs(filters.date_from), dayjs(filters.date_to)]
     : null;
 
   function setField(field, value) {
-    onChange({ ...filters, [field]: value });
+    if (field === 'order_status' && ALL_PERIOD_STATUSES.has(value)) {
+      onChange({
+        ...filters,
+        order_status: value,
+        date_from: '',
+        date_to: '',
+        page: 1,
+      });
+      return;
+    }
+
+    onChange({
+      ...filters,
+      [field]: value,
+      page: 1,
+    });
   }
 
   function setDateRange(dates) {
@@ -73,14 +98,20 @@ export default function OrderManagementFilters({ filters, stats, onChange, onSub
       <div className="order-filter-row">
         <label className="filter-field date-range-field">
           기간
-          <RangePicker
-            allowClear
-            format="YYYY-MM-DD"
-            value={dateRangeValue}
-            onChange={setDateRange}
-            placeholder={['시작일', '종료일']}
-            style={{ width: 260 }}
-          />
+          {isAllPeriodStatus ? (
+            <div className="order-all-period-notice">
+              전체 기간 조회
+            </div>
+          ) : (
+            <RangePicker
+              allowClear
+              format="YYYY-MM-DD"
+              value={dateRangeValue}
+              onChange={setDateRange}
+              placeholder={['시작일', '종료일']}
+              style={{ width: 260 }}
+            />
+          )}
         </label>
         <label className="filter-field order-search-field">
           주문번호

@@ -191,7 +191,7 @@ function buildUnifiedOrderSearchClause(searchTerms, orderAlias = 'o') {
 /**
  * GET /api/orders
  * Query params:
- *   page (default 1), page_size (default 20, max 100)
+ *   page (default 1), page_size (default 100, max 100)
  *   shop_id, region, order_status
  *   date_from, date_to  (KST YYYY-MM-DD)
  *   order_sn/search  (통합 부분 검색: 주문번호/SKU/상품명)
@@ -199,7 +199,7 @@ function buildUnifiedOrderSearchClause(searchTerms, orderAlias = 'o') {
 router.get('/', async (req, res) => {
   const {
     page = 1,
-    page_size = 20,
+    page_size = 100,
     shop_id,
     region,
     order_status,
@@ -238,6 +238,7 @@ router.get('/', async (req, res) => {
   let whereClause = `o.tenant_id = ? AND o.shop_id IN (SELECT shop_id FROM shops WHERE tenant_id = ? AND is_active = 1)`;
   const params = [tenantId, tenantId];
   const openBacklogStatuses = ['UNPAID', 'READY_TO_SHIP'];
+  const allPeriodStatuses = ['IN_CANCEL', 'TO_RETURN', 'CANCELLED'];
   const includeOpenBacklog = ['1', 'true', 'yes'].includes(String(include_open_backlog || '').toLowerCase());
   let statusFilters = [];
 
@@ -282,13 +283,17 @@ router.get('/', async (req, res) => {
   const dateConditions = [];
   const dateParams = [];
 
-  if (date_from) {
+  const ignoresDateFilter =
+    statusFilters.length === 1 &&
+    allPeriodStatuses.includes(statusFilters[0]);
+
+  if (date_from && !ignoresDateFilter) {
     // order_created_at은 KST 문자열로 저장 → KST 기준 필터
     dateConditions.push(`o.order_created_at >= ?`);
     dateParams.push(`${date_from} 00:00:00`);
   }
 
-  if (date_to) {
+  if (date_to && !ignoresDateFilter) {
     // order_created_at은 KST 문자열로 저장 → KST 기준 필터
     dateConditions.push(`o.order_created_at <= ?`);
     dateParams.push(`${date_to} 23:59:59`);
@@ -344,6 +349,49 @@ router.get('/', async (req, res) => {
     params.push(maxProfitRate);
   }
 
+  let orderByExpression = 'o.order_created_at DESC, o.id DESC';
+
+  if (
+    statusFilters.length === 1 &&
+    statusFilters[0] === 'TO_RETURN'
+  ) {
+    /*
+     * 반품/환불은 Return API의 마지막 변경시각 우선.
+     * update_time이 없으면 create_time,
+     * Return 데이터 시각도 없으면 주문 수정시각을 사용한다.
+     */
+    orderByExpression = `
+      COALESCE(
+        (
+          SELECT MAX(
+            COALESCE(rr.update_time, rr.create_time, 0)
+          )
+          FROM order_return_refunds rr
+          WHERE rr.tenant_id = o.tenant_id
+            AND rr.shop_id = o.shop_id
+            AND rr.order_sn = o.order_sn
+        ),
+        o.update_time,
+        o.create_time,
+        0
+      ) DESC,
+      o.order_created_at DESC,
+      o.id DESC
+    `;
+  } else if (
+    statusFilters.length === 1 &&
+    ['IN_CANCEL', 'CANCELLED'].includes(statusFilters[0])
+  ) {
+    /*
+     * 취소 요청과 취소 완료는 주문 마지막 변경시각 최신순.
+     */
+    orderByExpression = `
+      COALESCE(o.update_time, o.create_time, 0) DESC,
+      o.order_created_at DESC,
+      o.id DESC
+    `;
+  }
+
   try {
     // ── STEP 1: orders 테이블 기준 COUNT (JOIN 없음 → row 뻥튀기 없음) ──
     const [countRows] = await db.query(
@@ -360,12 +408,15 @@ router.get('/', async (req, res) => {
       `SELECT o.id, o.order_created_at
        FROM orders o
        WHERE ${whereClause}
-       ORDER BY o.order_created_at DESC
+       ORDER BY ${orderByExpression}
        LIMIT ? OFFSET ?`,
       [...params, pageSize, offset]
     );
 
-    console.log(`[Orders] STEP2 pageIds.length=${pageIds.length} (expected=${Math.min(pageSize, Math.max(0, total-offset))}) ORDER BY order_created_at DESC`);
+    console.log(
+      `[Orders] STEP2 pageIds.length=${pageIds.length} ` +
+      `(expected=${Math.min(pageSize, Math.max(0, total-offset))})`
+    );
     if (pageIds.length > 0) {
       console.log(`[Orders] STEP2 first=${pageIds[0].order_created_at} last=${pageIds[pageIds.length-1].order_created_at}`);
     }
@@ -409,6 +460,20 @@ router.get('/', async (req, res) => {
        ORDER BY o.order_created_at DESC`,
       idList
     );
+
+    /*
+     * 상세 SELECT의 JOIN 결과 정렬과 관계없이,
+     * Step 2에서 결정한 정확한 페이지 순서를 유지한다.
+     */
+    const pageOrderMap = new Map(
+      pageIds.map((row, index) => [Number(row.id), index])
+    );
+
+    orders.sort((a, b) => {
+      const aIndex = pageOrderMap.get(Number(a.id)) ?? Number.MAX_SAFE_INTEGER;
+      const bIndex = pageOrderMap.get(Number(b.id)) ?? Number.MAX_SAFE_INTEGER;
+      return aIndex - bIndex;
+    });
 
     // ── STEP 4: order_items 별도 조회 (해당 페이지 주문들만) ──
     const orderSnList = orders.map(o => o.order_sn);

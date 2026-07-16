@@ -80,6 +80,44 @@ function regionClass(region) {
   return `region-badge region-${String(region || '').toLowerCase()}`;
 }
 
+function paymentMethodLabel(value) {
+  if (!isPresent(value)) return '-';
+
+  const raw = String(value).trim();
+  const normalized = raw.toUpperCase().replace(/[\s-]+/g, '_');
+
+  const labels = {
+    SHOPEE_PAY: 'ShopeePay',
+    SHOPEEPAY: 'ShopeePay',
+    CREDIT_CARD: 'Credit Card',
+    CASH_ON_DELIVERY: 'Cash on Delivery',
+    COD: 'Cash on Delivery',
+    BANK_TRANSFER: 'Bank Transfer',
+  };
+
+  return labels[normalized] || raw;
+}
+
+function shippingMethodLabel(order) {
+  const checkoutCarrier = isPresent(order?.checkout_shipping_carrier)
+    ? String(order.checkout_shipping_carrier).trim()
+    : '';
+
+  const shippingCarrier = isPresent(order?.shipping_carrier)
+    ? String(order.shipping_carrier).trim()
+    : '';
+
+  if (checkoutCarrier && shippingCarrier) {
+    if (checkoutCarrier.toLowerCase() === shippingCarrier.toLowerCase()) {
+      return checkoutCarrier;
+    }
+
+    return `${checkoutCarrier} (${shippingCarrier})`;
+  }
+
+  return checkoutCarrier || shippingCarrier || '-';
+}
+
 function getItemImageUrl(item) {
   return (
     item?.image_info_image_url ||
@@ -380,6 +418,14 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
               <div>
                 <span>환율</span>
                 <strong>{formatRate(order.krw_rate, currency)}</strong>
+              </div>
+              <div>
+                <span>결제 방식</span>
+                <strong>{paymentMethodLabel(order.payment_method)}</strong>
+              </div>
+              <div>
+                <span>배송 방법</span>
+                <strong>{shippingMethodLabel(order)}</strong>
               </div>
             </div>
 

@@ -788,9 +788,16 @@ router.get('/stats', async (req, res) => {
       const prevSales = parseFloat(prev.total_sales || 0);
       return {
         region,
-        currency: cur.currency || { SG:'SGD', MY:'MYR', PH:'PHP', TW:'TWD' }[region],
-        rate_to_krw: parseFloat(cur.rate_to_krw || 0),
-        order_count:  parseInt(cur.valid_count  || 0),
+        currency:
+          cur.currency ||
+          prev.currency ||
+          { SG:'SGD', MY:'MYR', PH:'PHP', TW:'TWD' }[region],
+        rate_to_krw: parseFloat(
+          cur.rate_to_krw ??
+          prev.rate_to_krw ??
+          0
+        ),
+        order_count:  parseInt(cur.valid_count || 0),
         total_sales:  curSales,
         prev_sales:   prevSales,
         growth_pct:   growth(curSales, prevSales),

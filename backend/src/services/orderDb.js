@@ -172,8 +172,8 @@ async function batchInsertOrders(orderRows, { tenantId = CURRENT_TENANT_ID } = {
           tenant_id, shop_id, region, order_sn, order_status, display_status, display_status_reason, display_status_checked_at, is_final_status,
           merchandise_subtotal, total_amount, currency,
           original_price, seller_discount, voucher_from_seller, voucher_from_shopee,
-          coins_offset, buyer_total_amount,
-          shipping_carrier, tracking_number, shipping_fee, shipping_fee_discount,
+          coins_offset, buyer_total_amount, payment_method,
+          shipping_carrier, checkout_shipping_carrier, tracking_number, shipping_fee, shipping_fee_discount,
           actual_shipping_fee, estimated_shipping_fee, order_chargeable_weight_gram,
           commission_fee, service_fee, transaction_fee, escrow_amount,
           create_time, order_created_at, update_time, synced_at
@@ -181,8 +181,8 @@ async function batchInsertOrders(orderRows, { tenantId = CURRENT_TENANT_ID } = {
           ?, ?, ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?,
           ?, ?, ?, ?,
-          ?, ?,
-          ?, ?, ?, ?,
+          ?, ?, ?,
+          ?, ?, ?, ?, ?,
           ?, ?, ?,
           ?, ?, ?, ?,
           ?, ?, ?, NOW()
@@ -199,14 +199,35 @@ async function batchInsertOrders(orderRows, { tenantId = CURRENT_TENANT_ID } = {
           row.is_final_status,
           row.merchandise_subtotal, row.total_amount, row.currency,
           row.original_price, row.seller_discount, row.voucher_from_seller, row.voucher_from_shopee,
-          row.coins_offset, row.buyer_total_amount,
-          row.shipping_carrier, row.tracking_number, row.shipping_fee, row.shipping_fee_discount,
+          row.coins_offset, row.buyer_total_amount, row.payment_method,
+          row.shipping_carrier, row.checkout_shipping_carrier, row.tracking_number, row.shipping_fee, row.shipping_fee_discount,
           row.actual_shipping_fee, row.estimated_shipping_fee, row.order_chargeable_weight_gram,
           row.commission_fee, row.service_fee, row.transaction_fee, row.escrow_amount,
           row.create_time, row.order_created_at, row.update_time,
         ]
       );
       inserted += result.affectedRows;
+
+      // 기존 주문도 재동기화할 때 결제 방식과 배송 방법을 갱신한다.
+      await conn.query(
+        `UPDATE orders
+         SET
+           payment_method = ?,
+           shipping_carrier = ?,
+           checkout_shipping_carrier = ?,
+           synced_at = NOW()
+         WHERE tenant_id = ?
+           AND order_sn = ?
+           AND shop_id = ?`,
+        [
+          row.payment_method ?? null,
+          row.shipping_carrier ?? null,
+          row.checkout_shipping_carrier ?? null,
+          tenantId,
+          row.order_sn,
+          row.shop_id,
+        ]
+      );
     }
     await conn.commit();
   } catch (err) {

@@ -663,8 +663,8 @@ router.get('/stats', async (req, res) => {
       shopParams
     );
 
-    // 주문 상태별 집계 (현재 기간)
-    const [byStatus] = await db.query(
+    // 일반 주문 상태는 현재 선택 기간 기준으로 집계
+    const [periodStatusRows] = await db.query(
       `SELECT
          CASE
            WHEN EXISTS (
@@ -695,6 +695,69 @@ router.get('/stats', async (req, res) => {
        ORDER BY count DESC`,
       shopParams
     );
+
+    /*
+     * 취소 요청 / 반품·환불 / 취소 완료는 날짜 필터를 적용하지 않고
+     * 활성 샵 전체 기간을 기준으로 집계한다.
+     *
+     * Return 데이터가 연결된 주문은 기존 표시 규칙과 동일하게
+     * 실제 order_status보다 TO_RETURN을 우선한다.
+     */
+    const [allPeriodExceptionRows] = await db.query(
+      `SELECT
+         effective_status AS order_status,
+         COUNT(*) AS count
+       FROM (
+         SELECT
+           CASE
+             WHEN EXISTS (
+               SELECT 1
+               FROM order_return_refunds rr
+               WHERE rr.tenant_id = o.tenant_id
+                 AND rr.shop_id = o.shop_id
+                 AND rr.order_sn = o.order_sn
+             )
+             THEN 'TO_RETURN'
+             ELSE o.order_status
+           END AS effective_status
+         FROM orders o
+         WHERE 1=1 ${shopFilter}
+       ) exception_orders
+       WHERE effective_status IN (
+         'IN_CANCEL',
+         'TO_RETURN',
+         'CANCELLED'
+       )
+       GROUP BY effective_status`,
+      shopParams
+    );
+
+    const exceptionStatuses = new Set([
+      'IN_CANCEL',
+      'TO_RETURN',
+      'CANCELLED',
+    ]);
+
+    const exceptionCountMap = new Map(
+      allPeriodExceptionRows.map(row => [
+        row.order_status,
+        Number(row.count || 0),
+      ])
+    );
+
+    const byStatus = periodStatusRows
+      .filter(row => !exceptionStatuses.has(row.order_status))
+      .map(row => ({
+        ...row,
+        count: Number(row.count || 0),
+      }));
+
+    for (const status of exceptionStatuses) {
+      byStatus.push({
+        order_status: status,
+        count: exceptionCountMap.get(status) || 0,
+      });
+    }
 
     // ── 월매출 고정 쿼리 (당월 1일~오늘, 날짜 필터와 무관) ────────────
     const monthlyFrom = `${kstYear}-${String(kstMonth).padStart(2,'0')}-01`;

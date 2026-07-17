@@ -6259,3 +6259,93 @@ label {
 }
 
 /* ===== SELLER COST COLOR END ===== */
+
+/* Order table order ID copy */
+.order-id-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.order-id-text {
+  color: #111827;
+  text-decoration: none;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.order-id-text:hover,
+.order-id-text:focus,
+.order-id-text:active {
+  color: #111827;
+  text-decoration: none;
+  cursor: default;
+}
+
+/* ===== COMMON COPY ICON BUTTON ===== */
+.copy-icon-button {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d5dce5;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 0;
+  color: #64748b;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.08s ease;
+}
+
+.copy-icon-button svg {
+  display: block;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  pointer-events: none;
+}
+
+.copy-icon-button:hover:not(:disabled) {
+  border-color: #aeb9c7;
+  background: #f8fafc;
+  color: #334155;
+}
+
+.copy-icon-button:active:not(:disabled) {
+  background: #f1f5f9;
+  transform: translateY(1px);
+}
+
+.copy-icon-button:focus {
+  outline: none;
+}
+
+.copy-icon-button:focus-visible {
+  outline: 2px solid #94a3b8;
+  outline-offset: 2px;
+}
+
+.copy-icon-button.is-copied {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.copy-icon-button:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+/* ===== COMMON COPY ICON BUTTON END ===== */
+

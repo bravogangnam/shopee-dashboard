@@ -2,27 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { fetchBuyerHistory, fetchOrderDetail } from '../api/orders.js';
 import { formatKrw } from '../utils/format.js';
 import BuyerHistoryModal from './BuyerHistoryModal.jsx';
-
-function copyBuyerValue(value) {
-  if (!isPresent(value)) return;
-
-  const text = String(value);
-
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).catch(() => {});
-    return;
-  }
-
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.style.position = 'fixed';
-  textarea.style.opacity = '0';
-
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand('copy');
-  textarea.remove();
-}
+import CopyIconButton from './CopyIconButton.jsx';
 
 function isPresent(value) {
   return value !== null && value !== undefined && value !== '';
@@ -712,37 +692,10 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
                         {order.buyer_username || '-'}
                       </strong>
 
-                      <button
-                        type="button"
-                        className="buyer-summary-copy"
-                        disabled={!order.buyer_username}
-                        onClick={() =>
-                          copyBuyerValue(order.buyer_username)
-                        }
-                        title="Username 복사"
-                        aria-label="Username 복사"
-                      >
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                          <path
-                            d="M8 8V5.8A1.8 1.8 0 0 1 9.8 4h8.4A1.8 1.8 0 0 1 20 5.8v8.4a1.8 1.8 0 0 1-1.8 1.8H16"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                          <rect
-                            x="4"
-                            y="8"
-                            width="12"
-                            height="12"
-                            rx="1.8"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                          />
-                        </svg>
-                      </button>
+                      <CopyIconButton
+                        value={order.buyer_username}
+                        label="Username"
+                      />
                     </div>
                   </div>
 
@@ -754,37 +707,10 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
                         {order.buyer_user_id || '-'}
                       </strong>
 
-                      <button
-                        type="button"
-                        className="buyer-summary-copy"
-                        disabled={!order.buyer_user_id}
-                        onClick={() =>
-                          copyBuyerValue(order.buyer_user_id)
-                        }
-                        title="User ID 복사"
-                        aria-label="User ID 복사"
-                      >
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                          <path
-                            d="M8 8V5.8A1.8 1.8 0 0 1 9.8 4h8.4A1.8 1.8 0 0 1 20 5.8v8.4a1.8 1.8 0 0 1-1.8 1.8H16"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                          <rect
-                            x="4"
-                            y="8"
-                            width="12"
-                            height="12"
-                            rx="1.8"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                          />
-                        </svg>
-                      </button>
+                      <CopyIconButton
+                        value={order.buyer_user_id}
+                        label="User ID"
+                      />
                     </div>
                   </div>
 

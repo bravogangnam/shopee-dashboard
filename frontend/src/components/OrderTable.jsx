@@ -1,3 +1,4 @@
+import CopyIconButton from './CopyIconButton.jsx';
 import MarginBadge from './MarginBadge.jsx';
 import { formatCurrency, formatDateTime, formatKrw, profitTone } from '../utils/format.js';
 
@@ -133,14 +134,13 @@ export default function OrderTable({ orders, loading, onOrderDetail }) {
             return (
               <tr key={`${order.shop_id}-${order.order_sn}`} className={isCancelledOrder(order) ? 'cancelled-row' : ''}>
                 <td>
-                  <a
-                    href={`/orders?order_sn=${encodeURIComponent(order.order_sn)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="order-link"
-                  >
-                    <strong>{order.order_sn}</strong>
-                  </a>
+                  <div className="order-id-row">
+                    <strong className="order-id-text">{order.order_sn}</strong>
+                    <CopyIconButton
+                      value={order.order_sn}
+                      label="주문번호"
+                    />
+                  </div>
                   <small>{formatDateTime(order.order_created_at)}</small>
                 </td>
                 <td>

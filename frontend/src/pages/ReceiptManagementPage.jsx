@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { cancelStockReceipt, completeStockReceipt, createSkuComposition, createStockReceipt, deleteSkuComposition, fetchReceiptDashboard, fetchSkuCompositions, fetchStockReceiptHistory, fetchStockReceiptSummary, fetchStockReceipts, previewStockBatchCost, searchReceiptProducts, updateSkuComposition, updateStockBatchCost, updateStockReceipt } from '../api/receipts.js';
+import CopyIconButton from '../components/CopyIconButton.jsx';
 
 function formatNumber(value, digits = 0) {
   const number = Number(value || 0);
@@ -543,13 +544,23 @@ function StockInTab({ dashboard, reloadDashboard }) {
                   <td>
                     <div className="receipt-copy-cell">
                       <strong>{product.sku}</strong>
-                      <button type="button" className="receipt-copy-button" onClick={() => copyText(product.sku, 'SKU')}>복사</button>
+                      <CopyIconButton
+                        value={product.sku}
+                        label="SKU"
+                        onCopied={(text) => setReceiptMessage(`SKU 복사됨: ${text}`)}
+                        onCopyError={(_, text) => setReceiptMessage(`SKU 복사 실패: ${text}`)}
+                      />
                     </div>
                   </td>
                   <td>
                     <div className="receipt-copy-cell">
                       <span>{product.product_name_kr || product.product_name_en || '-'}</span>
-                      <button type="button" className="receipt-copy-button" onClick={() => copyText(product.product_name_kr || product.product_name_en, '상품명')}>복사</button>
+                      <CopyIconButton
+                        value={product.product_name_kr || product.product_name_en}
+                        label="상품명"
+                        onCopied={(text) => setReceiptMessage(`상품명 복사됨: ${text}`)}
+                        onCopyError={(_, text) => setReceiptMessage(`상품명 복사 실패: ${text}`)}
+                      />
                     </div>
                   </td>
                   <td>
@@ -860,7 +871,12 @@ function StockInTab({ dashboard, reloadDashboard }) {
                     <div className="receipt-copy-cell receipt-history-copy-cell">
                       <strong>{skuText || '-'}</strong>
                       {skuText ? (
-                        <button type="button" className="receipt-copy-button" onClick={() => copyText(skuText, 'SKU')} title="SKU 복사" aria-label="SKU 복사">📋</button>
+                        <CopyIconButton
+                          value={skuText}
+                          label="SKU"
+                          onCopied={(text) => setReceiptMessage(`SKU 복사됨: ${text}`)}
+                          onCopyError={(_, text) => setReceiptMessage(`SKU 복사 실패: ${text}`)}
+                        />
                       ) : null}
                     </div>
                   </td>
@@ -868,7 +884,12 @@ function StockInTab({ dashboard, reloadDashboard }) {
                     <div className="receipt-copy-cell receipt-history-copy-cell receipt-history-product-cell">
                       <span className="receipt-product-name" title={productName || ''}>{productName || '-'}</span>
                       {productName ? (
-                        <button type="button" className="receipt-copy-button" onClick={() => copyText(productName, '상품명')} title="상품명 복사" aria-label="상품명 복사">📋</button>
+                        <CopyIconButton
+                          value={productName}
+                          label="상품명"
+                          onCopied={(text) => setReceiptMessage(`상품명 복사됨: ${text}`)}
+                          onCopyError={(_, text) => setReceiptMessage(`상품명 복사 실패: ${text}`)}
+                        />
                       ) : null}
                     </div>
                   </td>

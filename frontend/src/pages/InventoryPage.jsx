@@ -8,6 +8,7 @@ import {
   updateProductStock,
 } from '../api/products.js';
 import ImagePreviewModal from '../components/ImagePreviewModal.jsx';
+import CopyIconButton from '../components/CopyIconButton.jsx';
 
 function formatDateTime(value) {
   if (!value) return '-';
@@ -99,14 +100,10 @@ function SkuCopyCell({ sku }) {
   return (
     <div className="sku-copy-cell">
       <strong>{sku}</strong>
-      <button
-        type="button"
-        className="copy-sku-btn"
-        onClick={() => copySkuToClipboard(sku)}
-        title="SKU 복사"
-      >
-        복사
-      </button>
+      <CopyIconButton
+        value={sku}
+        label="SKU"
+      />
     </div>
   );
 }

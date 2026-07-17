@@ -7302,16 +7302,37 @@ html[data-theme='dark'] .product-capture-page .product-capture-result-table td {
 }
 
 html[data-theme='dark'] .order-management-page .date-range-field .ant-picker,
-html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-input,
-html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-input input,
-html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-separator,
-html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-suffix {
+html[data-theme='dark'] .ledger-page .date-range-field .ant-picker {
   border-color: var(--theme-input-border) !important;
   background: var(--theme-input-bg) !important;
   color: var(--theme-text-strong) !important;
 }
 
-html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-suffix svg {
+html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-input,
+html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-input input,
+html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-separator,
+html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-suffix,
+html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-clear,
+html[data-theme='dark'] .ledger-page .date-range-field .ant-picker-input,
+html[data-theme='dark'] .ledger-page .date-range-field .ant-picker-input input,
+html[data-theme='dark'] .ledger-page .date-range-field .ant-picker-separator,
+html[data-theme='dark'] .ledger-page .date-range-field .ant-picker-suffix,
+html[data-theme='dark'] .ledger-page .date-range-field .ant-picker-clear {
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--theme-text-strong) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-input input,
+html[data-theme='dark'] .ledger-page .date-range-field .ant-picker-input input {
+  min-height: 0;
+  padding: 0;
+  -webkit-text-fill-color: var(--theme-text-strong);
+}
+
+html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-suffix svg,
+html[data-theme='dark'] .ledger-page .date-range-field .ant-picker-suffix svg {
   fill: currentColor;
 }
 

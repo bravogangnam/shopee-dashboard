@@ -7409,3 +7409,13 @@ html[data-theme='dark'] .inventory-page .action-btn:hover {
   background: var(--theme-surface-hover) !important;
   color: var(--theme-text-strong) !important;
 }
+
+html[data-theme='dark'] .receipt-page .receipt-option-image-button {
+  color: var(--theme-text) !important;
+  text-decoration-color: var(--theme-border) !important;
+}
+
+html[data-theme='dark'] .receipt-page .receipt-option-image-button:hover {
+  color: #93c5fd !important;
+  text-decoration-color: #60a5fa !important;
+}

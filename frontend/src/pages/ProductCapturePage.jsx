@@ -167,7 +167,7 @@ export default function ProductCapturePage() {
         </div>
       </div>
 
-      <div className="card">
+      <div className="card product-capture-bookmarklet-panel">
         <h3>북마클릿 안내</h3>
         <p>아래 링크는 클릭 실행용이 아니라, <strong>북마크바로 드래그해서 등록</strong>하는 용도입니다.</p>
         <div className="bookmarklet-actions">
@@ -191,7 +191,7 @@ export default function ProductCapturePage() {
           <div className="product-capture-panel-header">
             <h3>수집 결과</h3>
           </div>
-          <div className="table-wrap">
+          <div className="table-wrap product-capture-result-wrap">
             <table className="table product-capture-result-table">
               <colgroup>
                 <col className="product-capture-name-col" />

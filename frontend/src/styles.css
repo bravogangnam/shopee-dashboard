@@ -7232,3 +7232,71 @@ html[data-theme='dark'] input[type='datetime-local']::-webkit-calendar-picker-in
   filter: invert(0.8);
   opacity: 0.85;
 }
+
+/* Dark theme final polish: management pages */
+html[data-theme='dark'] .order-management-page .order-management-filters,
+html[data-theme='dark'] .order-management-page .order-management-table-wrap,
+html[data-theme='dark'] .order-management-page .table-state,
+html[data-theme='dark'] .order-management-page .stat-card,
+html[data-theme='dark'] .ledger-page .summary-card,
+html[data-theme='dark'] .ledger-page .filters,
+html[data-theme='dark'] .ledger-page .ledger-table-wrap,
+html[data-theme='dark'] .ledger-page .table-state,
+html[data-theme='dark'] .inventory-page .inventory-stat-card,
+html[data-theme='dark'] .inventory-page .inventory-filters,
+html[data-theme='dark'] .inventory-page .today-order-inventory,
+html[data-theme='dark'] .inventory-page .today-order-table-wrap,
+html[data-theme='dark'] .inventory-page .inventory-table-wrap,
+html[data-theme='dark'] .inventory-page .inventory-history-wrap,
+html[data-theme='dark'] .inventory-page .table-state,
+html[data-theme='dark'] .inventory-page .receipt-sync-panel,
+html[data-theme='dark'] .product-capture-page .product-capture-bookmarklet-panel,
+html[data-theme='dark'] .product-capture-page .product-capture-paste-panel,
+html[data-theme='dark'] .product-capture-page .product-capture-reference-panel,
+html[data-theme='dark'] .product-capture-page .product-capture-result-wrap {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+html[data-theme='dark'] .order-management-page .ghost-button,
+html[data-theme='dark'] .ledger-page .ghost-button,
+html[data-theme='dark'] .ledger-page .ledger-settlement-filter button,
+html[data-theme='dark'] .inventory-page .ghost-button,
+html[data-theme='dark'] .inventory-page .invoice-btn,
+html[data-theme='dark'] .inventory-page .inventory-tabs button,
+html[data-theme='dark'] .product-capture-page .action-btn {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface-soft) !important;
+  color: var(--theme-text) !important;
+}
+
+html[data-theme='dark'] .order-management-page .ghost-button:hover,
+html[data-theme='dark'] .ledger-page .ghost-button:hover,
+html[data-theme='dark'] .ledger-page .ledger-settlement-filter button:hover,
+html[data-theme='dark'] .inventory-page .ghost-button:hover,
+html[data-theme='dark'] .inventory-page .invoice-btn:hover,
+html[data-theme='dark'] .inventory-page .inventory-tabs button:hover,
+html[data-theme='dark'] .product-capture-page .action-btn:hover {
+  background: var(--theme-surface-hover) !important;
+  color: var(--theme-text-strong) !important;
+}
+
+html[data-theme='dark'] .ledger-page .ledger-settlement-filter button.active,
+html[data-theme='dark'] .inventory-page .inventory-tabs button.active {
+  border-color: #3b82f6 !important;
+  background: var(--theme-primary-soft) !important;
+  color: #93c5fd !important;
+}
+
+html[data-theme='dark'] .product-capture-page .product-capture-result-table th {
+  border-color: var(--theme-border) !important;
+  background: #17243a !important;
+  color: #c9d6e6 !important;
+}
+
+html[data-theme='dark'] .product-capture-page .product-capture-result-table td {
+  border-color: var(--theme-border-soft) !important;
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}

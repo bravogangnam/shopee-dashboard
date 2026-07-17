@@ -7398,3 +7398,14 @@ html[data-theme='dark'] .settings-page .fixed-sheet-names strong {
   background: var(--theme-primary-soft) !important;
   color: #93c5fd !important;
 }
+
+html[data-theme='dark'] .inventory-page .action-btn {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface-soft) !important;
+  color: var(--theme-text) !important;
+}
+
+html[data-theme='dark'] .inventory-page .action-btn:hover {
+  background: var(--theme-surface-hover) !important;
+  color: var(--theme-text-strong) !important;
+}

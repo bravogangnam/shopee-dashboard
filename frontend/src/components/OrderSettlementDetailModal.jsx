@@ -1,6 +1,28 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchOrderDetail } from '../api/orders.js';
+import { fetchBuyerHistory, fetchOrderDetail } from '../api/orders.js';
 import { formatKrw } from '../utils/format.js';
+import BuyerHistoryModal from './BuyerHistoryModal.jsx';
+
+function copyBuyerValue(value) {
+  if (!isPresent(value)) return;
+
+  const text = String(value);
+
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => {});
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
+}
 
 function isPresent(value) {
   return value !== null && value !== undefined && value !== '';
@@ -255,6 +277,14 @@ function returnStatusClass(status) {
 
 export default function OrderSettlementDetailModal({ orderSn, shopId, onClose }) {
   const [order, setOrder] = useState(null);
+  const [buyerHistory, setBuyerHistory] = useState(null);
+  const [buyerHistoryLoading, setBuyerHistoryLoading] =
+    useState(false);
+  const [buyerHistoryError, setBuyerHistoryError] =
+    useState('');
+  const [buyerHistoryOpen, setBuyerHistoryOpen] =
+    useState(false);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -293,6 +323,66 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadBuyerHistory() {
+      if (
+        !order?.shop_id ||
+        (!order?.buyer_user_id && !order?.buyer_username)
+      ) {
+        if (!cancelled) {
+          setBuyerHistory(null);
+          setBuyerHistoryError('');
+          setBuyerHistoryLoading(false);
+        }
+        return;
+      }
+
+      setBuyerHistoryLoading(true);
+      setBuyerHistoryError('');
+
+      try {
+        const result = await fetchBuyerHistory({
+          shopId: order.shop_id,
+          buyerUserId: order.buyer_user_id,
+          buyerUsername: order.buyer_username,
+          currentOrderSn: order.order_sn,
+          limit: 100,
+        });
+
+        if (!cancelled) {
+          setBuyerHistory(result);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setBuyerHistory(null);
+          setBuyerHistoryError(
+            err?.message ||
+              '구매이력을 불러오지 못했습니다.'
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setBuyerHistoryLoading(false);
+        }
+      }
+    }
+
+    loadBuyerHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    order?.shop_id,
+    order?.buyer_user_id,
+    order?.buyer_username,
+    order?.order_sn,
+  ]);
+
+
 
   const items = Array.isArray(order?.item_list) ? order.item_list : [];
   const returnRefunds = Array.isArray(order?.return_refunds)
@@ -337,6 +427,132 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
     if (profit === null || salesKrw === null) return null;
     return (profit / salesKrw) * 100;
   }, [order, salesKrw]);
+
+  /* SELLER COST COLOR START */
+  useEffect(() => {
+    const modal = document.querySelector(
+      '.order-settlement-modal'
+    );
+
+    if (!modal || !order) {
+      return undefined;
+    }
+
+    const sellerCostLabels = new Set([
+      'Commission Fee',
+      'Service Fee',
+      'Transaction Fee',
+      'Fees & Charges',
+      'Total Fees & Charges',
+      'Seller Voucher',
+      'Seller Coins',
+      'Seller Shipping Discount',
+      'Seller Shipping Fee',
+      'Logistics Fee',
+      'Actual Shipping Fee',
+      'Vouchers & Rebates',
+    ]);
+
+    const shopeeFundedLabels = new Set([
+      'Shopee Voucher',
+      'Shopee Coins',
+      'Buyer Voucher',
+      'Shipping Fee Paid by Buyer',
+      'Estimated Shipping Subtotal',
+      'Estimated Shipping Fee Charged by Logistic Provider',
+    ]);
+
+    const negativeMoneyPattern =
+      /(?:^|\s)-(?:₩|₱|฿|₫|RM|S\$|NT\$|R\$|MX\$|[A-Z]{3}\s*)?\s*\d/i;
+
+    const findRow = labelElement => {
+      return (
+        labelElement.closest('tr') ||
+        labelElement.closest(
+          '.order-settlement-detail-row'
+        ) ||
+        labelElement.parentElement
+      );
+    };
+
+    const findAmountElement = row => {
+      if (!row) return null;
+
+      const candidates = Array.from(
+        row.querySelectorAll(
+          'strong, b, td, span'
+        )
+      ).filter(element =>
+        negativeMoneyPattern.test(
+          String(element.textContent || '').trim()
+        )
+      );
+
+      return candidates[candidates.length - 1] || null;
+    };
+
+    const applyAmountColors = () => {
+      modal
+        .querySelectorAll(
+          '.seller-cost-negative, .shopee-funded-negative'
+        )
+        .forEach(element => {
+          element.classList.remove(
+            'seller-cost-negative',
+            'shopee-funded-negative'
+          );
+        });
+
+      modal
+        .querySelectorAll('span, td, div')
+        .forEach(labelElement => {
+          const label = String(
+            labelElement.textContent || ''
+          ).trim();
+
+          if (
+            !sellerCostLabels.has(label) &&
+            !shopeeFundedLabels.has(label)
+          ) {
+            return;
+          }
+
+          const row = findRow(labelElement);
+          const amountElement = findAmountElement(row);
+
+          if (!amountElement) {
+            return;
+          }
+
+          if (sellerCostLabels.has(label)) {
+            amountElement.classList.add(
+              'seller-cost-negative'
+            );
+          } else {
+            amountElement.classList.add(
+              'shopee-funded-negative'
+            );
+          }
+        });
+    };
+
+    applyAmountColors();
+
+    const observer = new MutationObserver(
+      applyAmountColors
+    );
+
+    observer.observe(modal, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [order]);
+  /* SELLER COST COLOR END */
 
   const chargeableWeight = formatWeight(
     order?.order_chargeable_weight_gram
@@ -384,53 +600,321 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
 
         {!loading && !error && order && (
           <>
-            <div className="order-settlement-meta">
-              <div>
-                <span>Order ID</span>
-                <strong>{order.order_sn || orderSn}</strong>
-              </div>
-              <div>
-                <span>Shop</span>
-                <strong>
-                  <span className={regionClass(order.region)}>
-                    {order.region || order.shop_alias || order.shop_id || '-'}
-                  </span>
+            <div className="payment-order-top-grid">
+              <div className="payment-order-top-card payment-order-id-card">
+                <span className="payment-order-top-label">
+                  Order ID
+                </span>
+
+                <strong className="payment-order-top-value payment-order-top-nowrap">
+                  {order.order_sn || orderSn}
                 </strong>
               </div>
-              <div>
-                <span>Order Status</span>
-                <strong>
-                  <span className={statusClass(getOrderDisplayStatus(order))}>
-                    {orderStatusLabel(getOrderDisplayStatus(order))}
-                  </span>
+
+              <div className="payment-order-top-card">
+                <span className="payment-order-top-label">
+                  Shop
+                </span>
+
+                <span className="payment-order-shop-badge">
+                  {order.region ||
+                    order.shop_alias ||
+                    order.shop_id ||
+                    '-'}
+                </span>
+              </div>
+
+              <div className="payment-order-top-card">
+                <span className="payment-order-top-label">
+                  Order Status
+                </span>
+
+                <span className="payment-order-status-badge">
+                  {orderStatusLabel(
+                    getOrderDisplayStatus(order)
+                  )}
+                </span>
+              </div>
+
+              <div className="payment-order-top-card">
+                <span className="payment-order-top-label">
+                  Currency
+                </span>
+
+                <strong className="payment-order-top-value payment-order-top-nowrap">
+                  {currency || '-'}
                 </strong>
               </div>
-              <div>
-                <span>Buyer ID</span>
-                <strong className="order-settlement-buyer-id">
-                  {order.buyer_username || order.buyer_user_id || '-'}
+
+              <div className="payment-order-top-card">
+                <span className="payment-order-top-label">
+                  환율
+                </span>
+
+                <strong className="payment-order-top-value payment-order-rate-value">
+                  {formatRate(order.krw_rate, currency)}
                 </strong>
               </div>
-              <div>
-                <span>Currency</span>
-                <strong>{currency || '-'}</strong>
+
+              <div className="payment-order-top-card">
+                <span className="payment-order-top-label">
+                  결제 방식
+                </span>
+
+                <strong className="payment-order-top-value">
+                  {paymentMethodLabel(order.payment_method)}
+                </strong>
               </div>
-              <div>
-                <span>환율</span>
-                <strong>{formatRate(order.krw_rate, currency)}</strong>
-              </div>
-              <div>
-                <span>결제 방식</span>
-                <strong>{paymentMethodLabel(order.payment_method)}</strong>
-              </div>
-              <div>
-                <span>배송 방법</span>
-                <strong>{shippingMethodLabel(order)}</strong>
+
+              <div className="payment-order-top-card">
+                <span className="payment-order-top-label">
+                  배송 방법
+                </span>
+
+                <strong className="payment-order-top-value">
+                  {shippingMethodLabel(order)}
+                </strong>
               </div>
             </div>
 
             <section className="order-settlement-section">
-              <h3>Products</h3>
+              
+            <div className="order-settlement-buyer-summary">
+              <section className="buyer-summary-identity">
+                <div className="buyer-summary-heading">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <circle
+                      cx="12"
+                      cy="8"
+                      r="4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                    />
+                    <path
+                      d="M4.5 20c.7-4 3.2-6 7.5-6s6.8 2 7.5 6"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+
+                  <span>Buyer Information</span>
+                </div>
+
+                <div className="buyer-summary-fields">
+                  <div className="buyer-summary-field">
+                    <span>Username</span>
+
+                    <div>
+                      <strong>
+                        {order.buyer_username || '-'}
+                      </strong>
+
+                      <button
+                        type="button"
+                        className="buyer-summary-copy"
+                        disabled={!order.buyer_username}
+                        onClick={() =>
+                          copyBuyerValue(order.buyer_username)
+                        }
+                        title="Username 복사"
+                        aria-label="Username 복사"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path
+                            d="M8 8V5.8A1.8 1.8 0 0 1 9.8 4h8.4A1.8 1.8 0 0 1 20 5.8v8.4a1.8 1.8 0 0 1-1.8 1.8H16"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <rect
+                            x="4"
+                            y="8"
+                            width="12"
+                            height="12"
+                            rx="1.8"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="buyer-summary-field">
+                    <span>User ID</span>
+
+                    <div>
+                      <strong>
+                        {order.buyer_user_id || '-'}
+                      </strong>
+
+                      <button
+                        type="button"
+                        className="buyer-summary-copy"
+                        disabled={!order.buyer_user_id}
+                        onClick={() =>
+                          copyBuyerValue(order.buyer_user_id)
+                        }
+                        title="User ID 복사"
+                        aria-label="User ID 복사"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path
+                            d="M8 8V5.8A1.8 1.8 0 0 1 9.8 4h8.4A1.8 1.8 0 0 1 20 5.8v8.4a1.8 1.8 0 0 1-1.8 1.8H16"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <rect
+                            x="4"
+                            y="8"
+                            width="12"
+                            height="12"
+                            rx="1.8"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="buyer-summary-history-button"
+                    disabled={
+                      buyerHistoryLoading ||
+                      (!order.buyer_user_id &&
+                        !order.buyer_username)
+                    }
+                    onClick={() => setBuyerHistoryOpen(true)}
+                  >
+                    <span>구매이력 보기</span>
+
+                    <span
+                      className="buyer-summary-history-chevron"
+                      aria-hidden="true"
+                    >
+                      ›
+                    </span>
+                  </button>
+                </div>
+              </section>
+
+              <section className="buyer-summary-statistics">
+                <div className="buyer-summary-heading">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M5 19V11M12 19V5M19 19v-8"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                    <path
+                      d="M3 19h18"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+
+                  <span>Customer Statistics</span>
+                </div>
+
+                <div className="buyer-summary-stat-row">
+                  {Number(
+                    buyerHistory?.current_purchase_number || 0
+                  ) > 1 && (
+                    <div className="buyer-summary-purchase-number">
+                      <span>현재 주문은</span>
+
+                      <strong>
+                        {buyerHistory.current_purchase_number}번째 구매
+                      </strong>
+                    </div>
+                  )}
+
+                  <div className="buyer-summary-stat buyer-summary-stat-total">
+                    <span>총 주문</span>
+
+                    <div>
+                      <strong>
+                        {buyerHistoryLoading
+                          ? '-'
+                          : `${buyerHistory?.total_orders ?? 0}건`}
+                      </strong>
+
+                      <b>
+                        ₩{Number(
+                          buyerHistory?.total_orders_amount_krw || 0
+                        ).toLocaleString('ko-KR')}
+                      </b>
+                    </div>
+                  </div>
+
+                  <div className="buyer-summary-stat buyer-summary-stat-completed">
+                    <span>완료 주문</span>
+
+                    <div>
+                      <strong>
+                        {buyerHistoryLoading
+                          ? '-'
+                          : `${buyerHistory?.completed_orders ?? 0}건`}
+                      </strong>
+
+                      <b>
+                        ₩{Number(
+                          buyerHistory?.completed_orders_amount_krw || 0
+                        ).toLocaleString('ko-KR')}
+                      </b>
+                    </div>
+                  </div>
+
+                  <div className="buyer-summary-stat buyer-summary-stat-cancelled">
+                    <span>취소 주문</span>
+
+                    <div>
+                      <strong>
+                        {buyerHistoryLoading
+                          ? '-'
+                          : `${buyerHistory?.cancelled_orders ?? 0}건`}
+                      </strong>
+
+                      <b>
+                        ₩{Number(
+                          buyerHistory?.cancelled_orders_amount_krw || 0
+                        ).toLocaleString('ko-KR')}
+                      </b>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {buyerHistoryOpen && (
+                <BuyerHistoryModal
+                  history={buyerHistory}
+                  loading={buyerHistoryLoading}
+                  error={buyerHistoryError}
+                  currentOrderSn={order.order_sn || orderSn}
+                  onClose={() =>
+                    setBuyerHistoryOpen(false)
+                  }
+                />
+              )}
+            </div>
+
+<h3>Products</h3>
               <div className="order-settlement-product-table-wrap">
                 <table className="order-settlement-product-table">
                   <colgroup>

@@ -1192,6 +1192,259 @@ router.get('/daily-sales', async (req, res) => {
   }
 });
 
+
+
+
+/**
+ * 구매자 구매이력
+ *
+ * 조회 우선순위:
+ * 1. buyer_user_id가 있으면 tenant 전체에서 buyer_user_id 기준
+ * 2. buyer_user_id가 없으면 buyer_username 기준
+ *
+ * 별도 테이블이나 주문 동기화 로직을 변경하지 않는다.
+ */
+router.get('/buyer-history', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const buyerUserId = String(req.query.buyer_user_id || '').trim();
+  const buyerUsername = String(req.query.buyer_username || '').trim();
+  const currentOrderSn = String(req.query.current_order_sn || '').trim();
+
+  const requestedLimit = Number(req.query.limit || 100);
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.max(1, Math.min(100, Math.trunc(requestedLimit)))
+    : 100;
+
+  if (!buyerUserId && !buyerUsername) {
+    return res.status(400).json({
+      success: false,
+      error: 'buyer_user_id or buyer_username is required',
+    });
+  }
+
+  try {
+    const buyerCondition = buyerUserId
+      ? 'o.buyer_user_id = ?'
+      : 'o.buyer_username COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci';
+
+    const buyerValue = buyerUserId || buyerUsername;
+    const whereSql = `
+      o.tenant_id = ?
+      AND ${buyerCondition}
+    `;
+    const whereParams = [tenantId, buyerValue];
+
+    const [summaryRows] = await db.query(
+      `SELECT
+         COUNT(*) AS total_orders,
+         COALESCE(SUM(
+           ROUND(
+             COALESCE(o.merchandise_subtotal, 0)
+             * COALESCE(r.rate_to_krw, 0)
+           )
+         ), 0) AS total_orders_amount_krw,
+
+         SUM(CASE
+           WHEN o.order_status = 'COMPLETED' THEN 1
+           ELSE 0
+         END) AS completed_orders,
+
+         COALESCE(SUM(CASE
+           WHEN o.order_status = 'COMPLETED'
+           THEN ROUND(
+             COALESCE(o.merchandise_subtotal, 0)
+             * COALESCE(r.rate_to_krw, 0)
+           )
+           ELSE 0
+         END), 0) AS completed_orders_amount_krw,
+
+         SUM(CASE
+           WHEN o.order_status = 'CANCELLED' THEN 1
+           ELSE 0
+         END) AS cancelled_orders,
+
+         COALESCE(SUM(CASE
+           WHEN o.order_status = 'CANCELLED'
+           THEN ROUND(
+             COALESCE(o.merchandise_subtotal, 0)
+             * COALESCE(r.rate_to_krw, 0)
+           )
+           ELSE 0
+         END), 0) AS cancelled_orders_amount_krw
+       FROM orders o
+       LEFT JOIN exchange_rates r
+         ON r.currency = o.currency
+       WHERE ${whereSql}`,
+      whereParams
+    );
+
+    const [rows] = await db.query(
+      `SELECT
+         o.order_sn,
+         o.shop_id,
+         o.region,
+         o.buyer_user_id,
+         o.buyer_username,
+         o.order_status,
+         o.order_created_at,
+         o.create_time,
+         o.currency,
+         COALESCE(
+           o.merchandise_subtotal,
+           0
+         ) AS order_amount,
+         COALESCE(r.rate_to_krw, 0) AS rate_to_krw,
+         s.alias AS shop_alias,
+
+         (
+           SELECT GROUP_CONCAT(
+             NULLIF(TRIM(oi.item_name), '')
+             ORDER BY oi.id ASC
+             SEPARATOR ' / '
+           )
+           FROM order_items oi
+           WHERE oi.tenant_id = o.tenant_id
+             AND oi.shop_id = o.shop_id
+             AND oi.order_sn = o.order_sn
+         ) AS product_names,
+
+         EXISTS (
+           SELECT 1
+           FROM order_return_refunds rr
+           WHERE rr.tenant_id = o.tenant_id
+             AND rr.shop_id = o.shop_id
+             AND rr.order_sn = o.order_sn
+         ) AS has_return_refund,
+
+         (
+           SELECT rr.return_status
+           FROM order_return_refunds rr
+           WHERE rr.tenant_id = o.tenant_id
+             AND rr.shop_id = o.shop_id
+             AND rr.order_sn = o.order_sn
+           ORDER BY
+             COALESCE(rr.update_time, rr.create_time, 0) DESC,
+             rr.id DESC
+           LIMIT 1
+         ) AS return_status
+
+       FROM orders o
+       LEFT JOIN shops s
+         ON s.tenant_id = o.tenant_id
+        AND s.shop_id = o.shop_id
+       LEFT JOIN exchange_rates r
+         ON r.currency = o.currency
+
+       WHERE ${whereSql}
+
+       ORDER BY
+         o.order_created_at DESC,
+         o.create_time DESC,
+         o.id DESC
+
+       LIMIT ?`,
+      [...whereParams, limit]
+    );
+
+    const orders = rows.map(row => {
+      const orderAmount = Number(row.order_amount || 0);
+      const rateToKrw = Number(row.rate_to_krw || 0);
+
+      return {
+        order_sn: row.order_sn,
+        shop_id: row.shop_id,
+        shop_alias: row.shop_alias,
+        region: row.region,
+        order_status: row.order_status,
+        display_status: row.has_return_refund
+          ? 'TO_RETURN'
+          : row.order_status,
+        order_created_at: row.order_created_at,
+        create_time: row.create_time,
+        currency: row.currency,
+        order_amount: Number.isFinite(orderAmount) ? orderAmount : 0,
+        amount_krw:
+          Number.isFinite(orderAmount) && Number.isFinite(rateToKrw)
+            ? Math.round(orderAmount * rateToKrw)
+            : 0,
+        product_names: row.product_names || '-',
+        has_return_refund: Boolean(row.has_return_refund),
+        return_status: row.return_status || null,
+        is_current_order:
+          Boolean(currentOrderSn) &&
+          row.order_sn === currentOrderSn,
+      };
+    });
+
+    let currentPurchaseNumber = null;
+
+    if (currentOrderSn) {
+      const [purchaseNumberRows] = await db.query(
+        `SELECT COUNT(*) AS purchase_number
+         FROM orders target
+         INNER JOIN orders current_order
+           ON current_order.tenant_id = target.tenant_id
+          AND current_order.order_sn = ?
+         WHERE target.tenant_id = ?
+           AND ${
+             buyerUserId
+               ? 'target.buyer_user_id = ?'
+               : 'target.buyer_username COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci'
+           }
+           AND (
+             target.order_created_at < current_order.order_created_at
+             OR (
+               target.order_created_at = current_order.order_created_at
+               AND target.id <= current_order.id
+             )
+           )`,
+        [currentOrderSn, tenantId, buyerValue]
+      );
+
+      const parsedPurchaseNumber =
+        Number(purchaseNumberRows[0]?.purchase_number);
+
+      if (Number.isFinite(parsedPurchaseNumber)) {
+        currentPurchaseNumber = parsedPurchaseNumber;
+      }
+    }
+
+    const summary = summaryRows[0] || {};
+
+    return res.json({
+      success: true,
+      buyer_username:
+        rows[0]?.buyer_username || buyerUsername || '',
+      buyer_user_id:
+        rows[0]?.buyer_user_id || buyerUserId || '',
+
+      total_orders: Number(summary.total_orders || 0),
+      total_orders_amount_krw:
+        Number(summary.total_orders_amount_krw || 0),
+
+      completed_orders:
+        Number(summary.completed_orders || 0),
+      completed_orders_amount_krw:
+        Number(summary.completed_orders_amount_krw || 0),
+
+      cancelled_orders:
+        Number(summary.cancelled_orders || 0),
+      cancelled_orders_amount_krw:
+        Number(summary.cancelled_orders_amount_krw || 0),
+
+      current_purchase_number: currentPurchaseNumber,
+      orders,
+    });
+  } catch (err) {
+    console.error('[OrdersRoute] buyer-history error:', err.message);
+
+    return res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+
 router.get('/:orderSn', async (req, res) => {
   const { orderSn } = req.params;
   const tenantId = getCurrentTenantId(req);

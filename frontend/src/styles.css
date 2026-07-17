@@ -7300,3 +7300,31 @@ html[data-theme='dark'] .product-capture-page .product-capture-result-table td {
   background: var(--theme-surface) !important;
   color: var(--theme-text) !important;
 }
+
+html[data-theme='dark'] .order-management-page .date-range-field .ant-picker,
+html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-input,
+html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-input input,
+html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-separator,
+html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-suffix {
+  border-color: var(--theme-input-border) !important;
+  background: var(--theme-input-bg) !important;
+  color: var(--theme-text-strong) !important;
+}
+
+html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-suffix svg {
+  fill: currentColor;
+}
+
+html[data-theme='dark'] .inventory-page .today-order-toolbar {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface-soft) !important;
+  color: var(--theme-text) !important;
+}
+
+html[data-theme='dark'] .inventory-page .today-order-toolbar strong {
+  color: var(--theme-text-strong) !important;
+}
+
+html[data-theme='dark'] .inventory-page .today-order-toolbar p {
+  color: var(--theme-text-muted) !important;
+}

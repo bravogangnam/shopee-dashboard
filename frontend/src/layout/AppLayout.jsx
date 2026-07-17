@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
+import ThemeToggle from '../components/ThemeToggle.jsx';
 
 function ListIcon() {
   return (
@@ -120,6 +121,9 @@ export default function AppLayout() {
         </nav>
 
         <div className="sidebar-footer">
+          <ThemeToggle collapsed={collapsed} />
+
+          <div className="sidebar-footer-divider" />
           <button
             type="button"
             className="sidebar-logout-button"

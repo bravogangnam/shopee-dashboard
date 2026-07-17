@@ -7349,3 +7349,52 @@ html[data-theme='dark'] .inventory-page .today-order-toolbar strong {
 html[data-theme='dark'] .inventory-page .today-order-toolbar p {
   color: var(--theme-text-muted) !important;
 }
+
+html[data-theme='dark'] .order-management-page .action-btn:not(.primary),
+html[data-theme='dark'] .ledger-page .ghost-button {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface-soft) !important;
+  color: var(--theme-text) !important;
+}
+
+html[data-theme='dark'] .order-management-page .action-btn:not(.primary):hover,
+html[data-theme='dark'] .ledger-page .ghost-button:hover {
+  background: var(--theme-surface-hover) !important;
+  color: var(--theme-text-strong) !important;
+}
+
+html[data-theme='dark'] .receipt-page .receipt-tabs {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface-soft) !important;
+}
+
+html[data-theme='dark'] .receipt-page .receipt-tabs button {
+  background: transparent !important;
+  color: var(--theme-text-muted) !important;
+}
+
+html[data-theme='dark'] .receipt-page .receipt-tabs button.active {
+  background: var(--theme-primary-soft) !important;
+  color: #93c5fd !important;
+}
+
+html[data-theme='dark'] .receipt-page .receipt-mini-stats div,
+html[data-theme='dark'] .receipt-page .composition-editor {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface-soft) !important;
+}
+
+html[data-theme='dark'] .receipt-page .receipt-mini-stats span,
+html[data-theme='dark'] .receipt-page .composition-editor-title span {
+  color: var(--theme-text-muted) !important;
+}
+
+html[data-theme='dark'] .receipt-page .receipt-mini-stats strong,
+html[data-theme='dark'] .receipt-page .composition-editor-title strong {
+  color: var(--theme-text-strong) !important;
+}
+
+html[data-theme='dark'] .settings-page .fixed-sheet-names strong {
+  background: var(--theme-primary-soft) !important;
+  color: #93c5fd !important;
+}

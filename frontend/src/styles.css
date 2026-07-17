@@ -6888,3 +6888,347 @@ html[data-theme='dark'] ::selection {
   background: rgba(59, 130, 246, 0.42);
   color: #ffffff;
 }
+
+/* Dashboard dark theme polish v2 */
+
+/*
+ * Dark theme surface normalization
+ * 페이지마다 남아 있는 흰색 카드와 검색·설정·관리 영역을
+ * 공통 테마 변수에 맞춰 통일한다.
+ */
+
+html[data-theme='dark'] {
+  --theme-page-bg: #08111f;
+  --theme-surface: #111c2e;
+  --theme-surface-soft: #152238;
+  --theme-surface-elevated: #18263d;
+  --theme-surface-hover: #1d2d47;
+  --theme-surface-active: #20395d;
+  --theme-text: #dce6f3;
+  --theme-text-strong: #f3f7fc;
+  --theme-text-muted: #91a3ba;
+  --theme-border: #2d3d56;
+  --theme-border-soft: #233249;
+  --theme-input-bg: #0c1728;
+  --theme-input-border: #344761;
+}
+
+/* 앱 전체 기본 배경 */
+html[data-theme='dark'] body,
+html[data-theme='dark'] #root,
+html[data-theme='dark'] .app-layout,
+html[data-theme='dark'] .app-shell,
+html[data-theme='dark'] .main-content,
+html[data-theme='dark'] .page-content,
+html[data-theme='dark'] .content-area {
+  background-color: var(--theme-page-bg) !important;
+  color: var(--theme-text);
+}
+
+/* 페이지 제목과 설명 */
+html[data-theme='dark'] .page-header,
+html[data-theme='dark'] .page-title-row,
+html[data-theme='dark'] .section-header {
+  border-color: var(--theme-border-soft) !important;
+}
+
+html[data-theme='dark'] .page-header h1,
+html[data-theme='dark'] .page-header h2,
+html[data-theme='dark'] .page-title,
+html[data-theme='dark'] .section-title {
+  color: var(--theme-text-strong) !important;
+}
+
+html[data-theme='dark'] .page-header p,
+html[data-theme='dark'] .page-description,
+html[data-theme='dark'] .section-description {
+  color: var(--theme-text-muted) !important;
+}
+
+/* 설정 페이지 */
+html[data-theme='dark'] .settings-page,
+html[data-theme='dark'] .settings-container {
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .settings-section,
+html[data-theme='dark'] .settings-card,
+html[data-theme='dark'] .settings-panel,
+html[data-theme='dark'] .google-sheet-settings-section,
+html[data-theme='dark'] .account-settings-section,
+html[data-theme='dark'] .backfill-section,
+html[data-theme='dark'] .connection-test-section,
+html[data-theme='dark'] .shipping-label-cleanup-section,
+html[data-theme='dark'] .exchange-rate-section,
+html[data-theme='dark'] .shops-section {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+html[data-theme='dark'] .settings-section h2,
+html[data-theme='dark'] .settings-section h3,
+html[data-theme='dark'] .settings-field > span,
+html[data-theme='dark'] .settings-field label {
+  color: var(--theme-text-strong) !important;
+}
+
+html[data-theme='dark'] .settings-help-text,
+html[data-theme='dark'] .settings-section p,
+html[data-theme='dark'] .settings-section small {
+  color: var(--theme-text-muted) !important;
+}
+
+html[data-theme='dark'] .fixed-sheet-names span,
+html[data-theme='dark'] .google-sheet-sync-status span {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface-soft) !important;
+  color: var(--theme-text) !important;
+}
+
+/* 관리자 페이지 */
+html[data-theme='dark'] .admin-page,
+html[data-theme='dark'] .admin-container {
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .admin-summary-card,
+html[data-theme='dark'] .admin-stat-card,
+html[data-theme='dark'] .tenant-summary-card,
+html[data-theme='dark'] .tenant-card,
+html[data-theme='dark'] .user-card {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+html[data-theme='dark'] .admin-summary-card strong,
+html[data-theme='dark'] .admin-stat-card strong,
+html[data-theme='dark'] .tenant-summary-card strong {
+  color: var(--theme-text-strong) !important;
+}
+
+/* 흰색으로 남아 있던 검색·필터·도구 영역 */
+html[data-theme='dark'] .filter-section,
+html[data-theme='dark'] .filter-panel,
+html[data-theme='dark'] .filter-container,
+html[data-theme='dark'] .filter-bar,
+html[data-theme='dark'] .search-section,
+html[data-theme='dark'] .search-panel,
+html[data-theme='dark'] .search-box,
+html[data-theme='dark'] .search-controls,
+html[data-theme='dark'] .toolbar,
+html[data-theme='dark'] .toolbar-panel,
+html[data-theme='dark'] .tab-panel,
+html[data-theme='dark'] .order-filters,
+html[data-theme='dark'] .ledger-filters,
+html[data-theme='dark'] .inventory-filters,
+html[data-theme='dark'] .receipt-filters {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+/* 안내 박스 */
+html[data-theme='dark'] .notice-box,
+html[data-theme='dark'] .info-box,
+html[data-theme='dark'] .help-box,
+html[data-theme='dark'] .guide-box,
+html[data-theme='dark'] .inventory-notice,
+html[data-theme='dark'] .capture-guide {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface-soft) !important;
+  color: var(--theme-text) !important;
+}
+
+html[data-theme='dark'] .notice-box p,
+html[data-theme='dark'] .info-box p,
+html[data-theme='dark'] .help-box p,
+html[data-theme='dark'] .guide-box p {
+  color: var(--theme-text-muted) !important;
+}
+
+/* 입고관리 */
+html[data-theme='dark'] .receipt-page,
+html[data-theme='dark'] .receipt-layout,
+html[data-theme='dark'] .receipt-panel,
+html[data-theme='dark'] .receipt-form,
+html[data-theme='dark'] .receipt-summary,
+html[data-theme='dark'] .receipt-history,
+html[data-theme='dark'] .purchase-required-section,
+html[data-theme='dark'] .new-receipt-section,
+html[data-theme='dark'] .monthly-receipt-summary {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+/* 재고관리 */
+html[data-theme='dark'] .inventory-page,
+html[data-theme='dark'] .inventory-section,
+html[data-theme='dark'] .inventory-panel,
+html[data-theme='dark'] .inventory-summary,
+html[data-theme='dark'] .inventory-table-section,
+html[data-theme='dark'] .inventory-search-section,
+html[data-theme='dark'] .today-orders-section {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+/* 상품 수집 */
+html[data-theme='dark'] .product-capture-page,
+html[data-theme='dark'] .capture-section,
+html[data-theme='dark'] .capture-panel,
+html[data-theme='dark'] .capture-result,
+html[data-theme='dark'] .bookmarklet-section,
+html[data-theme='dark'] .json-paste-section {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+/* 카드 이름 패턴을 사용하는 화면의 중립 표면 */
+html[data-theme='dark'] [class$='-panel']:not([class*='status']):not([class*='badge']),
+html[data-theme='dark'] [class$='-section']:not([class*='status']):not([class*='badge']),
+html[data-theme='dark'] [class$='-container']:not(.app-container):not([class*='status']) {
+  border-color: var(--theme-border);
+}
+
+/* 입력 요소 */
+html[data-theme='dark'] input:not([type='checkbox']):not([type='radio']),
+html[data-theme='dark'] select,
+html[data-theme='dark'] textarea {
+  border-color: var(--theme-input-border) !important;
+  background-color: var(--theme-input-bg) !important;
+  color: var(--theme-text-strong) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme='dark'] input:not([type='checkbox']):not([type='radio']):hover,
+html[data-theme='dark'] select:hover,
+html[data-theme='dark'] textarea:hover {
+  border-color: #4b6382 !important;
+}
+
+html[data-theme='dark'] input:not([type='checkbox']):not([type='radio']):focus,
+html[data-theme='dark'] select:focus,
+html[data-theme='dark'] textarea:focus {
+  border-color: #60a5fa !important;
+  background-color: #0d1a2d !important;
+  outline: 2px solid rgba(96, 165, 250, 0.16) !important;
+  outline-offset: 0;
+}
+
+html[data-theme='dark'] input::placeholder,
+html[data-theme='dark'] textarea::placeholder {
+  color: #71839c !important;
+}
+
+html[data-theme='dark'] option {
+  background: var(--theme-surface);
+  color: var(--theme-text);
+}
+
+/* 일반 흰색 버튼만 어두운 중립 버튼으로 변환 */
+html[data-theme='dark'] button:not(.btn-primary):not(.primary-btn):not(.action-btn):not(.theme-toggle-switch):not(.sidebar-toggle):not(.sidebar-logout-button):not([class*='danger']):not([class*='success']):not([class*='purple']):not([class*='status']) {
+  border-color: var(--theme-border) !important;
+}
+
+html[data-theme='dark'] .btn-secondary,
+html[data-theme='dark'] .btn-default,
+html[data-theme='dark'] .outline-btn,
+html[data-theme='dark'] .reset-btn,
+html[data-theme='dark'] .refresh-btn,
+html[data-theme='dark'] .pagination button {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface-soft) !important;
+  color: var(--theme-text) !important;
+}
+
+html[data-theme='dark'] .btn-secondary:hover,
+html[data-theme='dark'] .btn-default:hover,
+html[data-theme='dark'] .outline-btn:hover,
+html[data-theme='dark'] .reset-btn:hover,
+html[data-theme='dark'] .refresh-btn:hover,
+html[data-theme='dark'] .pagination button:hover {
+  background: var(--theme-surface-hover) !important;
+  color: var(--theme-text-strong) !important;
+}
+
+/* 테이블 통일 */
+html[data-theme='dark'] table {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface) !important;
+}
+
+html[data-theme='dark'] thead,
+html[data-theme='dark'] thead tr,
+html[data-theme='dark'] th {
+  background: #17243a !important;
+  color: #c9d6e6 !important;
+}
+
+html[data-theme='dark'] tbody,
+html[data-theme='dark'] tbody tr,
+html[data-theme='dark'] td {
+  border-color: var(--theme-border-soft) !important;
+  color: var(--theme-text) !important;
+}
+
+html[data-theme='dark'] tbody tr:nth-child(odd) td {
+  background: var(--theme-surface) !important;
+}
+
+html[data-theme='dark'] tbody tr:nth-child(even) td {
+  background: #121f33 !important;
+}
+
+html[data-theme='dark'] tbody tr:hover td {
+  background: var(--theme-surface-hover) !important;
+}
+
+/* 내부 링크 */
+html[data-theme='dark'] a:not(.nav-link):not(.btn) {
+  color: #60a5fa;
+}
+
+html[data-theme='dark'] a:not(.nav-link):not(.btn):hover {
+  color: #93c5fd;
+}
+
+/* 빈 상태와 보조 문구 */
+html[data-theme='dark'] .empty-state,
+html[data-theme='dark'] .no-data,
+html[data-theme='dark'] .helper-text,
+html[data-theme='dark'] .sub-text,
+html[data-theme='dark'] .timestamp {
+  color: var(--theme-text-muted) !important;
+}
+
+/* 카드 내부의 강한 텍스트 */
+html[data-theme='dark'] [class*='card'] h2,
+html[data-theme='dark'] [class*='card'] h3,
+html[data-theme='dark'] [class*='panel'] h2,
+html[data-theme='dark'] [class*='panel'] h3,
+html[data-theme='dark'] [class*='section'] h2,
+html[data-theme='dark'] [class*='section'] h3 {
+  color: var(--theme-text-strong);
+}
+
+/* 스크롤 영역 */
+html[data-theme='dark'] .table-scroll,
+html[data-theme='dark'] .result-scroll,
+html[data-theme='dark'] .scroll-container {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface) !important;
+}
+
+/* 날짜 선택 아이콘 */
+html[data-theme='dark'] input[type='date']::-webkit-calendar-picker-indicator,
+html[data-theme='dark'] input[type='month']::-webkit-calendar-picker-indicator,
+html[data-theme='dark'] input[type='datetime-local']::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+  opacity: 0.85;
+}

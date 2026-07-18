@@ -15,13 +15,8 @@ const {
   getEscrowDetail,
   mapOrderToDb,
 } = require('../services/shopeeOrder');
-const {
-  batchInsertOrders,
-  batchInsertOrderItems,
-  filterNewOrderSns,
-  logSync,
-  getLastSuccessfulBackfillEnd,
-} = require('../services/orderDb');
+const { logSync, getLastSuccessfulBackfillEnd } = require('../services/orderDb');
+const { applyShopeeOrderSnapshot } = require('../services/orderSnapshotService');
 const {
   startJob,
   updateProgress,
@@ -58,7 +53,7 @@ function buildWindows(startDate, endDate) {
 /**
  * 단일 윈도우 × 단일 샵 처리
  */
-async function processWindow(shop, window, accessToken) {
+async function processWindow(shop, window, accessToken, tenantId) {
   const timeFrom = Math.floor(window.from.getTime() / 1000);
   const timeTo = Math.floor(window.to.getTime() / 1000);
 
@@ -71,19 +66,12 @@ async function processWindow(shop, window, accessToken) {
     fetched = allSns.length;
 
     if (allSns.length === 0) {
-      await logSync(shop.shop_id, 'backfill', window.from, window.to, 0, 0, 'success', null);
+      await logSync(shop.shop_id, 'backfill', window.from, window.to, 0, 0, 'success', null, { tenantId });
       return { fetched: 0, inserted: 0 };
     }
 
-    // 2. DB에 없는 order_sn만 필터
-    const newSns = await filterNewOrderSns(shop.shop_id, allSns);
-    if (newSns.length === 0) {
-      await logSync(shop.shop_id, 'backfill', window.from, window.to, fetched, 0, 'success', null);
-      return { fetched, inserted: 0 };
-    }
-
-    // 3. get_order_detail (50건 배치)
-    const orderDetails = await getOrderDetail(shop.shop_id, newSns, accessToken);
+    // 2. Existing rows are included so missing order items can be repaired.
+    const orderDetails = await getOrderDetail(shop.shop_id, allSns, accessToken);
 
     // 4. escrow_detail + DB 저장
     const orderRows = [];
@@ -106,17 +94,21 @@ async function processWindow(shop, window, accessToken) {
       itemRowsAll.push(...itemRows);
     }
 
-    const { inserted: ins, insertedOrderKeys } = await batchInsertOrders(orderRows);
-    const insertedKeySet = new Set(insertedOrderKeys);
-    await batchInsertOrderItems(itemRowsAll.filter(item =>
-      insertedKeySet.has(`${item.shop_id}::${item.order_sn}`)
-    ));
-    inserted = ins;
+    for (const orderRow of orderRows) {
+      const applied = await applyShopeeOrderSnapshot({
+        tenantId,
+        shopId: shop.shop_id,
+        orderRow,
+        itemRows: itemRowsAll.filter(item => item.order_sn === orderRow.order_sn),
+        source: 'backfill',
+      });
+      if (applied.created) inserted++;
+    }
 
-    await logSync(shop.shop_id, 'backfill', window.from, window.to, fetched, inserted, 'success', null);
+    await logSync(shop.shop_id, 'backfill', window.from, window.to, fetched, inserted, 'success', null, { tenantId });
     return { fetched, inserted };
   } catch (err) {
-    await logSync(shop.shop_id, 'backfill', window.from, window.to, fetched, 0, 'fail', err.message);
+    await logSync(shop.shop_id, 'backfill', window.from, window.to, fetched, 0, 'fail', err.message, { tenantId });
     throw err;
   }
 }
@@ -174,7 +166,7 @@ async function runBackfill(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
           if (!shopAccessToken) {
             throw new Error(`shop_id=${shop.shop_id} 토큰 없음 — OAuth 재인증 필요`);
           }
-          const { fetched, inserted } = await processWindow(shop, win, shopAccessToken);
+          const { fetched, inserted } = await processWindow(shop, win, shopAccessToken, tenantId);
           shopFetched += fetched;
           shopInserted += inserted;
           totalFetched += fetched;

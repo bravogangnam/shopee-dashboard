@@ -7,13 +7,8 @@ const {
   getEscrowDetail,
   getTrackingNumber,
   mapOrderToDb,
-  diffOrderRow,
 } = require('./shopeeOrder');
-const {
-  batchInsertOrders,
-  batchInsertOrderItems,
-  updateOrder,
-} = require('./orderDb');
+const { applyShopeeOrderSnapshot } = require('./orderSnapshotService');
 const { publishOrderChange } = require('./orderEventHub');
 
 const SUPPORTED_CODES = new Set([3, 4, 15]);
@@ -110,15 +105,6 @@ async function resolveDisplayStatus(order, shopId, accessToken) {
 
 async function syncPushedOrder({ context, event }) {
   if (!event.orderSn) return { ignored: true, reason: 'push has no order_sn' };
-  const [existingRows] = await db.query(
-    'SELECT * FROM orders WHERE tenant_id = ? AND shop_id = ? AND order_sn = ? LIMIT 1',
-    [context.tenant_id, context.shop_id, event.orderSn]
-  );
-  const existing = existingRows[0] || null;
-  if (existing && event.eventUpdateTime && Number(existing.update_time || 0) > event.eventUpdateTime) {
-    return { ignored: true, reason: 'older event' };
-  }
-
   const accessToken = await getOrRefreshShopToken(context.shop_id, { tenantId: context.tenant_id });
   if (!accessToken) throw new Error('shop access token unavailable');
   const details = await getOrderDetail(context.shop_id, [event.orderSn], accessToken);
@@ -133,9 +119,6 @@ async function syncPushedOrder({ context, event }) {
     try { escrow = await getEscrowDetail(context.shop_id, event.orderSn, accessToken); } catch (_) {}
   }
   const { orderRow, itemRows } = mapOrderToDb(order, context.shop_id, context.region, escrow);
-  if (existing?.tracking_number && !orderRow.tracking_number) {
-    orderRow.tracking_number = existing.tracking_number;
-  }
   orderRow.display_status = await resolveDisplayStatus(order, context.shop_id, accessToken);
   orderRow.display_status_reason = orderRow.display_status === 'PENDING'
     ? 'Shipping parameters can only be obtained when package is ready to be shipped'
@@ -146,18 +129,20 @@ async function syncPushedOrder({ context, event }) {
     orderRow.tracking_number = await getTrackingNumber(context.shop_id, event.orderSn, accessToken);
   }
 
-  if (!existing) {
-    const { inserted, insertedOrderKeys } = await batchInsertOrders([orderRow], { tenantId: context.tenant_id });
-    const insertedKeys = new Set(insertedOrderKeys);
-    await batchInsertOrderItems(itemRows.filter(item => insertedKeys.has(`${item.shop_id}::${item.order_sn}`)), {
-      tenantId: context.tenant_id,
-    });
-    return { inserted, updated: 0, displayStatus: orderRow.display_status };
-  }
-
-  const diff = diffOrderRow(existing, orderRow);
-  await updateOrder(event.orderSn, context.shop_id, diff, { tenantId: context.tenant_id });
-  return { inserted: 0, updated: Object.keys(diff).length ? 1 : 0, displayStatus: orderRow.display_status };
+  const applied = await applyShopeeOrderSnapshot({
+    tenantId: context.tenant_id,
+    shopId: context.shop_id,
+    orderRow,
+    itemRows,
+    source: `push:${event.code}`,
+  });
+  return {
+    inserted: applied.created ? 1 : 0,
+    updated: applied.updated ? 1 : 0,
+    ignored: applied.stale && !applied.repairedItems && !applied.supplemented,
+    reason: applied.stale ? 'older event' : null,
+    displayStatus: applied.displayStatus,
+  };
 }
 
 async function processPushEvent(context, event) {

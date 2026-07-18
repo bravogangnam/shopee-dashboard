@@ -18,17 +18,13 @@ const {
   getEscrowDetail,
   getTrackingNumber,
   mapOrderToDb,
-  diffOrderRow,
 } = require('../services/shopeeOrder');
 const {
-  batchInsertOrders,
-  batchInsertOrderItems,
-  filterNewOrderSns,
   getLatestCreateTime,
   getNonFinalOrders,
-  updateOrder,
   logSync,
 } = require('../services/orderDb');
+const { applyShopeeOrderSnapshot } = require('../services/orderSnapshotService');
 const {
   startJob,
   updateProgress,
@@ -344,19 +340,16 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID, discoveryMode = 'n
           shopPageCount += pageCount;
           console.log(`[Sync][Step1] │  get_order_list ${winLabel}: ${ms(listStart)}  → ${allSns.length}건`);
 
-          // ── filterNewOrderSns (DB 중복 체크) ──
-          const filterStart = t();
-          const newSns = await filterNewOrderSns(shop.shop_id, allSns, { tenantId });
-          shopExistingCount += allSns.length - newSns.length;
-          console.log(`[Sync][Step1] │  filterNewOrderSns ${winLabel}: ${ms(filterStart)}  → 신규 ${newSns.length}/${allSns.length}건`);
+          // Existing orders are re-read so missing item rows can self-heal.
+          const detailSns = allSns;
 
-          if (newSns.length > 0) {
+          if (detailSns.length > 0) {
             // ── get_order_detail ──
             const shopToken1d = await getOrRefreshShopToken(shop.shop_id);
             if (!shopToken1d) throw new Error(`shop_id=${shop.shop_id} 토큰 없음`);
             const detailStart = t();
-            const details = await getOrderDetail(shop.shop_id, newSns, shopToken1d);
-            console.log(`[Sync][Step1] │  get_order_detail ${winLabel}: ${ms(detailStart)}  → ${details.length}건 (배치=${Math.ceil(newSns.length/50)})`);
+            const details = await getOrderDetail(shop.shop_id, detailSns, shopToken1d);
+            console.log(`[Sync][Step1] │  get_order_detail ${winLabel}: ${ms(detailStart)}  → ${details.length}건 (배치=${Math.ceil(detailSns.length/50)})`);
 
             // ── get_escrow_detail (5건씩 병렬) ──
             const escrowNeededOrders = details.filter(o =>
@@ -383,12 +376,23 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID, discoveryMode = 'n
 
             // ── DB INSERT ──
             const insertStart = t();
-            const { inserted, insertedOrderKeys } = await batchInsertOrders(orderRows, { tenantId });
-            const insertedKeySet = new Set(insertedOrderKeys);
+            const insertedKeySet = new Set();
+            for (const orderRow of orderRows) {
+              const orderItems = itemRowsAll.filter(item => item.order_sn === orderRow.order_sn);
+              const applied = await applyShopeeOrderSnapshot({
+                tenantId,
+                shopId: shop.shop_id,
+                orderRow,
+                itemRows: orderItems,
+                source: discoveryMode,
+              });
+              if (applied.created) insertedKeySet.add(`${orderRow.shop_id}::${orderRow.order_sn}`);
+              else shopExistingCount++;
+            }
+            const inserted = insertedKeySet.size;
             const insertedItemRows = itemRowsAll.filter(item =>
               insertedKeySet.has(`${item.shop_id}::${item.order_sn}`)
             );
-            await batchInsertOrderItems(insertedItemRows, { tenantId });
             console.log(`[Sync][Step1] │  batchInsert: ${ms(insertStart)}  → inserted=${inserted}`);
               const readyToShipInserted = orderRows.filter(order =>
                 insertedKeySet.has(`${order.shop_id}::${order.order_sn}`) &&
@@ -508,27 +512,23 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID, discoveryMode = 'n
           if (!dbRow) continue;
 
           const escrow = escrowMap[order.order_sn] || null;
-          const { orderRow } = mapOrderToDb(order, shop.shop_id, shop.region, escrow);
+          const { orderRow, itemRows } = mapOrderToDb(order, shop.shop_id, shop.region, escrow);
 
           applyDisplayStatus(orderRow, displayStatusMap2.get(order.order_sn));
 
 
-          const diff = diffOrderRow(dbRow, orderRow);
-
-          if ((Object.prototype.hasOwnProperty.call(diff, 'display_status') || Object.prototype.hasOwnProperty.call(diff, 'display_status_reason')) && orderRow.display_status_checked_at) {
-
-            diff.display_status_checked_at = orderRow.display_status_checked_at;
-
-          }
-          if (Object.keys(diff).length > 0) {
-              const previousDisplayStatus = dbRow.display_status || dbRow.order_status;
-                if (previousDisplayStatus !== 'READY_TO_SHIP' && orderRow.display_status === 'READY_TO_SHIP') {
-                  shopReadyToShipAlertCount++;
-                  shopReadyToShipAlertOrderSns.push(order.order_sn);
-                  console.log(`[Sync][Step2] │  새주문 알림 대상 전환: ${order.order_sn} ${previousDisplayStatus} → READY_TO_SHIP`);
-                }
-
-            await updateOrder(order.order_sn, shop.shop_id, diff, { tenantId });
+          const applied = await applyShopeeOrderSnapshot({
+            tenantId,
+            shopId: shop.shop_id,
+            orderRow,
+            itemRows,
+            source: 'polling',
+          });
+          if (applied.updated) {
+            if (applied.previousDisplayStatus !== 'READY_TO_SHIP' && applied.displayStatus === 'READY_TO_SHIP') {
+              shopReadyToShipAlertCount++;
+              shopReadyToShipAlertOrderSns.push(order.order_sn);
+            }
             shopUpdated++;
           }
         }

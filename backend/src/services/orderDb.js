@@ -9,6 +9,7 @@
 const db = require('../config/database');
 const { CURRENT_TENANT_ID } = require('../config/tenant');
 const { processInventoryForOrders } = require('./inventoryService');
+const { findMissingOrderItems } = require('./orderSnapshotPolicy');
 
 function parseNullableNumber(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -246,7 +247,10 @@ async function batchInsertOrders(orderRows, { tenantId = CURRENT_TENANT_ID } = {
 /**
  * order_items 배치 INSERT (중복 무시)
  */
-async function batchInsertOrderItems(itemRows, { tenantId = CURRENT_TENANT_ID } = {}) {
+async function batchInsertOrderItems(itemRows, {
+  tenantId = CURRENT_TENANT_ID,
+  processInventory = true,
+} = {}) {
   if (!itemRows.length) return;
 
   const skuList = Array.from(new Set(
@@ -375,10 +379,12 @@ async function batchInsertOrderItems(itemRows, { tenantId = CURRENT_TENANT_ID } 
     await recalculateMarginsForOrders(conn, orderKeys);
     await conn.commit();
     committed = true;
-    try {
-      await processInventoryForOrders(orderKeys, { tenantId });
-    } catch (inventoryErr) {
-      console.error(`[Inventory] 주문 아이템 저장 후 재고 처리 오류: ${inventoryErr.message}`);
+    if (processInventory) {
+      try {
+        await processInventoryForOrders(orderKeys, { tenantId });
+      } catch (inventoryErr) {
+        console.error(`[Inventory] 주문 아이템 저장 후 재고 처리 오류: ${inventoryErr.message}`);
+      }
     }
   } catch (err) {
     if (!committed) await conn.rollback();
@@ -394,16 +400,36 @@ async function batchInsertOrderItems(itemRows, { tenantId = CURRENT_TENANT_ID } 
  * @param {number} shopId
  * @param {object} diff - { field: newValue, ... }
  */
-async function updateOrder(orderSn, shopId, diff, { tenantId = CURRENT_TENANT_ID } = {}) {
+async function updateOrder(orderSn, shopId, diff, {
+  tenantId = CURRENT_TENANT_ID,
+  incomingUpdateTime = null,
+  processInventory = true,
+} = {}) {
   if (!Object.keys(diff).length) return false;
 
-  const sets = Object.keys(diff).map(k => `${k} = ?`).join(', ');
+  const sets = Object.keys(diff).map(field => {
+    if (field === 'display_status') {
+      return "display_status = IF(display_status = 'TO_RETURN', display_status, ?)";
+    }
+    if (field === 'display_status_reason' || field === 'display_status_checked_at') {
+      return `${field} = IF(display_status = 'TO_RETURN', ${field}, ?)`;
+    }
+    return `${field} = ?`;
+  }).join(', ');
   const vals = [...Object.values(diff), tenantId, orderSn, shopId];
 
-  await db.query(
-    `UPDATE orders SET ${sets}, synced_at = NOW() WHERE tenant_id = ? AND order_sn = ? AND shop_id = ?`,
+  let staleGuard = '';
+  if (incomingUpdateTime !== null && incomingUpdateTime !== undefined) {
+    staleGuard = ' AND (update_time IS NULL OR update_time <= ?)';
+    vals.push(Number(incomingUpdateTime));
+  }
+
+  const [result] = await db.query(
+    `UPDATE orders SET ${sets}, synced_at = NOW()
+     WHERE tenant_id = ? AND order_sn = ? AND shop_id = ?${staleGuard}`,
     vals
   );
+  if (result.affectedRows !== 1) return false;
 
   const marginFields = new Set([
     'escrow_amount',
@@ -421,10 +447,12 @@ async function updateOrder(orderSn, shopId, diff, { tenantId = CURRENT_TENANT_ID
     );
   }
 
-  try {
-    await processInventoryForOrders([{ shopId, orderSn }], { tenantId });
-  } catch (inventoryErr) {
-    console.error(`[Inventory] 주문 업데이트 후 재고 처리 오류: shop=${shopId}, order=${orderSn}: ${inventoryErr.message}`);
+  if (processInventory) {
+    try {
+      await processInventoryForOrders([{ shopId, orderSn }], { tenantId });
+    } catch (inventoryErr) {
+      console.error(`[Inventory] 주문 업데이트 후 재고 처리 오류: shop=${shopId}, order=${orderSn}: ${inventoryErr.message}`);
+    }
   }
 
   return true;
@@ -436,6 +464,53 @@ async function updateOrder(orderSn, shopId, diff, { tenantId = CURRENT_TENANT_ID
  * @param {string[]} orderSns
  * @returns {string[]} DB에 없는 order_sn만
  */
+async function repairMissingOrderItems(itemRows, { tenantId = CURRENT_TENANT_ID } = {}) {
+  if (!itemRows.length) return { inserted: 0, missingRows: [] };
+
+  const grouped = new Map();
+  for (const item of itemRows) {
+    const key = `${item.shop_id}::${item.order_sn}`;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(item);
+  }
+
+  const missingRows = [];
+  for (const rows of grouped.values()) {
+    const first = rows[0];
+    const [existingRows] = await db.query(
+      `SELECT item_id, model_id, item_sku, model_sku
+       FROM order_items
+       WHERE tenant_id = ? AND shop_id = ? AND order_sn = ?`,
+      [tenantId, first.shop_id, first.order_sn]
+    );
+    missingRows.push(...findMissingOrderItems(existingRows, rows));
+  }
+
+  if (missingRows.length) {
+    await batchInsertOrderItems(missingRows, { tenantId, processInventory: false });
+  }
+  return { inserted: missingRows.length, missingRows };
+}
+
+async function supplementOrderFields(orderSn, shopId, fields, { tenantId = CURRENT_TENANT_ID } = {}) {
+  const allowed = ['tracking_number', 'shipping_carrier', 'checkout_shipping_carrier'];
+  const entries = allowed
+    .filter(field => fields[field] !== null && fields[field] !== undefined && String(fields[field]).trim() !== '')
+    .map(field => [field, fields[field]]);
+  if (!entries.length) return false;
+
+  const sets = entries.map(([field]) => `${field} = COALESCE(NULLIF(${field}, ''), ?)`).join(', ');
+  const emptyConditions = entries.map(([field]) => `(${field} IS NULL OR ${field} = '')`).join(' OR ');
+  const values = entries.map(([, value]) => value);
+  const [result] = await db.query(
+    `UPDATE orders SET ${sets}, synced_at = NOW()
+     WHERE tenant_id = ? AND shop_id = ? AND order_sn = ?
+       AND (${emptyConditions})`,
+    [...values, tenantId, shopId, orderSn]
+  );
+  return result.affectedRows === 1;
+}
+
 async function filterNewOrderSns(shopId, orderSns, { tenantId = CURRENT_TENANT_ID } = {}) {
   if (!orderSns.length) return [];
 
@@ -510,6 +585,8 @@ module.exports = {
   insertOrder,
   batchInsertOrders,
   batchInsertOrderItems,
+  repairMissingOrderItems,
+  supplementOrderFields,
   updateOrder,
   filterNewOrderSns,
   getLatestCreateTime,

@@ -609,6 +609,7 @@ router.get('/stock-receipts/history', async (req, res) => {
        p.product_name_kr,
        p.product_name_en,
        p.option_name,
+       p.stock_quantity,
        b.received_at,
        b.receipt_type,
        b.initial_qty,

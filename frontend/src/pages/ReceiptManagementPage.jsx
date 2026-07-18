@@ -896,7 +896,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
                   </td>
                   <td>{formatNumber(row.initial_qty)}</td>
                   <td>{formatNumber(row.remaining_qty)}</td>
-                  <td>{formatNumber(row.stock_quantity)}</td>
+                  <td>{row.stock_quantity === null || row.stock_quantity === undefined ? '-' : formatNumber(row.stock_quantity)}</td>
                   <td>{formatKrw(row.unit_cost)}</td>
                   <td>{formatKrw(row.source_unit_cost || Number(row.unit_cost || 0) * 1.1)}</td>
                   <td><span className="receipt-supplier-cell" title={row.supplier || ''}>{row.supplier || '-'}</span></td>

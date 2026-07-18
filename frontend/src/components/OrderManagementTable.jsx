@@ -8,22 +8,8 @@ function statusClass(status) {
   return `status-pill status-${String(status || '').toLowerCase()}`;
 }
 
-function isTwKycPending(order) {
-  return (
-    order?.region === 'TW' &&
-    order?.order_status === 'READY_TO_SHIP' &&
-    !order?.tracking_number
-  );
-}
-
 function getDisplayStatus(order) {
-  // 기본적으로 Shopee 실제 주문 상태를 표시한다.
-  // Return/Refund API로 연결된 주문만 화면 상태 TO_RETURN을 우선한다.
-  if (order?.display_status === 'TO_RETURN') {
-    return 'TO_RETURN';
-  }
-
-  return order?.order_status || order?.display_status;
+  return order?.display_status || order?.order_status;
 }
 
 function orderStatusLabel(status) {

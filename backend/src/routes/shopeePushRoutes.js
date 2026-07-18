@@ -25,7 +25,7 @@ router.post('/', async (req, res) => {
   if (!verifyPushAuthorization({
     callbackUrl,
     rawBody,
-    partnerKey: context.partner_key,
+    partnerKey: process.env.SHOPEE_PUSH_PARTNER_KEY || context.partner_key,
     authorization,
   })) return res.status(401).end();
 

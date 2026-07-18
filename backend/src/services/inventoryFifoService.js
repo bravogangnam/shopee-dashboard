@@ -182,6 +182,23 @@ async function getOpenSaleShortages(conn, sku, { tenantId = CURRENT_TENANT_ID } 
      WHERE m.tenant_id = ?
        AND m.movement_type = 'SALE'
        AND m.sku = ?
+       AND NOT EXISTS (
+         SELECT 1
+         FROM inventory_movements cr
+         WHERE cr.tenant_id = m.tenant_id
+           AND cr.movement_type = 'CANCEL_RESTORE'
+           AND cr.order_sn = m.order_sn
+           AND cr.shop_id = m.shop_id
+           AND cr.sku = m.sku
+       )
+       AND NOT EXISTS (
+         SELECT 1
+         FROM orders o
+         WHERE o.tenant_id = m.tenant_id
+           AND o.order_sn = m.order_sn
+           AND o.shop_id = m.shop_id
+           AND o.order_status = 'CANCELLED'
+       )
      GROUP BY m.tenant_id, m.id, m.order_sn, m.shop_id, m.sku, m.qty_delta, m.created_at
      HAVING shortage_qty > 0
      ORDER BY m.created_at ASC, m.id ASC`,
@@ -680,10 +697,123 @@ async function allocateSaleInventoryForOrder(order, conn) {
   }
 }
 
+async function reconcileInventoryFifo({ tenantId = CURRENT_TENANT_ID } = {}) {
+  const db = require('../config/database');
+  const conn = await db.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    const [sourceRows] = await conn.query(
+      `SELECT movement_id, MAX(source_sku) AS source_sku
+       FROM inventory_allocations
+       WHERE tenant_id = ?
+       GROUP BY movement_id`,
+      [tenantId]
+    );
+    const sourceSkuByMovement = new Map(
+      sourceRows.map(row => [Number(row.movement_id), row.source_sku || null])
+    );
+
+    await conn.query('DELETE FROM inventory_allocations WHERE tenant_id = ?', [tenantId]);
+    await conn.query(
+      `UPDATE inventory_batches
+       SET remaining_qty = initial_qty
+       WHERE tenant_id = ?`,
+      [tenantId]
+    );
+
+    const [movements] = await conn.query(
+      `SELECT m.id, m.order_sn, m.shop_id, m.sku, m.movement_type, ABS(m.qty_delta) AS required_qty
+       FROM inventory_movements m
+       WHERE m.tenant_id = ?
+         AND m.qty_delta < 0
+         AND (
+           m.movement_type = 'MANUAL_ADJUST'
+           OR (
+             m.movement_type = 'SALE'
+             AND NOT EXISTS (
+               SELECT 1
+               FROM inventory_movements cr
+               WHERE cr.tenant_id = m.tenant_id
+                 AND cr.movement_type = 'CANCEL_RESTORE'
+                 AND cr.order_sn = m.order_sn
+                 AND cr.shop_id = m.shop_id
+                 AND cr.sku = m.sku
+             )
+             AND NOT EXISTS (
+               SELECT 1
+               FROM orders o
+               WHERE o.tenant_id = m.tenant_id
+                 AND o.order_sn = m.order_sn
+                 AND o.shop_id = m.shop_id
+                 AND o.order_status = 'CANCELLED'
+             )
+           )
+         )
+       ORDER BY m.created_at ASC, m.id ASC
+       FOR UPDATE`,
+      [tenantId]
+    );
+
+    let allocatedMovementCount = 0;
+    let allocatedQty = 0;
+    let shortageQty = 0;
+
+    for (const movement of movements) {
+      const allocation = await allocateInventoryFifo(conn, {
+        tenantId,
+        movementId: movement.id,
+        orderSn: movement.order_sn,
+        shopId: movement.shop_id,
+        sourceSku: sourceSkuByMovement.get(Number(movement.id)) || movement.sku,
+        baseSku: movement.sku,
+        qty: Number(movement.required_qty || 0),
+      });
+      allocatedMovementCount += 1;
+      allocatedQty += allocation.allocatedQty;
+      shortageQty += allocation.shortageQty;
+    }
+
+    const [consistencyRows] = await conn.query(
+      `SELECT COUNT(*) AS mismatch_count
+       FROM products p
+       LEFT JOIN (
+         SELECT tenant_id, sku, SUM(remaining_qty) AS batch_stock
+         FROM inventory_batches
+         WHERE tenant_id = ?
+         GROUP BY tenant_id, sku
+       ) b
+         ON b.tenant_id = p.tenant_id
+        AND b.sku COLLATE utf8mb4_unicode_ci = p.sku COLLATE utf8mb4_unicode_ci
+       WHERE p.tenant_id = ?
+         AND p.stock_quantity >= 0
+         AND p.stock_quantity <> COALESCE(b.batch_stock, 0)`,
+      [tenantId, tenantId]
+    );
+
+    await conn.commit();
+    return {
+      tenantId,
+      movementCount: movements.length,
+      allocatedMovementCount,
+      allocatedQty,
+      shortageQty,
+      nonNegativeStockMismatchCount: Number(consistencyRows[0]?.mismatch_count || 0),
+    };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
 module.exports = {
   isInventoryFifoEnabled,
   allocateInventoryFifo,
   allocateOpenShortagesForBatch,
   allocateSaleInventoryForOrder,
   allocateSaleInventoryForOrderItem,
+  reconcileInventoryFifo,
 };

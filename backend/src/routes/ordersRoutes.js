@@ -36,16 +36,67 @@ router.get('/events', (req, res) => {
 const FIFO_COST_JOIN = `
   LEFT JOIN (
     SELECT
-      m.tenant_id,
-      m.order_sn,
-      m.shop_id,
-      SUM(a.total_cost) AS fifo_cost_price
-    FROM inventory_movements m
-    INNER JOIN inventory_allocations a
-      ON a.tenant_id = m.tenant_id
-     AND a.movement_id = m.id
-    WHERE m.movement_type = 'SALE'
-    GROUP BY m.tenant_id, m.order_sn, m.shop_id
+      oi.tenant_id,
+      oi.order_sn,
+      oi.shop_id,
+      SUM(COALESCE(item_fifo.fifo_cost_price, 0)) AS raw_fifo_cost_price,
+      SUM(
+        CASE
+          WHEN item_fifo.required_qty IS NOT NULL
+           AND item_fifo.allocated_qty >= item_fifo.required_qty
+            THEN item_fifo.fifo_cost_price
+          ELSE COALESCE(oi.cost_price_at_order, 0) * COALESCE(oi.model_quantity_purchased, 1)
+        END
+      ) AS effective_cost_price,
+      SUM(
+        CASE
+          WHEN item_fifo.required_qty IS NOT NULL
+           AND item_fifo.allocated_qty >= item_fifo.required_qty
+            THEN ROUND(item_fifo.fifo_cost_price * 0.1)
+          ELSE COALESCE(oi.vat_at_order, 0) * COALESCE(oi.model_quantity_purchased, 1)
+        END
+      ) AS effective_vat
+    FROM order_items oi
+    LEFT JOIN (
+      SELECT
+        movement_fifo.tenant_id,
+        movement_fifo.order_sn,
+        movement_fifo.shop_id,
+        movement_fifo.item_id,
+        movement_fifo.model_id,
+        SUM(movement_fifo.required_qty) AS required_qty,
+        SUM(movement_fifo.allocated_qty) AS allocated_qty,
+        SUM(movement_fifo.fifo_cost_price) AS fifo_cost_price
+      FROM (
+        SELECT
+          m.tenant_id,
+          m.order_sn,
+          m.shop_id,
+          m.item_id,
+          m.model_id,
+          ABS(m.qty_delta) AS required_qty,
+          COALESCE(SUM(a.qty), 0) AS allocated_qty,
+          COALESCE(SUM(a.total_cost), 0) AS fifo_cost_price
+        FROM inventory_movements m
+        LEFT JOIN inventory_allocations a
+          ON a.tenant_id = m.tenant_id
+         AND a.movement_id = m.id
+        WHERE m.movement_type = 'SALE'
+        GROUP BY m.tenant_id, m.id, m.order_sn, m.shop_id, m.item_id, m.model_id, m.qty_delta
+      ) movement_fifo
+      GROUP BY
+        movement_fifo.tenant_id,
+        movement_fifo.order_sn,
+        movement_fifo.shop_id,
+        movement_fifo.item_id,
+        movement_fifo.model_id
+    ) item_fifo
+      ON item_fifo.tenant_id = oi.tenant_id
+     AND item_fifo.order_sn = oi.order_sn
+     AND item_fifo.shop_id = oi.shop_id
+     AND item_fifo.item_id <=> oi.item_id
+     AND item_fifo.model_id <=> oi.model_id
+    GROUP BY oi.tenant_id, oi.order_sn, oi.shop_id
   ) fifo
     ON fifo.tenant_id = o.tenant_id
    AND fifo.order_sn = o.order_sn
@@ -53,27 +104,28 @@ const FIFO_COST_JOIN = `
 `;
 
 const FIFO_COST_SELECT = `
-          fifo.fifo_cost_price,
+          fifo.raw_fifo_cost_price AS fifo_cost_price,
+          fifo.effective_cost_price,
           o.total_cost_price AS original_total_cost_price,
           o.total_vat AS original_total_vat,
           o.net_profit AS original_net_profit,
           o.product_profit AS original_product_profit,
           CASE
-            WHEN fifo.fifo_cost_price IS NOT NULL THEN fifo.fifo_cost_price
+            WHEN fifo.effective_cost_price IS NOT NULL THEN fifo.effective_cost_price
             ELSE o.total_cost_price
           END AS total_cost_price,
           CASE
-            WHEN fifo.fifo_cost_price IS NOT NULL THEN ROUND(fifo.fifo_cost_price * 0.1)
+            WHEN fifo.effective_vat IS NOT NULL THEN fifo.effective_vat
             ELSE o.total_vat
           END AS total_vat,
           CASE
-            WHEN fifo.fifo_cost_price IS NOT NULL AND o.net_profit IS NOT NULL
-              THEN o.net_profit - (fifo.fifo_cost_price - COALESCE(o.total_cost_price, 0))
+            WHEN fifo.effective_cost_price IS NOT NULL AND o.net_profit IS NOT NULL
+              THEN o.net_profit - (fifo.effective_cost_price - COALESCE(o.total_cost_price, 0))
             ELSE o.net_profit
           END AS net_profit,
           CASE
-            WHEN fifo.fifo_cost_price IS NOT NULL AND o.product_profit IS NOT NULL
-              THEN o.product_profit - (fifo.fifo_cost_price - COALESCE(o.total_cost_price, 0))
+            WHEN fifo.effective_cost_price IS NOT NULL AND o.product_profit IS NOT NULL
+              THEN o.product_profit - (fifo.effective_cost_price - COALESCE(o.total_cost_price, 0))
             ELSE o.product_profit
           END AS product_profit
   `;
@@ -142,8 +194,8 @@ function effectiveOrderStatusExpression(orderAlias = 'o') {
 const SUMMARY_PROFIT_RATE_FILTER_EXPRESSION = `
   (
     CASE
-      WHEN fifo.fifo_cost_price IS NOT NULL AND o.net_profit IS NOT NULL
-        THEN o.net_profit - (fifo.fifo_cost_price - COALESCE(o.total_cost_price, 0))
+      WHEN fifo.effective_cost_price IS NOT NULL AND o.net_profit IS NOT NULL
+        THEN o.net_profit - (fifo.effective_cost_price - COALESCE(o.total_cost_price, 0))
       ELSE o.net_profit
     END
   )
@@ -875,8 +927,8 @@ router.get('/summary', async (req, res) => {
         COALESCE(SUM(
           CASE
             WHEN COALESCE(o.order_chargeable_weight_gram, 0) <= 0 THEN 0
-            WHEN fifo.fifo_cost_price IS NOT NULL AND o.net_profit IS NOT NULL
-              THEN o.net_profit - (fifo.fifo_cost_price - COALESCE(o.total_cost_price, 0))
+            WHEN fifo.effective_cost_price IS NOT NULL AND o.net_profit IS NOT NULL
+              THEN o.net_profit - (fifo.effective_cost_price - COALESCE(o.total_cost_price, 0))
             ELSE o.net_profit
           END
         ), 0) AS total_net_profit,
@@ -890,14 +942,14 @@ router.get('/summary', async (req, res) => {
         COALESCE(SUM(
           CASE
             WHEN COALESCE(o.order_chargeable_weight_gram, 0) <= 0 THEN 0
-            WHEN fifo.fifo_cost_price IS NOT NULL AND o.product_profit IS NOT NULL
-              THEN o.product_profit - (fifo.fifo_cost_price - COALESCE(o.total_cost_price, 0))
+            WHEN fifo.effective_cost_price IS NOT NULL AND o.product_profit IS NOT NULL
+              THEN o.product_profit - (fifo.effective_cost_price - COALESCE(o.total_cost_price, 0))
             ELSE o.product_profit
           END
         ), 0) AS total_product_profit,
         COALESCE(SUM(
             CASE
-              WHEN fifo.fifo_cost_price IS NOT NULL THEN ROUND(fifo.fifo_cost_price * 0.1)
+              WHEN fifo.effective_vat IS NOT NULL THEN fifo.effective_vat
               ELSE o.total_vat
             END
           ), 0) AS total_vat,
@@ -922,7 +974,7 @@ router.get('/summary', async (req, res) => {
 
         SUM(
           CASE
-            WHEN fifo.fifo_cost_price IS NOT NULL
+            WHEN fifo.effective_vat IS NOT NULL
               OR o.total_vat IS NOT NULL
             THEN 1 ELSE 0
           END

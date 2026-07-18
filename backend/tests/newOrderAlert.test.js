@@ -27,6 +27,10 @@ assert.match(alertService, /status='sent'/);
 assert.match(alertService, /JOIN order_items oi/);
 assert.match(alertService, /model_discounted_price/);
 assert.match(alertService, /model_original_price/);
+assert.match(alertService, /p\.product_name_kr/);
+assert.match(alertService, /p\.sku COLLATE utf8mb4_general_ci/);
+assert.match(alertService, /productName: row\.product_name_kr \|\| row\.item_name/);
+assert.match(alertService, /optionName: row\.product_name_kr \? ''/);
 
 const pushService = fs.readFileSync(path.join(__dirname, '../src/services/shopeePushService.js'), 'utf8');
 const syncWorker = fs.readFileSync(path.join(__dirname, '../src/jobs/syncWorker.js'), 'utf8');

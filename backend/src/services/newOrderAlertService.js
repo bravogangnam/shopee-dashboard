@@ -31,12 +31,17 @@ async function loadNewOrderAlert(tenantId, shopId, orderSn) {
   const [rows] = await db.query(
     `SELECT o.region, o.currency, COALESCE(o.display_status, o.order_status) AS display_status,
             oi.item_name, oi.model_name, oi.model_quantity_purchased,
-            oi.model_original_price, oi.model_discounted_price
+            oi.model_original_price, oi.model_discounted_price,
+            p.product_name_kr
        FROM orders o
        JOIN order_items oi
          ON oi.tenant_id = o.tenant_id
         AND oi.shop_id = o.shop_id
         AND oi.order_sn = o.order_sn
+       LEFT JOIN products p
+         ON p.tenant_id = oi.tenant_id
+        AND p.sku COLLATE utf8mb4_general_ci =
+            COALESCE(NULLIF(oi.model_sku, ''), NULLIF(oi.item_sku, '')) COLLATE utf8mb4_general_ci
       WHERE o.tenant_id = ? AND o.shop_id = ? AND o.order_sn = ?
       ORDER BY oi.id ASC`,
     [tenantId, shopId, orderSn]
@@ -47,8 +52,8 @@ async function loadNewOrderAlert(tenantId, shopId, orderSn) {
     items: rows.map(row => ({
       region: row.region || '-',
       orderSn,
-      productName: row.item_name || '-',
-      optionName: row.model_name || '',
+      productName: row.product_name_kr || row.item_name || '-',
+      optionName: row.product_name_kr ? '' : (row.model_name || ''),
       qty: Number(row.model_quantity_purchased || 1),
       unitPrice: resolveUnitPrice(row.model_discounted_price, row.model_original_price),
       currency: row.currency || '',

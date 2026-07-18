@@ -253,8 +253,8 @@ router.get('/', async (req, res) => {
   // 활성 샵 기반 필터
   let whereClause = `o.tenant_id = ? AND o.shop_id IN (SELECT shop_id FROM shops WHERE tenant_id = ? AND is_active = 1)`;
   const params = [tenantId, tenantId];
-  const openBacklogStatuses = ['UNPAID', 'READY_TO_SHIP'];
-  const allPeriodStatuses = ['IN_CANCEL', 'TO_RETURN', 'CANCELLED'];
+  const openBacklogStatuses = ['UNPAID', 'PENDING', 'READY_TO_SHIP'];
+  const allPeriodStatuses = ['PENDING', 'IN_CANCEL', 'TO_RETURN', 'CANCELLED'];
   const includeOpenBacklog = ['1', 'true', 'yes'].includes(String(include_open_backlog || '').toLowerCase());
   let statusFilters = [];
   const effectiveStatusSql = effectiveOrderStatusExpression('o');
@@ -697,6 +697,7 @@ router.get('/stats', async (req, res) => {
          WHERE 1=1 ${shopFilter}
        ) exception_orders
        WHERE effective_status IN (
+         'PENDING',
          'IN_CANCEL',
          'TO_RETURN',
          'CANCELLED'
@@ -706,6 +707,7 @@ router.get('/stats', async (req, res) => {
     );
 
     const exceptionStatuses = new Set([
+      'PENDING',
       'IN_CANCEL',
       'TO_RETURN',
       'CANCELLED',

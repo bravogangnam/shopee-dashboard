@@ -6,6 +6,7 @@ const { RangePicker } = DatePicker;
 const REGIONS = ['ALL', 'SG', 'MY', 'PH', 'TW'];
 
 const ALL_PERIOD_STATUSES = new Set([
+  'PENDING',
   'IN_CANCEL',
   'TO_RETURN',
   'CANCELLED',

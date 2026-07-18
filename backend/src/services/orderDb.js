@@ -160,10 +160,11 @@ async function insertOrder(conn, orderRow) {
  * @returns {{ inserted: number }}
  */
 async function batchInsertOrders(orderRows, { tenantId = CURRENT_TENANT_ID } = {}) {
-  if (!orderRows.length) return { inserted: 0 };
+  if (!orderRows.length) return { inserted: 0, insertedOrderKeys: [] };
 
   const conn = await db.getConnection();
   let inserted = 0;
+  const insertedOrderKeys = [];
   try {
     await conn.beginTransaction();
     for (const row of orderRows) {
@@ -207,6 +208,9 @@ async function batchInsertOrders(orderRows, { tenantId = CURRENT_TENANT_ID } = {
         ]
       );
       inserted += result.affectedRows;
+      if (result.affectedRows === 1) {
+        insertedOrderKeys.push(`${row.shop_id}::${row.order_sn}`);
+      }
 
       // 기존 주문도 재동기화할 때 결제 방식과 배송 방법을 갱신한다.
       await conn.query(
@@ -236,7 +240,7 @@ async function batchInsertOrders(orderRows, { tenantId = CURRENT_TENANT_ID } = {
   } finally {
     conn.release();
   }
-  return { inserted };
+  return { inserted, insertedOrderKeys };
 }
 
 /**

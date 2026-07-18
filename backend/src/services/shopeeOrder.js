@@ -13,6 +13,7 @@
 const { buildUrl } = require('../utils/shopeeSignature');
 const { callWithRetry, shopeeAxios, sleep } = require('../utils/apiWrapper');
 const { refreshShopToken } = require('./shopeeAuth');
+const { collectOrderListPages } = require('./orderListPagination');
 
 // shop별 onAuthError 핸들러 — 403 발생 시 해당 shop 토큰만 갱신
 function makeAuthErrorHandler(shopId) {
@@ -63,14 +64,9 @@ function unixToKST(unixSec) {
  * @param {string} accessToken
  * @returns {string[]} order_sn 배열
  */
-async function getOrderList(shopId, timeFrom, timeTo, accessToken) {
+async function getOrderList(shopId, timeFrom, timeTo, accessToken, { withMeta = false } = {}) {
   const path = '/api/v2/order/get_order_list';
-  let cursor = '';
-  let allOrderSns = [];
-  let page = 0;
-
-  while (true) {
-    page++;
+  const result = await collectOrderListPages(async ({ cursor, page }) => {
     const params = {
       time_range_field: 'create_time',
       time_from: String(timeFrom),
@@ -94,18 +90,13 @@ async function getOrderList(shopId, timeFrom, timeTo, accessToken) {
       throw new Error(`get_order_list error: ${data.error} - ${data.message}`);
     }
 
-    const resp = data.response || {};
-    const orderList = resp.order_list || [];
-    allOrderSns.push(...orderList.map(o => o.order_sn));
+    return data.response || {};
+  }, { sleepFn: sleep });
 
-    if (!resp.more || !resp.next_cursor) break;
-    cursor = resp.next_cursor;
-
-    // Rate limit 보호: 100건 이상 페이지가 있을 경우 0.5초 딜레이
-    await sleep(500);
+  if (withMeta) {
+    return result;
   }
-
-  return allOrderSns;
+  return result.orderSns;
 }
 
 // ─── get_order_detail (50건 batch) ──────────────────────────────

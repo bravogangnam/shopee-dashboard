@@ -38,6 +38,10 @@ const {
 const { sleep } = require('../utils/apiWrapper');
 const { getShippingParameter } = require('../services/shopeeLogistics');
 const { syncReturnWindow } = require('../services/shopeeReturn');
+const {
+  calculateDiscoveryRange,
+  buildOrderListWindows,
+} = require('./orderDiscoveryRange');
 
 // ── 타이밍 헬퍼 ─────────────────────────────────────────────────
 const t = () => Date.now();
@@ -45,7 +49,6 @@ function ms(start) { return `${Date.now() - start}ms`; }
 
 // ── escrow 병렬 조회 (CONCURRENCY건씩 동시 호출) ────────────────
 const ESCROW_CONCURRENCY = 5;
-
 async function fetchEscrowParallel(orders, shopId, accessToken, label) {
   const escrowMap = {};
   const total = orders.length;
@@ -256,7 +259,7 @@ async function buildReadyToShipAlertItemsFromDb({ orderSns, shop, tenantId }) {
  * 수동 동기화 메인 실행 함수
  * @param {string} jobId
  */
-async function runSync(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
+async function runSync(jobId, { tenantId = CURRENT_TENANT_ID, discoveryMode = 'normal_overlap' } = {}) {
   const syncStart = t();
   console.log(`\n${'═'.repeat(60)}`);
   console.log(`[Sync] ▶ START  jobId=${jobId}  ${new Date().toISOString()}`);
@@ -315,21 +318,16 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
         console.log(`[Sync][Step1] │  getLatestCreateTime: ${ms(tsStart)}  → latestTs=${latestTs ? new Date(latestTs*1000).toISOString() : 'none(최초)'}`);
 
         const now = Math.floor(Date.now() / 1000);
-        const timeFrom = latestTs ? latestTs + 1 : now - (30 * 86400);
-        const timeTo = now;
+        const { timeFrom, timeTo } = calculateDiscoveryRange(latestTs, now, discoveryMode);
 
         // Shopee 최대 조회 범위 15일 → 슬라이딩 윈도우
-        const windows = [];
-        let cur = timeFrom;
-        const windowSec = 15 * 86400;
-        while (cur < timeTo) {
-          const end = Math.min(cur + windowSec, timeTo);
-          windows.push({ from: cur, to: end });
-          cur = end + 1;
-        }
+        const windows = buildOrderListWindows(timeFrom, timeTo);
         console.log(`[Sync][Step1] │  시간 범위: ${new Date(timeFrom*1000).toISOString().slice(0,10)} ~ ${new Date(timeTo*1000).toISOString().slice(0,10)}  윈도우 ${windows.length}개`);
 
         let shopNewCount = 0;
+        let shopFetchedCount = 0;
+        let shopExistingCount = 0;
+        let shopPageCount = 0;
           let shopReadyToShipAlertCount = 0;
 
         for (const [wi, win] of windows.entries()) {
@@ -339,12 +337,17 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
           const shopToken1 = await getOrRefreshShopToken(shop.shop_id);
           if (!shopToken1) throw new Error(`shop_id=${shop.shop_id} 토큰 없음 — OAuth 재인증 필요`);
           const listStart = t();
-          const allSns = await getOrderList(shop.shop_id, win.from, win.to, shopToken1);
+          const { orderSns: allSns, pageCount } = await getOrderList(
+            shop.shop_id, win.from, win.to, shopToken1, { withMeta: true }
+          );
+          shopFetchedCount += allSns.length;
+          shopPageCount += pageCount;
           console.log(`[Sync][Step1] │  get_order_list ${winLabel}: ${ms(listStart)}  → ${allSns.length}건`);
 
           // ── filterNewOrderSns (DB 중복 체크) ──
           const filterStart = t();
           const newSns = await filterNewOrderSns(shop.shop_id, allSns, { tenantId });
+          shopExistingCount += allSns.length - newSns.length;
           console.log(`[Sync][Step1] │  filterNewOrderSns ${winLabel}: ${ms(filterStart)}  → 신규 ${newSns.length}/${allSns.length}건`);
 
           if (newSns.length > 0) {
@@ -380,18 +383,26 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
 
             // ── DB INSERT ──
             const insertStart = t();
-            const { inserted } = await batchInsertOrders(orderRows, { tenantId });
-            await batchInsertOrderItems(itemRowsAll, { tenantId });
+            const { inserted, insertedOrderKeys } = await batchInsertOrders(orderRows, { tenantId });
+            const insertedKeySet = new Set(insertedOrderKeys);
+            const insertedItemRows = itemRowsAll.filter(item =>
+              insertedKeySet.has(`${item.shop_id}::${item.order_sn}`)
+            );
+            await batchInsertOrderItems(insertedItemRows, { tenantId });
             console.log(`[Sync][Step1] │  batchInsert: ${ms(insertStart)}  → inserted=${inserted}`);
-              const readyToShipInserted = inserted > 0
-                  ? orderRows.filter(o => o.display_status === 'READY_TO_SHIP').length
-                  : 0;
+              const readyToShipInserted = orderRows.filter(order =>
+                insertedKeySet.has(`${order.shop_id}::${order.order_sn}`) &&
+                order.display_status === 'READY_TO_SHIP'
+              ).length;
               shopReadyToShipAlertCount += readyToShipInserted;
               if (readyToShipInserted > 0) {
                 console.log(`[Sync][Step1] │  새주문 알림 대상 READY_TO_SHIP=${readyToShipInserted}건`);
+                const insertedOrderRows = orderRows.filter(order =>
+                  insertedKeySet.has(`${order.shop_id}::${order.order_sn}`)
+                );
                 readyToShipAlertItems.push(...await buildReadyToShipAlertItemsFromRows({
-                  orderRows,
-                  itemRows: itemRowsAll,
+                  orderRows: insertedOrderRows,
+                  itemRows: insertedItemRows,
                   shop,
                   tenantId,
                 }));
@@ -412,7 +423,14 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
             readyToShipAlertOrdersByRegion[shop.region] = (readyToShipAlertOrdersByRegion[shop.region] || 0) + shopReadyToShipAlertCount;
           }
         await logSync(shop.shop_id, 'manual', new Date(timeFrom * 1000), new Date(timeTo * 1000),
-            shopNewCount, shopNewCount, 'success', null, { tenantId });
+            shopFetchedCount, shopNewCount, 'success', null, { tenantId });
+
+        console.log(
+          `[OrderDiscovery] shop_id=${shop.shop_id} tenant_id=${tenantId} mode=${discoveryMode} ` +
+          `time_from=${new Date(timeFrom * 1000).toISOString()} time_to=${new Date(timeTo * 1000).toISOString()} ` +
+          `api_orders=${shopFetchedCount} inserted=${shopNewCount} existing=${shopExistingCount} ` +
+          `errors=0 cursor_pages=${shopPageCount}`
+        );
 
         console.log(`[Sync][Step1] └─ shop=${shopAlias} 완료  신규=${shopNewCount}건  ${ms(shopStart)}`);
         await updateProgress(jobId, step, totalSteps,
@@ -420,6 +438,10 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
 
       } catch (err) {
         console.error(`[Sync][Step1] └─ shop=${shopAlias} ERROR: ${err.message}  ${ms(shopStart)}`);
+        console.error(
+          `[OrderDiscovery] shop_id=${shop.shop_id} tenant_id=${tenantId} mode=${discoveryMode} ` +
+          `api_orders=0 inserted=0 existing=0 errors=1 cursor_pages=0 error=${err.message}`
+        );
         await logSync(shop.shop_id, 'manual', null, null, 0, 0, 'fail', err.message, { tenantId });
       }
     }
@@ -760,4 +782,13 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
   }
 }
 
-module.exports = { runSync };
+async function runReconciliation(jobId, { tenantId = CURRENT_TENANT_ID } = {}) {
+  return runSync(jobId, { tenantId, discoveryMode: 'reconciliation' });
+}
+
+module.exports = {
+  runSync,
+  runReconciliation,
+  calculateDiscoveryRange,
+  buildOrderListWindows,
+};

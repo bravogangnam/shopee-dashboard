@@ -106,8 +106,11 @@ async function processWindow(shop, window, accessToken) {
       itemRowsAll.push(...itemRows);
     }
 
-    const { inserted: ins } = await batchInsertOrders(orderRows);
-    await batchInsertOrderItems(itemRowsAll);
+    const { inserted: ins, insertedOrderKeys } = await batchInsertOrders(orderRows);
+    const insertedKeySet = new Set(insertedOrderKeys);
+    await batchInsertOrderItems(itemRowsAll.filter(item =>
+      insertedKeySet.has(`${item.shop_id}::${item.order_sn}`)
+    ));
     inserted = ins;
 
     await logSync(shop.shop_id, 'backfill', window.from, window.to, fetched, inserted, 'success', null);

@@ -30,6 +30,7 @@ function run() {
   assert.ok(!Object.prototype.hasOwnProperty.call(empty, 'alias'));
 
   console.log('shopeeShopProfileService normalization tests passed');
+  process.exit(0);
 }
 
 run();

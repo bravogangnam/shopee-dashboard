@@ -20,7 +20,7 @@ const {
   markStaleJobsFailed,
 } = require('../services/jobManager');
 const { CURRENT_TENANT_ID }    = require('../config/tenant');
-const { runSync }              = require('./syncWorker');
+const { runSync, runReconciliation } = require('./syncWorker');
 const {
   notifySyncFailed,
   notifyNewOrders,
@@ -37,7 +37,7 @@ let notifiedSyncFail = false; // 동기화 실패 알림 발송 여부
 /**
  * 자동 동기화 1회 실행
  */
-async function runAutoSync() {
+async function runAutoSync({ reconciliation = false } = {}) {
   if (isRunning) {
     console.log('[AutoSync] ⏭ 이전 동기화 진행 중 — 스킵');
     return;
@@ -63,7 +63,9 @@ async function runAutoSync() {
     const jobId = await createJob('sync', { tenantId });
 
     // syncWorker 실행 → { new_orders, new_orders_by_region } 반환
-    const result = await runSync(jobId, { tenantId });
+    const result = reconciliation
+      ? await runReconciliation(jobId, { tenantId })
+      : await runSync(jobId, { tenantId });
 
       const newOrders   = result?.new_orders          || 0;
       const readyToShipNewOrders = result?.ready_to_ship_new_orders || 0;
@@ -124,6 +126,16 @@ function startAutoSyncJob() {
   cron.schedule('*/5 * * * *', () => {
     console.log('[AutoSync] ⏰ Cron 트리거');
     runAutoSync();
+  }, {
+    scheduled: true,
+    timezone: 'UTC',
+  });
+
+  // Re-scan the last three days every six hours. The shared in-process and DB
+  // job locks prevent this from overlapping the regular synchronization.
+  cron.schedule('2 */6 * * *', () => {
+    console.log('[AutoSync] Reconciliation cron trigger (3-day create_time window)');
+    runAutoSync({ reconciliation: true });
   }, {
     scheduled: true,
     timezone: 'UTC',

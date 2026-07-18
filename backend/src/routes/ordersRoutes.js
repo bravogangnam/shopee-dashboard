@@ -11,9 +11,27 @@ const router = express.Router();
 const { requireAuth, requireApprovedTenant } = require('../middleware/auth');
 const db = require('../config/database');
 const { getCurrentTenantId } = require('../config/tenant');
+const { addClient } = require('../services/orderEventHub');
 
 router.use(requireAuth);
 router.use(requireApprovedTenant);
+
+router.get('/events', (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.write('retry: 3000\n\n');
+  const removeClient = addClient(tenantId, res);
+  const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 25000);
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    removeClient();
+  });
+});
 
 const FIFO_COST_JOIN = `
   LEFT JOIN (

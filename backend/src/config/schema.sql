@@ -247,3 +247,20 @@ CREATE TABLE IF NOT EXISTS inventory_allocations (
     INDEX idx_inventory_allocations_sku (sku),
     INDEX idx_inventory_allocations_batch (batch_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS shopee_push_events (
+    id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id           INT NOT NULL,
+    shop_id             BIGINT NOT NULL,
+    code                INT NOT NULL,
+    order_sn            VARCHAR(50) NULL,
+    event_update_time   BIGINT NULL,
+    payload_hash        CHAR(64) NOT NULL,
+    status              ENUM('queued','processing','completed','failed','ignored') NOT NULL DEFAULT 'queued',
+    error_message       VARCHAR(500) NULL,
+    received_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    processed_at        DATETIME NULL,
+    UNIQUE KEY uq_shopee_push_payload (shop_id, code, payload_hash),
+    INDEX idx_shopee_push_order (tenant_id, shop_id, order_sn, event_update_time),
+    INDEX idx_shopee_push_status (status, received_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

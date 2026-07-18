@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchOrders, fetchStats } from '../api/orders.js';
+import { subscribeToOrderEvents } from '../api/orderEvents.js';
 import {
   downloadBlob,
   downloadInvoiceJob,
@@ -191,6 +192,19 @@ export default function OrderManagementPage() {
 
     return () => window.clearInterval(intervalId);
   }, [loading, syncLoading, invoiceLoading, invoiceJob, selectedOrders.length]);
+
+  useEffect(() => {
+    let refreshTimer = null;
+    const unsubscribe = subscribeToOrderEvents(() => {
+      if (selectedOrders.length > 0) return;
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => setReloadKey(value => value + 1), 500);
+    });
+    return () => {
+      unsubscribe();
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+    };
+  }, [selectedOrders.length]);
 
   useEffect(() => {
     if (!invoiceJob?.jobId || !isInvoiceJobActive(invoiceJob)) return undefined;

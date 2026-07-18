@@ -14,7 +14,12 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 // ─── 미들웨어 ─────────────────────────────────────────────────────
-app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '80mb' }));
+app.use(express.json({
+  limit: process.env.JSON_BODY_LIMIT || '80mb',
+  verify: (req, res, buffer) => {
+    if (req.originalUrl?.startsWith('/api/shopee/push')) req.rawBody = Buffer.from(buffer);
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: process.env.JSON_BODY_LIMIT || '80mb' }));
 app.use(cookieParser());
 
@@ -51,6 +56,7 @@ app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/settings', require('./routes/settingsRoutes'));
 app.use('/api/test', require('./routes/testRoutes'));
 app.use('/api/jobs', require('./routes/jobRoutes'));
+app.use('/api/shopee/push', require('./routes/shopeePushRoutes'));
 app.use('/api/orders', require('./routes/ordersRoutes'));
 app.use('/api/products', require('./routes/productsRoutes'));
 app.use('/api/receipts', require('./routes/receiptsRoutes'));
@@ -110,6 +116,9 @@ app.use((err, req, res, next) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🚀 Shopee Dashboard API running on port ${PORT}`);
   console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
+
+  const { ensurePushEventsTable } = require('./services/shopeePushService');
+  ensurePushEventsTable().catch(e => console.error('[App] shopeePushEvents table init error:', e.message));
   console.log(`   Health: http://localhost:${PORT}/api/health\n`);
 
   // 토큰 자동 갱신 Cron 시작

@@ -4,6 +4,7 @@ import koKR from 'antd/locale/ko_KR';
 import dayjs from 'dayjs';
 import 'antd/dist/reset.css';
 import { fetchDailySales, fetchOrders, fetchSummary } from '../api/orders.js';
+import { subscribeToOrderEvents } from '../api/orderEvents.js';
 import DailySalesChart from '../components/DailySalesChart.jsx';
 import OrderFilters from '../components/OrderFilters.jsx';
 import OrderSettlementDetailModal from '../components/OrderSettlementDetailModal.jsx';
@@ -220,6 +221,18 @@ export default function LedgerPage() {
   useEffect(() => {
     ledgerPageCache.chartMonth = chartMonth;
   }, [chartMonth]);
+
+  useEffect(() => {
+    let refreshTimer = null;
+    const unsubscribe = subscribeToOrderEvents(() => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => setReloadKey(value => value + 1), 500);
+    });
+    return () => {
+      unsubscribe();
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+    };
+  }, []);
 
   useEffect(() => {
     if (reloadKey === 0 && ledgerPageCache.ordersLoaded && ledgerPageCache.ordersKey === queryKey) {

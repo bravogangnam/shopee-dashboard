@@ -1,6 +1,6 @@
 const express = require('express');
+const { classifyPushRequest } = require('../services/shopeePushRequest');
 const {
-  SUPPORTED_CODES,
   verifyPushAuthorization,
   getPushContext,
   registerPushEvent,
@@ -12,12 +12,13 @@ const router = express.Router();
 router.post('/', async (req, res) => {
   const rawBody = req.rawBody?.toString('utf8') || '';
   const payload = req.body || {};
-  const shopId = Number(payload.shop_id);
-  const code = Number(payload.code);
-  if (!shopId || !SUPPORTED_CODES.has(code) || !rawBody) return res.status(400).end();
+  if (!rawBody) return res.status(400).end();
+
+  const { type, shopId, code } = classifyPushRequest(payload);
+  if (type === 'verification') return res.status(204).end();
 
   const context = await getPushContext(shopId);
-  if (!context || !Number(context.is_active)) return res.status(404).end();
+  if (!context || !Number(context.is_active)) return res.status(204).end();
   const callbackUrl = process.env.SHOPEE_PUSH_CALLBACK_URL ||
     `${req.get('x-forwarded-proto') || req.protocol}://${req.get('host')}${req.originalUrl}`;
   const authorization = req.get('authorization') || '';

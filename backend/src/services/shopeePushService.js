@@ -10,8 +10,8 @@ const {
 } = require('./shopeeOrder');
 const { applyShopeeOrderSnapshot } = require('./orderSnapshotService');
 const { publishOrderChange } = require('./orderEventHub');
+const { OPERATIONAL_PUSH_CODES: SUPPORTED_CODES } = require('./shopeePushRequest');
 
-const SUPPORTED_CODES = new Set([3, 4, 15]);
 const processingKeys = new Set();
 let pushEventsTableReady = null;
 

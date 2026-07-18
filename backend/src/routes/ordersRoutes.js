@@ -130,51 +130,6 @@ const FIFO_COST_SELECT = `
           END AS product_profit
   `;
 
-const PROFIT_RATE_FILTER_EXPRESSION = `
-  (
-    CASE
-      WHEN (
-        SELECT SUM(a.total_cost)
-        FROM inventory_movements m
-        INNER JOIN inventory_allocations a
-          ON a.tenant_id = m.tenant_id
-         AND a.movement_id = m.id
-        WHERE m.tenant_id = o.tenant_id
-          AND m.order_sn = o.order_sn
-          AND m.shop_id = o.shop_id
-          AND m.movement_type = 'SALE'
-      ) IS NOT NULL
-      AND o.net_profit IS NOT NULL
-        THEN o.net_profit - (
-          (
-            SELECT SUM(a.total_cost)
-            FROM inventory_movements m
-            INNER JOIN inventory_allocations a
-              ON a.tenant_id = m.tenant_id
-             AND a.movement_id = m.id
-            WHERE m.tenant_id = o.tenant_id
-              AND m.order_sn = o.order_sn
-              AND m.shop_id = o.shop_id
-              AND m.movement_type = 'SALE'
-          ) - COALESCE(o.total_cost_price, 0)
-        )
-      ELSE o.net_profit
-    END
-  )
-  /
-  (
-    COALESCE(o.merchandise_subtotal, o.total_amount)
-    *
-    (
-      SELECT er.rate_to_krw
-      FROM exchange_rates er
-      WHERE o.currency COLLATE utf8mb4_general_ci = er.currency
-      LIMIT 1
-    )
-  )
-  * 100
-`;
-
 function effectiveOrderStatusExpression(orderAlias = 'o') {
   return `
     CASE
@@ -400,26 +355,18 @@ router.get('/', async (req, res) => {
     whereClause += `
       AND o.net_profit IS NOT NULL
       AND COALESCE(o.merchandise_subtotal, o.total_amount) IS NOT NULL
-      AND (
-        SELECT er.rate_to_krw
-        FROM exchange_rates er
-        WHERE o.currency COLLATE utf8mb4_general_ci = er.currency
-        LIMIT 1
-      ) IS NOT NULL
-      AND (
-        COALESCE(o.merchandise_subtotal, o.total_amount)
-        *
-        (
-          SELECT er.rate_to_krw
-          FROM exchange_rates er
-          WHERE o.currency COLLATE utf8mb4_general_ci = er.currency
-          LIMIT 1
-        )
-      ) <> 0
-      AND ${PROFIT_RATE_FILTER_EXPRESSION} <= ?
+      AND er.rate_to_krw IS NOT NULL
+      AND (COALESCE(o.merchandise_subtotal, o.total_amount) * er.rate_to_krw) <> 0
+      AND ${SUMMARY_PROFIT_RATE_FILTER_EXPRESSION} <= ?
     `;
     params.push(maxProfitRate);
   }
+
+  const profitRateFilterJoins = hasMaxProfitRate ? `
+    ${FIFO_COST_JOIN}
+    LEFT JOIN exchange_rates er
+      ON o.currency COLLATE utf8mb4_general_ci = er.currency
+  ` : '';
 
   let orderByExpression = 'o.order_created_at DESC, o.id DESC';
 
@@ -467,7 +414,7 @@ router.get('/', async (req, res) => {
   try {
     // ── STEP 1: orders 테이블 기준 COUNT (JOIN 없음 → row 뻥튀기 없음) ──
     const [countRows] = await db.query(
-      `SELECT COUNT(*) as total FROM orders o WHERE ${whereClause}`,
+      `SELECT COUNT(*) as total FROM orders o ${profitRateFilterJoins} WHERE ${whereClause}`,
       params
     );
     const total = countRows[0].total;
@@ -479,6 +426,7 @@ router.get('/', async (req, res) => {
     const [pageIds] = await db.query(
       `SELECT o.id, o.order_created_at
        FROM orders o
+       ${profitRateFilterJoins}
        WHERE ${whereClause}
        ORDER BY ${orderByExpression}
        LIMIT ? OFFSET ?`,

@@ -852,7 +852,8 @@ function StockInTab({ dashboard, reloadDashboard }) {
                 <th>SKU</th>
                 <th>상품명</th>
                 <th>입고수량</th>
-                <th>남은수량</th>
+                <th>배치잔여</th>
+                <th>현재재고</th>
                 <th>VAT 제외 원가</th>
                 <th>VAT 포함 입력가</th>
                 <th>공급처</th>
@@ -895,6 +896,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
                   </td>
                   <td>{formatNumber(row.initial_qty)}</td>
                   <td>{formatNumber(row.remaining_qty)}</td>
+                  <td>{formatNumber(row.stock_quantity)}</td>
                   <td>{formatKrw(row.unit_cost)}</td>
                   <td>{formatKrw(row.source_unit_cost || Number(row.unit_cost || 0) * 1.1)}</td>
                   <td><span className="receipt-supplier-cell" title={row.supplier || ''}>{row.supplier || '-'}</span></td>

@@ -589,6 +589,7 @@ router.get('/stats', async (req, res) => {
 
   const curFilter  = buildDateFilter(rangeFrom, rangeTo);
   const prevFilter = buildDateFilter(prevFrom, prevTo);
+  const effectiveStatusSql = effectiveOrderStatusExpression('o');
 
   // 매출 포함 상태: READY_TO_SHIP, PROCESSED, SHIPPED, COMPLETED, TO_CONFIRM_RECEIVE
   // 매출 제외 상태: UNPAID, PENDING, CANCELLED
@@ -598,14 +599,14 @@ router.get('/stats', async (req, res) => {
     SELECT
       o.region, o.currency, r.rate_to_krw,
       COUNT(*) as order_count,
-      SUM(CASE WHEN o.order_status NOT IN (${EXCLUDED_STATUSES}) THEN 1 ELSE 0 END) as valid_count,
-      SUM(CASE WHEN o.order_status NOT IN (${EXCLUDED_STATUSES}) THEN
+      SUM(CASE WHEN ${effectiveStatusSql} NOT IN (${EXCLUDED_STATUSES}) THEN 1 ELSE 0 END) as valid_count,
+      SUM(CASE WHEN ${effectiveStatusSql} NOT IN (${EXCLUDED_STATUSES}) THEN
         COALESCE(o.merchandise_subtotal, o.total_amount, 0) ELSE 0 END) as total_sales,
-      SUM(CASE WHEN o.order_status NOT IN (${EXCLUDED_STATUSES}) THEN
+      SUM(CASE WHEN ${effectiveStatusSql} NOT IN (${EXCLUDED_STATUSES}) THEN
         COALESCE(o.escrow_amount, 0) ELSE 0 END) as total_escrow,
-      SUM(CASE WHEN o.order_status = 'COMPLETED' THEN 1 ELSE 0 END) as completed_count,
-      SUM(CASE WHEN o.order_status = 'CANCELLED' THEN 1 ELSE 0 END) as cancelled_count,
-      SUM(CASE WHEN o.order_status IN ('READY_TO_SHIP', 'PROCESSED', 'SHIPPED') THEN 1 ELSE 0 END) as in_progress_count
+      SUM(CASE WHEN ${effectiveStatusSql} = 'COMPLETED' THEN 1 ELSE 0 END) as completed_count,
+      SUM(CASE WHEN ${effectiveStatusSql} = 'CANCELLED' THEN 1 ELSE 0 END) as cancelled_count,
+      SUM(CASE WHEN ${effectiveStatusSql} IN ('READY_TO_SHIP', 'PROCESSED', 'SHIPPED') THEN 1 ELSE 0 END) as in_progress_count
     FROM orders o
     LEFT JOIN exchange_rates r ON o.currency = r.currency
     WHERE 1=1 ${shopFilter} ${dateFilter}
@@ -650,10 +651,10 @@ router.get('/stats', async (req, res) => {
     const [byShop] = await db.query(
       `SELECT
         o.shop_id, o.region, s.alias,
-        COUNT(*) as order_count,
-        SUM(CASE WHEN o.order_status NOT IN ('UNPAID', 'PENDING', 'CANCELLED') THEN
+        SUM(CASE WHEN ${effectiveStatusSql} NOT IN ('UNPAID', 'PENDING', 'CANCELLED') THEN 1 ELSE 0 END) as order_count,
+        SUM(CASE WHEN ${effectiveStatusSql} NOT IN ('UNPAID', 'PENDING', 'CANCELLED') THEN
           COALESCE(o.escrow_amount, 0) ELSE 0 END) as total_escrow,
-        SUM(CASE WHEN o.order_status NOT IN ('UNPAID', 'PENDING', 'CANCELLED') THEN
+        SUM(CASE WHEN ${effectiveStatusSql} NOT IN ('UNPAID', 'PENDING', 'CANCELLED') THEN
           COALESCE(o.merchandise_subtotal, o.total_amount, 0) ELSE 0 END) as total_merchandise,
         o.currency,
         r.rate_to_krw
@@ -664,8 +665,6 @@ router.get('/stats', async (req, res) => {
        GROUP BY o.shop_id, o.region, s.alias, o.currency, r.rate_to_krw`,
       shopParams
     );
-
-    const effectiveStatusSql = effectiveOrderStatusExpression('o');
 
     // 일반 주문 상태는 현재 선택 기간 기준으로 집계
     const [periodStatusRows] = await db.query(

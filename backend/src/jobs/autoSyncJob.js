@@ -23,7 +23,6 @@ const { CURRENT_TENANT_ID }    = require('../config/tenant');
 const { runSync, runReconciliation } = require('./syncWorker');
 const {
   notifySyncFailed,
-  notifyNewOrders,
 } = require('../utils/telegramNotifier');
 
 // ── Lock: 동시 실행 방지 ────────────────────────────────────────
@@ -88,10 +87,7 @@ async function runAutoSync({ reconciliation = false } = {}) {
       console.log('[AutoSync] 동기화 성공 — 실패 알림 플래그 리셋');
     }
 
-      // 새 주문 알림은 READY_TO_SHIP 대상만 발송한다. UNPAID 신규 주문은 제외.
-      if (readyToShipNewOrders > 0) {
-        await notifyNewOrders(readyToShipNewOrders, byRegion, readyToShipNewOrderItems);
-    }
+      // 신규 주문 알림은 syncWorker에서 주문별 멱등 기록과 함께 발송한다.
 
   } catch (err) {
     lastResult = { success: false, error: err.message };

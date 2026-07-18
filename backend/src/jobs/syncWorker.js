@@ -25,6 +25,7 @@ const {
   logSync,
 } = require('../services/orderDb');
 const { applyShopeeOrderSnapshot } = require('../services/orderSnapshotService');
+const { notifyNewOrderOnce } = require('../services/newOrderAlertService');
 const {
   startJob,
   updateProgress,
@@ -386,7 +387,16 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID, discoveryMode = 'n
                 itemRows: orderItems,
                 source: discoveryMode,
               });
-              if (applied.created) insertedKeySet.add(`${orderRow.shop_id}::${orderRow.order_sn}`);
+              if (applied.created) {
+                insertedKeySet.add(`${orderRow.shop_id}::${orderRow.order_sn}`);
+                if (orderRow.order_status === 'READY_TO_SHIP') {
+                  await notifyNewOrderOnce({
+                    tenantId,
+                    shopId: shop.shop_id,
+                    orderSn: orderRow.order_sn,
+                  });
+                }
+              }
               else shopExistingCount++;
             }
             const inserted = insertedKeySet.size;
@@ -525,6 +535,13 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID, discoveryMode = 'n
             source: 'polling',
           });
           if (applied.updated) {
+            if (applied.previousOrderStatus !== 'READY_TO_SHIP' && orderRow.order_status === 'READY_TO_SHIP') {
+              await notifyNewOrderOnce({
+                tenantId,
+                shopId: shop.shop_id,
+                orderSn: order.order_sn,
+              });
+            }
             if (applied.previousDisplayStatus !== 'READY_TO_SHIP' && applied.displayStatus === 'READY_TO_SHIP') {
               shopReadyToShipAlertCount++;
               shopReadyToShipAlertOrderSns.push(order.order_sn);

@@ -23,7 +23,7 @@ const CHAT_ID   = process.env.TELEGRAM_CHAT_ID;
 async function sendMessage(text) {
   if (!BOT_TOKEN || !CHAT_ID) {
     console.warn('[Telegram] TELEGRAM_BOT_TOKEN 또는 TELEGRAM_CHAT_ID 미설정 — 알림 스킵');
-    return;
+    return { skipped: true, reason: 'missing_telegram_env' };
   }
 
   try {
@@ -37,9 +37,11 @@ async function sendMessage(text) {
       { timeout: 10000 }
     );
     console.log(`[Telegram] ✅ 메시지 전송 완료: ${text.slice(0, 60)}...`);
+    return { sent: true };
   } catch (err) {
     // 텔레그램 전송 실패는 로그만 남기고 서버 크래시 없음
     console.error(`[Telegram] ❌ 전송 실패: ${err.message}`);
+    return { failed: true, reason: err.message };
   }
 }
 
@@ -100,8 +102,18 @@ function formatNewOrderProductLine(item) {
   const optionName = String(item.optionName || '').trim();
   const qty = Number(item.qty || 1);
   const optionText = optionName && optionName !== '-' ? ` / ${escapeMarkdownText(optionName)}` : '';
+  const unitPrice = item.unitPrice === null || item.unitPrice === undefined || item.unitPrice === ''
+    ? NaN
+    : Number(item.unitPrice);
+  const currency = escapeMarkdownText(item.currency || '');
+  const priceText = Number.isFinite(unitPrice)
+    ? ` / 판매가: ${unitPrice.toLocaleString('en-US', { maximumFractionDigits: 2 })}${currency ? ` ${currency}` : ''}`
+    : ' / 판매가: -';
 
-  return `  ${productName}${optionText} x ${Number.isFinite(qty) ? qty : 1}`;
+  return `  상품명: ${productName}\n` +
+    `  옵션명: ${optionText ? escapeMarkdownText(optionName) : '-'}\n` +
+    `  수량: ${Number.isFinite(qty) ? qty : 1}개\n` +
+    `  ${priceText.slice(3)}`;
 }
 
 function groupNewOrderItemsByOrder(items = []) {
@@ -156,13 +168,12 @@ async function notifyNewOrders(total, byRegion = {}, items = []) {
   const groupedOrders = groupNewOrderItemsByOrder(items);
 
   const headerLines = [
-    `🛍️ *[Shopee] 새 주문 ${total}건*${detail}`,
+    `🛍️ *[Shopee 신규 주문] ${total}건*${detail}`,
     `🕐 ${now} UTC`,
   ];
 
   if (!groupedOrders.length) {
-    await sendMessage(headerLines.join('\n'));
-    return;
+    return sendMessage(headerLines.join('\n'));
   }
 
   const MAX_MESSAGE_LENGTH = 3500;
@@ -170,7 +181,7 @@ async function notifyNewOrders(total, byRegion = {}, items = []) {
   let currentLines = [
     ...headerLines,
     '',
-    '*상품명*',
+    '*주문 상품 상세*',
   ];
 
   for (const group of groupedOrders) {
@@ -180,10 +191,10 @@ async function notifyNewOrders(total, byRegion = {}, items = []) {
     if (nextText.length > MAX_MESSAGE_LENGTH && currentLines.length > 3) {
       messages.push(currentLines.join('\n'));
       currentLines = [
-        `🛍️ *[Shopee] 새 주문 ${total}건*${detail} \(계속\)`,
+        `🛍️ *[Shopee 신규 주문] ${total}건*${detail} \(계속\)`,
         `🕐 ${now} UTC`,
         '',
-        '*상품명*',
+        '*주문 상품 상세*',
         groupText,
       ];
     } else {
@@ -195,9 +206,21 @@ async function notifyNewOrders(total, byRegion = {}, items = []) {
     messages.push(currentLines.join('\n'));
   }
 
-  for (const message of messages) {
-    await sendMessage(message);
+  const results = [];
+  for (const message of messages) results.push(await sendMessage(message));
+  return results.find(result => result?.failed) ||
+    (results.some(result => result?.sent) ? { sent: true } : results[0]);
+}
+
+function resolveUnitPrice(discountedPrice, originalPrice) {
+  const discounted = Number(discountedPrice);
+  if (discountedPrice !== null && discountedPrice !== '' && Number.isFinite(discounted) && discounted > 0) {
+    return discounted;
   }
+  const original = Number(originalPrice);
+  return originalPrice !== null && originalPrice !== '' && Number.isFinite(original)
+    ? original
+    : null;
 }
 
 module.exports = {
@@ -205,4 +228,6 @@ module.exports = {
   notifyTokenExpired,
   notifySyncFailed,
   notifyNewOrders,
+  formatNewOrderProductLine,
+  resolveUnitPrice,
 };

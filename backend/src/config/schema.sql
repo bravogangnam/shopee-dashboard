@@ -248,6 +248,21 @@ CREATE TABLE IF NOT EXISTS inventory_allocations (
     INDEX idx_inventory_allocations_batch (batch_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS order_alert_deliveries (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id       INT NOT NULL,
+    shop_id         BIGINT NOT NULL,
+    order_sn        VARCHAR(50) NOT NULL,
+    alert_type      VARCHAR(30) NOT NULL,
+    status          ENUM('processing','sent','failed') NOT NULL DEFAULT 'processing',
+    attempts        INT NOT NULL DEFAULT 1,
+    error_message   VARCHAR(500) NULL,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    sent_at         DATETIME NULL,
+    UNIQUE KEY uq_order_alert_delivery (tenant_id, shop_id, order_sn, alert_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS shopee_push_events (
     id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
     tenant_id           INT NOT NULL,

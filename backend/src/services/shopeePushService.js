@@ -10,6 +10,7 @@ const {
 } = require('./shopeeOrder');
 const { applyShopeeOrderSnapshot } = require('./orderSnapshotService');
 const { publishOrderChange } = require('./orderEventHub');
+const { notifyNewOrderOnce } = require('./newOrderAlertService');
 const { OPERATIONAL_PUSH_CODES: SUPPORTED_CODES } = require('./shopeePushRequest');
 
 const processingKeys = new Set();
@@ -136,6 +137,15 @@ async function syncPushedOrder({ context, event }) {
     itemRows,
     source: `push:${event.code}`,
   });
+  const becameReadyToShip = orderRow.order_status === 'READY_TO_SHIP' &&
+    (applied.created || applied.previousOrderStatus !== 'READY_TO_SHIP');
+  if (becameReadyToShip) {
+    await notifyNewOrderOnce({
+      tenantId: context.tenant_id,
+      shopId: context.shop_id,
+      orderSn: event.orderSn,
+    });
+  }
   return {
     inserted: applied.created ? 1 : 0,
     updated: applied.updated ? 1 : 0,

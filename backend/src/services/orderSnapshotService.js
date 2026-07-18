@@ -46,6 +46,7 @@ async function applyShopeeOrderSnapshot({
     }
 
     const previousDisplayStatus = existing.display_status || existing.order_status;
+    const previousOrderStatus = existing.order_status;
     const incomingTime = Number(orderRow.update_time || 0);
     const storedTime = Number(existing.update_time || 0);
     let relation = incomingTime > storedTime ? 'newer' : incomingTime < storedTime ? 'stale' : 'equal';
@@ -85,6 +86,7 @@ async function applyShopeeOrderSnapshot({
       repairedItems: itemRepair.inserted,
       supplemented,
       previousDisplayStatus,
+      previousOrderStatus,
       displayStatus: existing.display_status === 'TO_RETURN'
         ? 'TO_RETURN'
         : orderRow.display_status,

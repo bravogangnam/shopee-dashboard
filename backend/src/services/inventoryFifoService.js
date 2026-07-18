@@ -191,14 +191,6 @@ async function getOpenSaleShortages(conn, sku, { tenantId = CURRENT_TENANT_ID } 
            AND cr.shop_id = m.shop_id
            AND cr.sku = m.sku
        )
-       AND NOT EXISTS (
-         SELECT 1
-         FROM orders o
-         WHERE o.tenant_id = m.tenant_id
-           AND o.order_sn = m.order_sn
-           AND o.shop_id = m.shop_id
-           AND o.order_status = 'CANCELLED'
-       )
      GROUP BY m.tenant_id, m.id, m.order_sn, m.shop_id, m.sku, m.qty_delta, m.created_at
      HAVING shortage_qty > 0
      ORDER BY m.created_at ASC, m.id ASC`,
@@ -740,14 +732,6 @@ async function reconcileInventoryFifo({ tenantId = CURRENT_TENANT_ID } = {}) {
                  AND cr.order_sn = m.order_sn
                  AND cr.shop_id = m.shop_id
                  AND cr.sku = m.sku
-             )
-             AND NOT EXISTS (
-               SELECT 1
-               FROM orders o
-               WHERE o.tenant_id = m.tenant_id
-                 AND o.order_sn = m.order_sn
-                 AND o.shop_id = m.shop_id
-                 AND o.order_status = 'CANCELLED'
              )
            )
          )

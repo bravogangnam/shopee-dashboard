@@ -105,6 +105,22 @@ const PROFIT_RATE_FILTER_EXPRESSION = `
   * 100
 `;
 
+function effectiveOrderStatusExpression(orderAlias = 'o') {
+  return `
+    CASE
+      WHEN EXISTS (
+        SELECT 1
+        FROM order_return_refunds rr
+        WHERE rr.tenant_id = ${orderAlias}.tenant_id
+          AND rr.shop_id = ${orderAlias}.shop_id
+          AND rr.order_sn = ${orderAlias}.order_sn
+      )
+      THEN 'TO_RETURN'
+      ELSE COALESCE(${orderAlias}.display_status, ${orderAlias}.order_status)
+    END
+  `;
+}
+
 const SUMMARY_PROFIT_RATE_FILTER_EXPRESSION = `
   (
     CASE
@@ -241,6 +257,7 @@ router.get('/', async (req, res) => {
   const allPeriodStatuses = ['IN_CANCEL', 'TO_RETURN', 'CANCELLED'];
   const includeOpenBacklog = ['1', 'true', 'yes'].includes(String(include_open_backlog || '').toLowerCase());
   let statusFilters = [];
+  const effectiveStatusSql = effectiveOrderStatusExpression('o');
 
   if (shop_id) {
     whereClause += ` AND o.shop_id = ?`;
@@ -256,26 +273,11 @@ router.get('/', async (req, res) => {
     // 쉼표 구분 여러 상태 허용
     statusFilters = order_status.split(',').map(s => s.trim()).filter(Boolean);
     if (statusFilters.length === 1) {
-      if (statusFilters[0] === 'TO_RETURN') {
-        whereClause += `
-          AND (
-            o.order_status = 'TO_RETURN'
-            OR EXISTS (
-              SELECT 1
-              FROM order_return_refunds rr
-              WHERE rr.tenant_id = o.tenant_id
-                AND rr.shop_id = o.shop_id
-                AND rr.order_sn = o.order_sn
-            )
-          )
-        `;
-      } else {
-        whereClause += ` AND o.order_status = ?`;
-        params.push(statusFilters[0]);
-      }
+      whereClause += ` AND (${effectiveStatusSql}) = ?`;
+      params.push(statusFilters[0]);
     } else if (statusFilters.length > 1) {
       const placeholders = statusFilters.map(() => '?').join(',');
-      whereClause += ` AND o.order_status IN (${placeholders})`;
+      whereClause += ` AND (${effectiveStatusSql}) IN (${placeholders})`;
       params.push(...statusFilters);
     }
   }
@@ -663,35 +665,16 @@ router.get('/stats', async (req, res) => {
       shopParams
     );
 
+    const effectiveStatusSql = effectiveOrderStatusExpression('o');
+
     // 일반 주문 상태는 현재 선택 기간 기준으로 집계
     const [periodStatusRows] = await db.query(
       `SELECT
-         CASE
-           WHEN EXISTS (
-             SELECT 1
-             FROM order_return_refunds rr
-             WHERE rr.tenant_id = o.tenant_id
-               AND rr.shop_id = o.shop_id
-               AND rr.order_sn = o.order_sn
-           )
-           THEN 'TO_RETURN'
-           ELSE o.order_status
-         END AS order_status,
+         ${effectiveStatusSql} AS order_status,
          COUNT(*) AS count
        FROM orders o
        WHERE 1=1 ${shopFilter} ${curFilter}
-       GROUP BY
-         CASE
-           WHEN EXISTS (
-             SELECT 1
-             FROM order_return_refunds rr
-             WHERE rr.tenant_id = o.tenant_id
-               AND rr.shop_id = o.shop_id
-               AND rr.order_sn = o.order_sn
-           )
-           THEN 'TO_RETURN'
-           ELSE o.order_status
-         END
+       GROUP BY ${effectiveStatusSql}
        ORDER BY count DESC`,
       shopParams
     );
@@ -709,17 +692,7 @@ router.get('/stats', async (req, res) => {
          COUNT(*) AS count
        FROM (
          SELECT
-           CASE
-             WHEN EXISTS (
-               SELECT 1
-               FROM order_return_refunds rr
-               WHERE rr.tenant_id = o.tenant_id
-                 AND rr.shop_id = o.shop_id
-                 AND rr.order_sn = o.order_sn
-             )
-             THEN 'TO_RETURN'
-             ELSE o.order_status
-           END AS effective_status
+           ${effectiveStatusSql} AS effective_status
          FROM orders o
          WHERE 1=1 ${shopFilter}
        ) exception_orders

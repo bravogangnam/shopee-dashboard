@@ -22,11 +22,27 @@ function CurrencyTotals({ totals }) {
   ));
 }
 
+function ForecastCard({ title, forecast }) {
+  const hasOrders = Number(forecast?.order_count || 0) > 0;
+  return (
+    <article className="payout-forecast-card">
+      <div className="payout-forecast-card-heading">
+        <span>{title}</span>
+        <small>{forecast?.period_label || '-'}</small>
+      </div>
+      <strong>{hasOrders ? formatKrw(forecast?.krw_amount) : '집계 대기'}</strong>
+      <p>{hasOrders ? `${formatNumber(forecast.order_count, 0)}건 · COMPLETED 전환 기준` : '완료 전환 주문이 아직 없습니다.'}</p>
+    </article>
+  );
+}
+
 export default function ShopeePayoutBalancePanel({
   data,
   expanded,
   loading,
   refreshing,
+  forecast,
+  forecastLoading,
   onToggle,
   onRefresh,
 }) {
@@ -90,38 +106,57 @@ export default function ShopeePayoutBalancePanel({
       )}
 
       {expanded && (
-        <div className="payout-balance-shop-list">
-          {shops.length === 0 && <div className="payout-balance-state">연동된 활성 샵이 없습니다.</div>}
-          {shops.map((shop) => (
-            <article className="payout-balance-shop" key={shop.shop_id}>
-              <div className="payout-balance-shop-heading">
-                <div>
-                  <span className={`payout-balance-region region-${String(shop.region || 'other').toLowerCase()}`}>
-                    {shop.region || shop.currency || 'SHOP'}
-                  </span>
-                  <strong>{shopLabel(shop)}</strong>
-                </div>
-                <span className="payout-balance-shop-currency">{shop.currency || '통화 미확인'}</span>
+        <>
+          <section className="payout-forecast" aria-label="주차별 정산 예상">
+            <div className="payout-forecast-heading">
+              <div>
+                <h3>주차별 정산 예상</h3>
+                <p>한국시간 월~일 사이 COMPLETED로 전환된 주문의 예상 정산액입니다.</p>
               </div>
-              <div className="payout-balance-shop-values">
-                <div className="payout-balance-local-value">
-                  <span>지급 가능 금액</span>
-                  <strong>{formatCurrency(shop.balance_amount, shop.currency)}</strong>
-                </div>
-                <div className="payout-balance-converted-value">
-                  <span>USD</span>
-                  <strong>{formatUsd(shop.usd_amount)}</strong>
-                </div>
-                <div className="payout-balance-converted-value">
-                  <span>KRW</span>
-                  <strong>{formatKrw(shop.krw_amount)}</strong>
-                </div>
+              <span>실제 지급일·지급액은 Shopee 심사 및 지급 처리에 따라 달라질 수 있습니다.</span>
+            </div>
+            {forecastLoading ? (
+              <div className="payout-balance-state">정산 예상 금액을 집계하는 중입니다.</div>
+            ) : (
+              <div className="payout-forecast-grid">
+                <ForecastCard title="다음 주 정산 예상" forecast={forecast?.next_payout} />
+                <ForecastCard title="다다음 주 정산 예상" forecast={forecast?.following_payout} />
               </div>
-              {shop.last_error && <p className="payout-balance-shop-error">최근 조회 실패: {shop.last_error}</p>}
-              {!shop.last_error && !shop.synced_at && <p className="payout-balance-shop-empty">아직 조회하지 않았습니다.</p>}
-            </article>
-          ))}
-        </div>
+            )}
+          </section>
+          <div className="payout-balance-shop-list">
+            {shops.length === 0 && <div className="payout-balance-state">연동된 활성 샵이 없습니다.</div>}
+            {shops.map((shop) => (
+              <article className="payout-balance-shop" key={shop.shop_id}>
+                <div className="payout-balance-shop-heading">
+                  <div>
+                    <span className={`payout-balance-region region-${String(shop.region || 'other').toLowerCase()}`}>
+                      {shop.region || shop.currency || 'SHOP'}
+                    </span>
+                    <strong>{shopLabel(shop)}</strong>
+                  </div>
+                  <span className="payout-balance-shop-currency">{shop.currency || '통화 미확인'}</span>
+                </div>
+                <div className="payout-balance-shop-values">
+                  <div className="payout-balance-local-value">
+                    <span>지급 가능 금액</span>
+                    <strong>{formatCurrency(shop.balance_amount, shop.currency)}</strong>
+                  </div>
+                  <div className="payout-balance-converted-value">
+                    <span>USD</span>
+                    <strong>{formatUsd(shop.usd_amount)}</strong>
+                  </div>
+                  <div className="payout-balance-converted-value">
+                    <span>KRW</span>
+                    <strong>{formatKrw(shop.krw_amount)}</strong>
+                  </div>
+                </div>
+                {shop.last_error && <p className="payout-balance-shop-error">최근 조회 실패: {shop.last_error}</p>}
+                {!shop.last_error && !shop.synced_at && <p className="payout-balance-shop-empty">아직 조회하지 않았습니다.</p>}
+              </article>
+            ))}
+          </div>
+        </>
       )}
     </section>
   );

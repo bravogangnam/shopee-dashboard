@@ -9,3 +9,7 @@ export function refreshPaymentBalances() {
     method: 'POST',
   });
 }
+
+export function fetchSettlementForecast() {
+  return apiRequest('/api/payment-balances/settlement-forecast');
+}

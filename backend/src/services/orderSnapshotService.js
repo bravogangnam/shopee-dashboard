@@ -8,6 +8,7 @@ const {
 } = require('./orderDb');
 const { processInventoryForOrders } = require('./inventoryService');
 const { buildGuardedSnapshotDiff, lockName } = require('./orderSnapshotPolicy');
+const { recordOrderCompletion } = require('./settlementForecastService');
 
 async function getStoredOrder(tenantId, shopId, orderSn) {
   const [rows] = await db.query(
@@ -80,6 +81,17 @@ async function applyShopeeOrderSnapshot({
         orderSn: orderRow.order_sn,
         previousOrderStatus,
       }], { tenantId });
+    }
+
+    // Completion is recorded exactly once at the transition point.  Forecasts
+    // must never be derived from create_time or a later general update_time.
+    if ((created || (updated && previousOrderStatus !== 'COMPLETED')) && orderRow.order_status === 'COMPLETED') {
+      await recordOrderCompletion({
+        tenantId,
+        shopId,
+        orderSn: orderRow.order_sn,
+        updateTime: orderRow.update_time,
+      });
     }
 
     return {

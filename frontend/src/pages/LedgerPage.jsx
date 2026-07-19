@@ -4,7 +4,7 @@ import koKR from 'antd/locale/ko_KR';
 import dayjs from 'dayjs';
 import 'antd/dist/reset.css';
 import { fetchDailySales, fetchOrders, fetchSummary } from '../api/orders.js';
-import { fetchPaymentBalances, refreshPaymentBalances } from '../api/paymentBalances.js';
+import { fetchPaymentBalances, fetchSettlementForecast, refreshPaymentBalances } from '../api/paymentBalances.js';
 import { subscribeToOrderEvents } from '../api/orderEvents.js';
 import DailySalesChart from '../components/DailySalesChart.jsx';
 import OrderFilters from '../components/OrderFilters.jsx';
@@ -55,6 +55,8 @@ const ledgerPageCache = {
   chartLoaded: false,
   paymentBalances: null,
   paymentBalancesLoaded: false,
+  settlementForecast: null,
+  settlementForecastLoaded: false,
 };
 
 function calculateRate(numerator, denominator) {
@@ -213,6 +215,8 @@ export default function LedgerPage() {
   const [paymentBalancesLoading, setPaymentBalancesLoading] = useState(() => !ledgerPageCache.paymentBalancesLoaded);
   const [paymentBalancesRefreshing, setPaymentBalancesRefreshing] = useState(false);
   const [paymentBalancesExpanded, setPaymentBalancesExpanded] = useState(false);
+  const [settlementForecast, setSettlementForecast] = useState(() => ledgerPageCache.settlementForecast || null);
+  const [settlementForecastLoading, setSettlementForecastLoading] = useState(() => !ledgerPageCache.settlementForecastLoaded);
 
   const queryKey = useMemo(() => JSON.stringify(query), [query]);
 
@@ -254,6 +258,28 @@ export default function LedgerPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSettlementForecast() {
+      setSettlementForecastLoading(true);
+      try {
+        const response = await fetchSettlementForecast();
+        if (!cancelled) {
+          const next = response.data || null;
+          setSettlementForecast(next);
+          ledgerPageCache.settlementForecast = next;
+          ledgerPageCache.settlementForecastLoaded = true;
+        }
+      } catch (err) {
+        if (!cancelled) setError(err.message || '정산 예상 금액을 불러오지 못했습니다.');
+      } finally {
+        if (!cancelled) setSettlementForecastLoading(false);
+      }
+    }
+    loadSettlementForecast();
+    return () => { cancelled = true; };
+  }, [reloadKey]);
 
   useEffect(() => {
     ledgerPageCache.chartMonth = chartMonth;
@@ -446,6 +472,8 @@ export default function LedgerPage() {
           expanded={paymentBalancesExpanded}
           loading={paymentBalancesLoading}
           refreshing={paymentBalancesRefreshing}
+          forecast={settlementForecast}
+          forecastLoading={settlementForecastLoading}
           onToggle={() => setPaymentBalancesExpanded((value) => !value)}
           onRefresh={handlePaymentBalanceRefresh}
         />

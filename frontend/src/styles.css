@@ -8309,6 +8309,26 @@ html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-range-end .ant-pic
   box-shadow: inset -2px 0 0 #e5e7eb !important;
 }
 
+/* Settlement forecast inside the existing Shopee payout balance panel. */
+.payout-forecast { border-top: 1px solid #e6edf6; background: #fff; padding: 16px 20px; }
+.payout-forecast-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.payout-forecast-heading h3 { margin: 0; color: #172033; font-size: 14px; }
+.payout-forecast-heading p, .payout-forecast-heading > span { margin: 4px 0 0; color: #6c7889; font-size: 11px; }
+.payout-forecast-heading > span { max-width: 430px; text-align: right; }
+.payout-forecast-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.payout-forecast-card { padding: 14px 15px; border: 1px solid #dfe8f5; border-radius: 9px; background: linear-gradient(135deg, #f7fbff, #fff); }
+.payout-forecast-card-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.payout-forecast-card-heading span { color: #315987; font-size: 12px; font-weight: 800; }
+.payout-forecast-card-heading small, .payout-forecast-card p { color: #78879a; font-size: 11px; }
+.payout-forecast-card strong { display: block; margin-top: 8px; color: #172033; font-size: 21px; letter-spacing: -0.4px; }
+.payout-forecast-card p { margin: 5px 0 0; }
+html[data-theme='dark'] .ledger-page .payout-forecast { border-color: #263955; background: #101d31; }
+html[data-theme='dark'] .ledger-page .payout-forecast-heading h3, html[data-theme='dark'] .ledger-page .payout-forecast-card strong { color: #f1f5f9; }
+html[data-theme='dark'] .ledger-page .payout-forecast-heading p, html[data-theme='dark'] .ledger-page .payout-forecast-heading > span, html[data-theme='dark'] .ledger-page .payout-forecast-card-heading small, html[data-theme='dark'] .ledger-page .payout-forecast-card p { color: #9eb0c7; }
+html[data-theme='dark'] .ledger-page .payout-forecast-card { border-color: #2a405f; background: linear-gradient(135deg, #16263d, #111e31); }
+html[data-theme='dark'] .ledger-page .payout-forecast-card-heading span { color: #8fc0ff; }
+@media (max-width: 720px) { .payout-forecast-heading { align-items: start; flex-direction: column; } .payout-forecast-heading > span { max-width: none; text-align: left; } .payout-forecast-grid { grid-template-columns: 1fr; } }
+
 html[data-theme='dark'] .ant-picker-dropdown .ant-picker-footer,
 html[data-theme='dark'] .ant-picker-dropdown .ant-picker-ranges {
   border-color: var(--theme-border) !important;

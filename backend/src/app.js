@@ -122,6 +122,8 @@ app.listen(PORT, '0.0.0.0', () => {
   ensurePushEventsTable().catch(e => console.error('[App] shopeePushEvents table init error:', e.message));
   const { ensurePaymentBalanceTable } = require('./services/paymentBalanceService');
   ensurePaymentBalanceTable().catch(e => console.error('[App] payment balance table init error:', e.message));
+  const { ensureOrderCompletionEventsTable } = require('./services/settlementForecastService');
+  ensureOrderCompletionEventsTable().catch(e => console.error('[App] completion events table init error:', e.message));
   console.log(`   Health: http://localhost:${PORT}/api/health\n`);
 
   // 토큰 자동 갱신 Cron 시작

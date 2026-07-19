@@ -22,8 +22,9 @@ function CurrencyTotals({ totals }) {
   ));
 }
 
-function ForecastCard({ title, forecast }) {
+function ForecastCard({ title, forecast, balanceShops }) {
   const hasOrders = Number(forecast?.order_count || 0) > 0;
+  const forecastByShop = new Map((forecast?.shops || []).map((shop) => [String(shop.shop_id), shop]));
   return (
     <article className="payout-forecast-card">
       <div className="payout-forecast-card-heading">
@@ -32,6 +33,29 @@ function ForecastCard({ title, forecast }) {
       </div>
       <strong>{hasOrders ? formatKrw(forecast?.krw_amount) : '집계 대기'}</strong>
       <p>{hasOrders ? `${formatNumber(forecast.order_count, 0)}건 · COMPLETED 전환 기준` : '완료 전환 주문이 아직 없습니다.'}</p>
+      <div className="payout-forecast-shop-list">
+        {balanceShops.map((balanceShop) => {
+          const shop = forecastByShop.get(String(balanceShop.shop_id));
+          const orderCount = Number(shop?.order_count || 0);
+          const currency = shop?.currency || balanceShop.currency;
+          return (
+            <div className="payout-forecast-shop" key={balanceShop.shop_id}>
+              <div className="payout-forecast-shop-heading">
+                <span className={`payout-balance-region region-${String(balanceShop.region || 'other').toLowerCase()}`}>
+                  {balanceShop.region || currency || 'SHOP'}
+                </span>
+                <strong>{shopLabel(balanceShop)}</strong>
+                <small>{orderCount}건</small>
+              </div>
+              <div className="payout-forecast-shop-values">
+                <div><span>현지통화</span><b>{formatCurrency(shop?.local_amount || 0, currency)}</b></div>
+                <div><span>USD</span><b>{formatUsd(shop?.usd_amount || 0)}</b></div>
+                <div><span>KRW</span><b>{formatKrw(shop?.krw_amount || 0)}</b></div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </article>
   );
 }
@@ -119,8 +143,8 @@ export default function ShopeePayoutBalancePanel({
               <div className="payout-balance-state">정산 예상 금액을 집계하는 중입니다.</div>
             ) : (
               <div className="payout-forecast-grid">
-                <ForecastCard title="다음 주 정산 예상" forecast={forecast?.next_payout} />
-                <ForecastCard title="다다음 주 정산 예상" forecast={forecast?.following_payout} />
+                <ForecastCard title="다음 주 정산 예상" forecast={forecast?.next_payout} balanceShops={shops} />
+                <ForecastCard title="다다음 주 정산 예상" forecast={forecast?.following_payout} balanceShops={shops} />
               </div>
             )}
           </section>

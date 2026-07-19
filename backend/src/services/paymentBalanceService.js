@@ -124,7 +124,13 @@ async function getActiveShops(tenantId) {
     `SELECT shop_id, shop_name, alias, region
      FROM shops
      WHERE tenant_id = ? AND is_active = 1
-     ORDER BY COALESCE(alias, shop_name, CAST(shop_id AS CHAR)), shop_id`,
+     ORDER BY CASE region
+       WHEN 'SG' THEN 1
+       WHEN 'MY' THEN 2
+       WHEN 'PH' THEN 3
+       WHEN 'TW' THEN 4
+       ELSE 99
+     END, shop_id`,
     [tenantId]
   );
   return shops;
@@ -240,7 +246,13 @@ async function getPaymentBalanceSnapshot(tenantId) {
      LEFT JOIN shopee_payment_balance_snapshots p
        ON p.tenant_id = s.tenant_id AND p.shop_id = s.shop_id
      WHERE s.tenant_id = ? AND s.is_active = 1
-     ORDER BY COALESCE(s.alias, s.shop_name, CAST(s.shop_id AS CHAR)), s.shop_id`,
+     ORDER BY CASE s.region
+       WHEN 'SG' THEN 1
+       WHEN 'MY' THEN 2
+       WHEN 'PH' THEN 3
+       WHEN 'TW' THEN 4
+       ELSE 99
+     END, s.shop_id`,
     [tenantId]
   );
   const [rates] = await db.query('SELECT currency, rate_to_krw FROM exchange_rates');

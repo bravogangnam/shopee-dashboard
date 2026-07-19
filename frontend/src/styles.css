@@ -8263,13 +8263,23 @@ html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell:not(.ant-picker-ce
 
 html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-disabled::before,
 html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-disabled .ant-picker-cell-inner {
-  background: #162033 !important;
   color: #627086 !important;
+}
+
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-disabled::before {
+  background: transparent !important;
 }
 
 html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-in-range::before,
 html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-in-range-hover::before {
+  background: transparent !important;
+}
+
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-in-range .ant-picker-cell-inner,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-in-range-hover .ant-picker-cell-inner {
   background: #17345b !important;
+  color: #e5e7eb !important;
+  border-radius: 0 !important;
 }
 
 html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell:hover:not(.ant-picker-cell-disabled) .ant-picker-cell-inner,

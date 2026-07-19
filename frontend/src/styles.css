@@ -8295,6 +8295,20 @@ html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-range-end .ant-pic
   color: #ffffff !important;
 }
 
+/* Range boundaries belong on the outer edge: start on the left, end on the right. */
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-range-start::before,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-range-end::before {
+  background: transparent !important;
+}
+
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-range-start .ant-picker-cell-inner {
+  box-shadow: inset 2px 0 0 #e5e7eb !important;
+}
+
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-range-end .ant-picker-cell-inner {
+  box-shadow: inset -2px 0 0 #e5e7eb !important;
+}
+
 html[data-theme='dark'] .ant-picker-dropdown .ant-picker-footer,
 html[data-theme='dark'] .ant-picker-dropdown .ant-picker-ranges {
   border-color: var(--theme-border) !important;

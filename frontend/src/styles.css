@@ -8215,3 +8215,78 @@ html[data-theme='dark'] .receipt-page .receipt-option-image-button:hover {
   color: #93c5fd !important;
   text-decoration-color: #60a5fa !important;
 }
+
+/* Order detail metadata is rendered by a later component stylesheet. */
+html[data-theme='dark'] .order-settlement-modal .payment-order-top-card {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface-soft) !important;
+}
+
+html[data-theme='dark'] .order-settlement-modal .payment-order-top-label {
+  color: var(--theme-text-muted) !important;
+}
+
+html[data-theme='dark'] .order-settlement-modal .payment-order-top-value {
+  color: var(--theme-text-strong) !important;
+}
+
+/* Ant Design calendar is rendered in a body portal, outside the ledger page. */
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-panel-container,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-panel,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-date-panel,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-month-panel,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-year-panel,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-decade-panel {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-header,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-header-view,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-content th,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-in-view,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-in-view .ant-picker-cell-inner,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-header button {
+  color: var(--theme-text-strong) !important;
+}
+
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-header,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-panel-layout,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-date-panel + .ant-picker-date-panel {
+  border-color: var(--theme-border) !important;
+}
+
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell:not(.ant-picker-cell-in-view) {
+  color: #718096 !important;
+}
+
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-disabled::before,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-disabled .ant-picker-cell-inner {
+  background: #162033 !important;
+  color: #627086 !important;
+}
+
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-in-range::before,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-in-range-hover::before {
+  background: #17345b !important;
+}
+
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell:hover:not(.ant-picker-cell-disabled) .ant-picker-cell-inner,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-in-view.ant-picker-cell-today .ant-picker-cell-inner {
+  color: #dbeafe !important;
+  background: #1b365b !important;
+}
+
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-selected .ant-picker-cell-inner,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-range-start .ant-picker-cell-inner,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-range-end .ant-picker-cell-inner {
+  background: #2563eb !important;
+  color: #ffffff !important;
+}
+
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-footer,
+html[data-theme='dark'] .ant-picker-dropdown .ant-picker-ranges {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface) !important;
+}

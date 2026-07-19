@@ -4424,6 +4424,75 @@ html[data-theme='dark'] .buyer-history-current-badge {
   color: #b8d8ff;
 }
 
+/* Keep the buyer summary and settlement figures readable in dark mode. */
+html[data-theme='dark'] .order-settlement-modal .order-settlement-buyer-summary {
+  border-color: var(--theme-border);
+  background: var(--theme-surface);
+}
+
+html[data-theme='dark'] .order-settlement-modal .buyer-summary-identity,
+html[data-theme='dark'] .order-settlement-modal .buyer-summary-statistics,
+html[data-theme='dark'] .order-settlement-modal .buyer-summary-stat-row,
+html[data-theme='dark'] .order-settlement-modal .buyer-summary-copy {
+  border-color: var(--theme-border);
+  background: var(--theme-surface-soft);
+}
+
+html[data-theme='dark'] .order-settlement-modal .buyer-summary-identity {
+  border-bottom-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .order-settlement-modal .buyer-summary-stat {
+  border-left-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .order-settlement-modal .buyer-summary-heading,
+html[data-theme='dark'] .order-settlement-modal .buyer-summary-field strong,
+html[data-theme='dark'] .order-settlement-modal .buyer-summary-stat strong,
+html[data-theme='dark'] .order-settlement-modal .buyer-summary-stat b {
+  color: var(--theme-text-strong);
+}
+
+html[data-theme='dark'] .order-settlement-modal .buyer-summary-field > span,
+html[data-theme='dark'] .order-settlement-modal .buyer-summary-stat > span,
+html[data-theme='dark'] .order-settlement-modal .buyer-summary-copy {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme='dark'] .order-settlement-modal .buyer-summary-history-button {
+  border-color: #315784;
+  background: #132b48;
+  color: #9bc7ff;
+}
+
+html[data-theme='dark'] .order-settlement-modal .buyer-summary-purchase-number {
+  background: #132b48;
+  color: #b8d8ff;
+}
+
+html[data-theme='dark'] .ledger-page .summary-card span,
+html[data-theme='dark'] .ledger-page .summary-card .summary-prev-value,
+html[data-theme='dark'] .ledger-page .summary-card .summary-card-count,
+html[data-theme='dark'] .ledger-page .chart-header p,
+html[data-theme='dark'] .ledger-page .chart-summary-pill span {
+  color: var(--theme-text-muted) !important;
+  opacity: 1;
+}
+
+html[data-theme='dark'] .ledger-page .summary-card strong,
+html[data-theme='dark'] .ledger-page .chart-header h2,
+html[data-theme='dark'] .ledger-page .chart-summary-pill strong {
+  color: var(--theme-text-strong) !important;
+}
+
+html[data-theme='dark'] .ledger-page .chart-summary-pill:nth-child(1) strong { color: #fb7185 !important; }
+html[data-theme='dark'] .ledger-page .chart-summary-pill:nth-child(2) strong { color: #60a5fa !important; }
+html[data-theme='dark'] .ledger-page .chart-summary-pill:nth-child(3) strong { color: #e5e7eb !important; }
+html[data-theme='dark'] .ledger-page .chart-summary-pill:nth-child(4) strong { color: #a78bfa !important; }
+html[data-theme='dark'] .ledger-page .chart-summary-pill:nth-child(5) strong { color: #6ee7b7 !important; }
+html[data-theme='dark'] .ledger-page .chart-summary-pill:nth-child(6) strong { color: #fdba74 !important; }
+html[data-theme='dark'] .ledger-page .chart-summary-pill:nth-child(7) strong { color: #fdba74 !important; }
+
 .order-settlement-title h2 {
   margin: 0 0 5px;
   font-size: 22px;

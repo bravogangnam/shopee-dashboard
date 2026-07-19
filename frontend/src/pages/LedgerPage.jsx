@@ -42,6 +42,7 @@ const ledgerPageCache = {
   orders: [],
   summary: null,
   dailySales: [],
+  currentMonthDailySales: [],
   chartSummary: null,
   chartMonth: null,
   pagination: null,
@@ -195,6 +196,7 @@ export default function LedgerPage() {
   const [settlementFilter, setSettlementFilter] = useState(() => ledgerPageCache.settlementFilter || 'all');
   const [summary, setSummary] = useState(() => ledgerPageCache.summary || null);
   const [dailySales, setDailySales] = useState(() => ledgerPageCache.dailySales || []);
+  const [currentMonthDailySales, setCurrentMonthDailySales] = useState(() => ledgerPageCache.currentMonthDailySales || []);
   const [chartSummary, setChartSummary] = useState(() => ledgerPageCache.chartSummary || null);
   const [chartMonth, setChartMonth] = useState(() => ledgerPageCache.chartMonth || dayjs().subtract(1, 'month').format('YYYY-MM'));
   const [pagination, setPagination] = useState(() => ledgerPageCache.pagination || null);
@@ -295,27 +297,35 @@ export default function LedgerPage() {
       setChartLoading(true);
       try {
         const chartRange = getChartMonthRange(chartMonth);
-        const [dailySalesResult, chartSummaryResult] = await Promise.all([
+        const currentMonth = dayjs().format('YYYY-MM');
+        const [dailySalesResult, currentMonthDailySalesResult, chartSummaryResult] = await Promise.all([
           fetchDailySales(chartMonth),
+          chartMonth === currentMonth
+            ? Promise.resolve(null)
+            : fetchDailySales(currentMonth),
           fetchSummary(chartRange),
         ]);
 
         if (!chartCancelled) {
           const nextDailySales = dailySalesResult.data || [];
+          const nextCurrentMonthDailySales = currentMonthDailySalesResult?.data || nextDailySales;
           const nextChartSummary = chartSummaryResult || null;
 
           setDailySales(nextDailySales);
+          setCurrentMonthDailySales(nextCurrentMonthDailySales);
           setChartSummary(nextChartSummary);
 
           ledgerPageCache.chartLoaded = true;
           ledgerPageCache.chartKey = chartMonth;
           ledgerPageCache.dailySales = nextDailySales;
+          ledgerPageCache.currentMonthDailySales = nextCurrentMonthDailySales;
           ledgerPageCache.chartSummary = nextChartSummary;
           ledgerPageCache.chartMonth = chartMonth;
         }
       } catch (err) {
         if (!chartCancelled) {
           setDailySales([]);
+          setCurrentMonthDailySales([]);
           setChartSummary(null);
           setError(err.message || '일별 매출 차트를 불러오지 못했습니다.');
         }
@@ -380,6 +390,7 @@ export default function LedgerPage() {
         <SummaryCards summary={summary} />
           <DailySalesChart
             data={dailySales}
+            currentMonthData={currentMonthDailySales}
             summary={chartSummary}
             loading={chartLoading}
             month={chartMonth}

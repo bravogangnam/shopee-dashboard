@@ -2,11 +2,13 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
+import dayjs from 'dayjs';
 
 function formatKrw(value) {
   const number = Number(value || 0);
@@ -59,19 +61,45 @@ function DailySalesTooltip({ active, payload, label }) {
   return (
     <div className="chart-tooltip">
       <strong>{item.date || label}</strong>
-      <span>매출 {formatKrw(item.sales_krw)}</span>
-      <span>주문수 {item.order_count}건</span>
+      <span>{item.selected_month_label} 매출 {formatKrw(item.sales_krw)}</span>
+      <span>{item.selected_month_label} 주문수 {item.order_count}건</span>
+      {item.show_current_month && <span>이번 달 매출 {formatKrw(item.current_month_sales_krw)}</span>}
     </div>
   );
 }
 
-export default function DailySalesChart({ data = [], summary = null, loading = false, month = '', onMonthChange }) {
+export default function DailySalesChart({
+  data = [],
+  currentMonthData = [],
+  summary = null,
+  loading = false,
+  month = '',
+  onMonthChange,
+}) {
+  const currentMonth = dayjs().format('YYYY-MM');
+  const showCurrentMonth = month !== currentMonth;
+  const chartData = Array.from({ length: Math.max(data.length, currentMonthData.length) }, (_, index) => {
+    const selected = data[index] || {};
+    const current = currentMonthData[index] || {};
+    const day = index + 1;
+
+    return {
+      date: selected.date || `${month}-${String(day).padStart(2, '0')}`,
+      day,
+      sales_krw: Number(selected.sales_krw || 0),
+      order_count: Number(selected.order_count || 0),
+      current_month_sales_krw: Number(current.sales_krw || 0),
+      selected_month_label: month,
+      show_current_month: showCurrentMonth,
+    };
+  });
+
   return (
     <section className="chart-card">
       <div className="chart-header">
         <div>
           <h2>일별 매출 추이</h2>
-          <p>DB에 저장된 주문 기준 월별 일 매출입니다.</p>
+          <p>선택 월과 이번 달의 일별 매출을 함께 확인합니다.</p>
         </div>
         <div className="chart-actions">
           <input
@@ -89,7 +117,7 @@ export default function DailySalesChart({ data = [], summary = null, loading = f
 
       <div className="chart-body">
         <ResponsiveContainer width="100%" height={280}>
-          <LineChart data={data} margin={{ top: 12, right: 18, bottom: 4, left: 8 }}>
+          <LineChart data={chartData} margin={{ top: 12, right: 18, bottom: 4, left: 8 }}>
             <CartesianGrid stroke="#edf1f5" vertical={false} />
             <XAxis
               dataKey="day"
@@ -107,15 +135,29 @@ export default function DailySalesChart({ data = [], summary = null, loading = f
               width={72}
             />
             <Tooltip content={<DailySalesTooltip />} />
+            {showCurrentMonth && <Legend verticalAlign="top" height={28} />}
             <Line
               type="monotone"
               dataKey="sales_krw"
+              name={`${month} 매출`}
               stroke="#1677ff"
               strokeWidth={2.5}
               dot={{ r: 2.5, strokeWidth: 1 }}
               activeDot={{ r: 5 }}
               isAnimationActive={false}
             />
+            {showCurrentMonth && (
+              <Line
+                type="monotone"
+                dataKey="current_month_sales_krw"
+                name="이번 달 매출"
+                stroke="#ff7a45"
+                strokeWidth={2.5}
+                dot={{ r: 2.5, strokeWidth: 1 }}
+                activeDot={{ r: 5 }}
+                isAnimationActive={false}
+              />
+            )}
           </LineChart>
         </ResponsiveContainer>
       </div>

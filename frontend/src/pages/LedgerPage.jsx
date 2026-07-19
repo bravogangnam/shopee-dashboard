@@ -4,12 +4,14 @@ import koKR from 'antd/locale/ko_KR';
 import dayjs from 'dayjs';
 import 'antd/dist/reset.css';
 import { fetchDailySales, fetchOrders, fetchSummary } from '../api/orders.js';
+import { fetchPaymentBalances, refreshPaymentBalances } from '../api/paymentBalances.js';
 import { subscribeToOrderEvents } from '../api/orderEvents.js';
 import DailySalesChart from '../components/DailySalesChart.jsx';
 import OrderFilters from '../components/OrderFilters.jsx';
 import OrderSettlementDetailModal from '../components/OrderSettlementDetailModal.jsx';
 import OrderTable from '../components/OrderTable.jsx';
 import Pagination from '../components/Pagination.jsx';
+import ShopeePayoutBalancePanel from '../components/ShopeePayoutBalancePanel.jsx';
 import { formatKrw, formatNumber } from '../utils/format.js';
 
 const getCurrentMonthRange = () => ({
@@ -51,6 +53,8 @@ const ledgerPageCache = {
   chartKey: null,
   ordersLoaded: false,
   chartLoaded: false,
+  paymentBalances: null,
+  paymentBalancesLoaded: false,
 };
 
 function calculateRate(numerator, denominator) {
@@ -205,6 +209,10 @@ export default function LedgerPage() {
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [detailOrder, setDetailOrder] = useState(null);
+  const [paymentBalances, setPaymentBalances] = useState(() => ledgerPageCache.paymentBalances || null);
+  const [paymentBalancesLoading, setPaymentBalancesLoading] = useState(() => !ledgerPageCache.paymentBalancesLoaded);
+  const [paymentBalancesRefreshing, setPaymentBalancesRefreshing] = useState(false);
+  const [paymentBalancesExpanded, setPaymentBalancesExpanded] = useState(false);
 
   const queryKey = useMemo(() => JSON.stringify(query), [query]);
 
@@ -219,6 +227,33 @@ export default function LedgerPage() {
   useEffect(() => {
     ledgerPageCache.settlementFilter = settlementFilter;
   }, [settlementFilter]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPaymentBalances() {
+      try {
+        const response = await fetchPaymentBalances();
+        if (!cancelled) {
+          const next = response.data || null;
+          setPaymentBalances(next);
+          ledgerPageCache.paymentBalances = next;
+          ledgerPageCache.paymentBalancesLoaded = true;
+        }
+      } catch (err) {
+        if (!cancelled) setError(err.message || '지급 가능 금액을 불러오지 못했습니다.');
+      } finally {
+        if (!cancelled) setPaymentBalancesLoading(false);
+      }
+    }
+
+    if (!ledgerPageCache.paymentBalancesLoaded) loadPaymentBalances();
+    else setPaymentBalancesLoading(false);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     ledgerPageCache.chartMonth = chartMonth;
@@ -356,6 +391,24 @@ export default function LedgerPage() {
     setQuery(current => ({ ...current, page }));
   }
 
+  async function handlePaymentBalanceRefresh() {
+    setPaymentBalancesRefreshing(true);
+    try {
+      const response = await refreshPaymentBalances();
+      const next = response.data || null;
+      setPaymentBalances(next);
+      ledgerPageCache.paymentBalances = next;
+      ledgerPageCache.paymentBalancesLoaded = true;
+      if (response.refresh?.failed) {
+        setError(`${response.refresh.failed}개 샵의 지급 가능 금액 조회에 실패했습니다. 기존 저장 금액을 유지했습니다.`);
+      }
+    } catch (err) {
+      setError(err.message || '지급 가능 금액 새로고침에 실패했습니다.');
+    } finally {
+      setPaymentBalancesRefreshing(false);
+    }
+  }
+
   const settlementCounts = orders.reduce(
     (acc, order) => {
       const weight = Number(order?.order_chargeable_weight_gram || 0);
@@ -388,14 +441,22 @@ export default function LedgerPage() {
         </div>
 
         <SummaryCards summary={summary} />
-          <DailySalesChart
-            data={dailySales}
-            currentMonthData={currentMonthDailySales}
-            summary={chartSummary}
-            loading={chartLoading}
-            month={chartMonth}
-            onMonthChange={setChartMonth}
-          />
+        <ShopeePayoutBalancePanel
+          data={paymentBalances}
+          expanded={paymentBalancesExpanded}
+          loading={paymentBalancesLoading}
+          refreshing={paymentBalancesRefreshing}
+          onToggle={() => setPaymentBalancesExpanded((value) => !value)}
+          onRefresh={handlePaymentBalanceRefresh}
+        />
+        <DailySalesChart
+          data={dailySales}
+          currentMonthData={currentMonthDailySales}
+          summary={chartSummary}
+          loading={chartLoading}
+          month={chartMonth}
+          onMonthChange={setChartMonth}
+        />
 
           <OrderFilters
             filters={filters}

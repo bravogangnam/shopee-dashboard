@@ -7233,6 +7233,216 @@ html[data-theme='dark'] input[type='datetime-local']::-webkit-calendar-picker-in
   opacity: 0.85;
 }
 
+.payout-balance-panel {
+  margin-bottom: 20px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.payout-balance-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 16px;
+}
+
+.payout-balance-title-wrap {
+  display: grid;
+  gap: 3px;
+  min-width: 225px;
+}
+
+.payout-balance-title-wrap h2 {
+  margin: 0;
+  color: #172033;
+  font-size: 16px;
+}
+
+.payout-balance-title-wrap p,
+.payout-balance-updated {
+  margin: 0;
+  color: #6c7889;
+  font-size: 12px;
+}
+
+.payout-balance-updated {
+  font-size: 11px;
+}
+
+.payout-balance-totals {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.payout-balance-local-totals,
+.payout-balance-total {
+  display: grid;
+  gap: 5px;
+  min-width: 130px;
+  padding: 0 16px;
+  border-left: 1px solid #edf0f5;
+}
+
+.payout-balance-local-totals > span,
+.payout-balance-total > span,
+.payout-balance-shop-values span {
+  color: #7b8797;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.payout-balance-local-totals > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+}
+
+.payout-balance-currency-total,
+.payout-balance-empty-total {
+  color: #172033;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.payout-balance-total strong {
+  color: #172033;
+  font-size: 16px;
+}
+
+.payout-balance-usd-total strong {
+  color: #2563eb;
+}
+
+.payout-balance-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.payout-balance-toggle {
+  min-height: 34px;
+  border: 1px solid #cfd8e6;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #315987;
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.payout-balance-toggle:hover {
+  border-color: #93b4df;
+  background: #edf5ff;
+}
+
+.payout-balance-state,
+.payout-balance-notice {
+  margin: 0 16px 14px;
+  color: #6c7889;
+  font-size: 12px;
+}
+
+.payout-balance-notice {
+  border-radius: 6px;
+  background: #fff9e8;
+  color: #9a6700;
+  padding: 8px 10px;
+}
+
+.payout-balance-notice.error,
+.payout-balance-shop-error {
+  background: #fff1f0;
+  color: #b42318;
+}
+
+.payout-balance-shop-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
+  gap: 12px;
+  border-top: 1px solid #edf0f5;
+  padding: 14px 16px 16px;
+}
+
+.payout-balance-shop {
+  border: 1px solid #e7edf5;
+  border-radius: 7px;
+  background: #fbfcfe;
+  padding: 12px;
+}
+
+.payout-balance-shop-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: #172033;
+}
+
+.payout-balance-shop-heading strong {
+  font-size: 13px;
+}
+
+.payout-balance-shop-heading span {
+  color: #6c7889;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.payout-balance-shop-values {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.payout-balance-shop-values div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.payout-balance-shop-values strong {
+  overflow: hidden;
+  color: #172033;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.payout-balance-shop-error,
+.payout-balance-shop-empty {
+  margin: 10px 0 0;
+  border-radius: 4px;
+  padding: 6px 7px;
+  font-size: 11px;
+}
+
+.payout-balance-shop-empty {
+  color: #6c7889;
+  background: #f1f5f9;
+}
+
+@media (max-width: 1050px) {
+  .payout-balance-summary-row {
+    flex-wrap: wrap;
+  }
+
+  .payout-balance-totals {
+    order: 3;
+    width: 100%;
+  }
+
+  .payout-balance-local-totals:first-child {
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
 /* Dark theme final polish: management pages */
 html[data-theme='dark'] .order-management-page .order-management-filters,
 html[data-theme='dark'] .order-management-page .order-management-table-wrap,
@@ -7257,6 +7467,54 @@ html[data-theme='dark'] .product-capture-page .product-capture-result-wrap {
   border-color: var(--theme-border) !important;
   background: var(--theme-surface) !important;
   color: var(--theme-text) !important;
+}
+
+html[data-theme='dark'] .ledger-page .payout-balance-panel,
+html[data-theme='dark'] .ledger-page .payout-balance-shop {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+html[data-theme='dark'] .ledger-page .payout-balance-title-wrap h2,
+html[data-theme='dark'] .ledger-page .payout-balance-total strong,
+html[data-theme='dark'] .ledger-page .payout-balance-currency-total,
+html[data-theme='dark'] .ledger-page .payout-balance-shop-heading,
+html[data-theme='dark'] .ledger-page .payout-balance-shop-values strong {
+  color: var(--theme-text-strong) !important;
+}
+
+html[data-theme='dark'] .ledger-page .payout-balance-local-totals,
+html[data-theme='dark'] .ledger-page .payout-balance-total,
+html[data-theme='dark'] .ledger-page .payout-balance-shop-list {
+  border-color: var(--theme-border-soft) !important;
+}
+
+html[data-theme='dark'] .ledger-page .payout-balance-toggle {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface-soft) !important;
+  color: var(--theme-text) !important;
+}
+
+html[data-theme='dark'] .ledger-page .payout-balance-toggle:hover {
+  background: var(--theme-surface-hover) !important;
+  color: var(--theme-text-strong) !important;
+}
+
+html[data-theme='dark'] .ledger-page .payout-balance-notice {
+  background: #3a2b0b !important;
+  color: #f8d477 !important;
+}
+
+html[data-theme='dark'] .ledger-page .payout-balance-notice.error,
+html[data-theme='dark'] .ledger-page .payout-balance-shop-error {
+  background: #3a1717 !important;
+  color: #f3aaaa !important;
+}
+
+html[data-theme='dark'] .ledger-page .payout-balance-shop-empty {
+  background: var(--theme-surface-soft) !important;
+  color: var(--theme-text-muted) !important;
 }
 
 html[data-theme='dark'] .order-management-page .ghost-button,

@@ -58,6 +58,7 @@ app.use('/api/test', require('./routes/testRoutes'));
 app.use('/api/jobs', require('./routes/jobRoutes'));
 app.use('/api/shopee/push', require('./routes/shopeePushRoutes'));
 app.use('/api/orders', require('./routes/ordersRoutes'));
+app.use('/api/payment-balances', require('./routes/paymentBalanceRoutes'));
 app.use('/api/products', require('./routes/productsRoutes'));
 app.use('/api/receipts', require('./routes/receiptsRoutes'));
 
@@ -119,6 +120,8 @@ app.listen(PORT, '0.0.0.0', () => {
 
   const { ensurePushEventsTable } = require('./services/shopeePushService');
   ensurePushEventsTable().catch(e => console.error('[App] shopeePushEvents table init error:', e.message));
+  const { ensurePaymentBalanceTable } = require('./services/paymentBalanceService');
+  ensurePaymentBalanceTable().catch(e => console.error('[App] payment balance table init error:', e.message));
   console.log(`   Health: http://localhost:${PORT}/api/health\n`);
 
   // 토큰 자동 갱신 Cron 시작

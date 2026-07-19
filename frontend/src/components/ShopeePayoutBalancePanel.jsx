@@ -42,16 +42,19 @@ export default function ShopeePayoutBalancePanel({
     <section className={`payout-balance-panel${expanded ? ' expanded' : ''}`} aria-label="Shopee 지급 가능 금액">
       <div className="payout-balance-summary-row">
         <div className="payout-balance-title-wrap">
-          <div>
-            <h2>Shopee 지급 가능 금액</h2>
-            <p>Payment API의 지급 가능한 Balance Amount만 표시합니다.</p>
+          <div className="payout-balance-title-line">
+            <span className="payout-balance-icon" aria-hidden="true">$</span>
+            <div>
+              <h2>Shopee 지급 가능 금액</h2>
+              <p>Payment API의 지급 가능한 Balance Amount만 표시합니다.</p>
+            </div>
           </div>
           {lastSyncedAt && <span className="payout-balance-updated">최근 조회 {formatDateTime(lastSyncedAt)}</span>}
         </div>
 
         <div className="payout-balance-totals">
           <div className="payout-balance-local-totals">
-            <span>현지통화 합계</span>
+            <span>현지 통화 합계</span>
             <div><CurrencyTotals totals={totals} /></div>
           </div>
           <div className="payout-balance-total payout-balance-usd-total">
@@ -92,19 +95,24 @@ export default function ShopeePayoutBalancePanel({
           {shops.map((shop) => (
             <article className="payout-balance-shop" key={shop.shop_id}>
               <div className="payout-balance-shop-heading">
-                <strong>{shopLabel(shop)}</strong>
-                <span>{shop.region || shop.currency || '통화 미확인'}</span>
+                <div>
+                  <span className={`payout-balance-region region-${String(shop.region || 'other').toLowerCase()}`}>
+                    {shop.region || shop.currency || 'SHOP'}
+                  </span>
+                  <strong>{shopLabel(shop)}</strong>
+                </div>
+                <span className="payout-balance-shop-currency">{shop.currency || '통화 미확인'}</span>
               </div>
               <div className="payout-balance-shop-values">
-                <div>
-                  <span>현지통화</span>
+                <div className="payout-balance-local-value">
+                  <span>지급 가능 금액</span>
                   <strong>{formatCurrency(shop.balance_amount, shop.currency)}</strong>
                 </div>
-                <div>
+                <div className="payout-balance-converted-value">
                   <span>USD</span>
                   <strong>{formatUsd(shop.usd_amount)}</strong>
                 </div>
-                <div>
+                <div className="payout-balance-converted-value">
                   <span>KRW</span>
                   <strong>{formatKrw(shop.krw_amount)}</strong>
                 </div>

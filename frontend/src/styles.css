@@ -7235,23 +7235,45 @@ html[data-theme='dark'] input[type='datetime-local']::-webkit-calendar-picker-in
 
 .payout-balance-panel {
   margin-bottom: 20px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  border: 1px solid #dfe8f5;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f9fbff 0%, #fff 48%, #f8fbff 100%);
+  box-shadow: 0 8px 24px rgba(46, 91, 162, 0.08);
 }
 
 .payout-balance-summary-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto auto;
   align-items: center;
-  gap: 18px;
-  padding: 14px 16px;
+  gap: 22px;
+  padding: 17px 20px;
 }
 
 .payout-balance-title-wrap {
   display: grid;
-  gap: 3px;
-  min-width: 225px;
+  gap: 5px;
+  min-width: 0;
+}
+
+.payout-balance-title-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.payout-balance-icon {
+  display: inline-grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #2c7cf5, #5ca8ff);
+  box-shadow: 0 5px 12px rgba(44, 124, 245, 0.22);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 900;
 }
 
 .payout-balance-title-wrap h2 {
@@ -7268,23 +7290,32 @@ html[data-theme='dark'] input[type='datetime-local']::-webkit-calendar-picker-in
 }
 
 .payout-balance-updated {
+  padding-left: 41px;
   font-size: 11px;
 }
 
 .payout-balance-totals {
   display: flex;
-  flex: 1;
   align-items: stretch;
-  min-width: 0;
+  min-width: max-content;
+  border: 1px solid #e3eaf5;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.85);
 }
 
 .payout-balance-local-totals,
 .payout-balance-total {
   display: grid;
-  gap: 5px;
-  min-width: 130px;
-  padding: 0 16px;
+  align-content: center;
+  gap: 6px;
+  min-width: 144px;
+  padding: 9px 15px;
   border-left: 1px solid #edf0f5;
+}
+
+.payout-balance-local-totals {
+  min-width: 245px;
+  border-left: 0;
 }
 
 .payout-balance-local-totals > span,
@@ -7303,15 +7334,16 @@ html[data-theme='dark'] input[type='datetime-local']::-webkit-calendar-picker-in
 
 .payout-balance-currency-total,
 .payout-balance-empty-total {
-  color: #172033;
-  font-size: 13px;
+  color: #334155;
+  font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
 }
 
 .payout-balance-total strong {
   color: #172033;
-  font-size: 16px;
+  font-size: 18px;
+  letter-spacing: -0.3px;
 }
 
 .payout-balance-usd-total strong {
@@ -7325,10 +7357,10 @@ html[data-theme='dark'] input[type='datetime-local']::-webkit-calendar-picker-in
 }
 
 .payout-balance-toggle {
-  min-height: 34px;
-  border: 1px solid #cfd8e6;
-  border-radius: 6px;
-  background: #f8fafc;
+  min-height: 36px;
+  border: 1px solid #d6e1f0;
+  border-radius: 7px;
+  background: #f6f9fd;
   color: #315987;
   padding: 0 11px;
   font-size: 12px;
@@ -7363,31 +7395,80 @@ html[data-theme='dark'] input[type='datetime-local']::-webkit-calendar-picker-in
 
 .payout-balance-shop-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
-  gap: 12px;
-  border-top: 1px solid #edf0f5;
-  padding: 14px 16px 16px;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 13px;
+  border-top: 1px solid #e6edf6;
+  background: #f7faff;
+  padding: 15px 20px 20px;
 }
 
 .payout-balance-shop {
-  border: 1px solid #e7edf5;
-  border-radius: 7px;
-  background: #fbfcfe;
-  padding: 12px;
+  border: 1px solid #e1e9f4;
+  border-radius: 10px;
+  background: #fff;
+  padding: 14px;
+  box-shadow: 0 2px 6px rgba(36, 71, 121, 0.04);
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.payout-balance-shop:hover {
+  transform: translateY(-2px);
+  border-color: #bcd4f6;
+  box-shadow: 0 8px 18px rgba(45, 94, 160, 0.1);
 }
 
 .payout-balance-shop-heading {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
   color: #172033;
 }
 
-.payout-balance-shop-heading strong {
-  font-size: 13px;
+.payout-balance-shop-heading > div {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
 }
 
-.payout-balance-shop-heading span {
+.payout-balance-shop-heading strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.payout-balance-region {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 27px;
+  height: 21px;
+  flex: 0 0 auto;
+  border-radius: 5px;
+  background: #eef4ff;
+  color: #2563eb;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.payout-balance-region.region-my {
+  background: #fff6df;
+  color: #b7791f;
+}
+
+.payout-balance-region.region-ph {
+  background: #eef9ef;
+  color: #208044;
+}
+
+.payout-balance-region.region-tw {
+  background: #f6efff;
+  color: #7954b8;
+}
+
+.payout-balance-shop-currency {
   color: #6c7889;
   font-size: 11px;
   font-weight: 800;
@@ -7395,23 +7476,36 @@ html[data-theme='dark'] input[type='datetime-local']::-webkit-calendar-picker-in
 
 .payout-balance-shop-values {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 12px;
+  grid-template-columns: 1.25fr repeat(2, minmax(0, 0.9fr));
+  gap: 7px;
+  margin-top: 14px;
 }
 
 .payout-balance-shop-values div {
   display: grid;
-  gap: 3px;
+  align-content: center;
+  gap: 4px;
   min-width: 0;
+  border-radius: 7px;
+  background: #f7f9fc;
+  padding: 8px;
+}
+
+.payout-balance-shop-values .payout-balance-local-value {
+  background: linear-gradient(135deg, #edf5ff, #f6faff);
 }
 
 .payout-balance-shop-values strong {
   overflow: hidden;
   color: #172033;
-  font-size: 13px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.payout-balance-shop-values .payout-balance-local-value strong {
+  color: #1d5fc0;
+  font-size: 14px;
 }
 
 .payout-balance-shop-error,
@@ -7429,17 +7523,50 @@ html[data-theme='dark'] input[type='datetime-local']::-webkit-calendar-picker-in
 
 @media (max-width: 1050px) {
   .payout-balance-summary-row {
-    flex-wrap: wrap;
+    grid-template-columns: 1fr auto;
   }
 
   .payout-balance-totals {
-    order: 3;
+    grid-column: 1 / -1;
     width: 100%;
   }
+}
 
-  .payout-balance-local-totals:first-child {
-    padding-left: 0;
+@media (max-width: 640px) {
+  .payout-balance-summary-row {
+    display: flex;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .payout-balance-totals {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .payout-balance-local-totals {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .payout-balance-total,
+  .payout-balance-local-totals {
     border-left: 0;
+    border-top: 1px solid #edf0f5;
+  }
+
+  .payout-balance-local-totals {
+    border-top: 0;
+  }
+
+  .payout-balance-actions {
+    justify-content: flex-end;
+  }
+
+  .payout-balance-shop-list {
+    padding: 13px;
   }
 }
 

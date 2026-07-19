@@ -72,8 +72,8 @@ async function getCancellationReviews({ tenantId, decision = '', limit = 100 }) 
             GROUP_CONCAT(DISTINCT oi.item_name ORDER BY oi.id SEPARATOR ' / ') AS item_names,
             SUM(COALESCE(oi.model_quantity_purchased, 0)) AS total_quantity
        FROM inventory_cancellation_reviews r
-       LEFT JOIN orders o ON o.tenant_id = r.tenant_id AND o.shop_id = r.shop_id AND o.order_sn = r.order_sn
-       LEFT JOIN order_items oi ON oi.tenant_id = r.tenant_id AND oi.shop_id = r.shop_id AND oi.order_sn = r.order_sn
+       LEFT JOIN orders o ON o.tenant_id = r.tenant_id AND o.shop_id = r.shop_id AND BINARY o.order_sn = BINARY r.order_sn
+       LEFT JOIN order_items oi ON oi.tenant_id = r.tenant_id AND oi.shop_id = r.shop_id AND BINARY oi.order_sn = BINARY r.order_sn
       WHERE r.tenant_id = ?${decisionSql}
       GROUP BY r.id
       ORDER BY r.created_at DESC

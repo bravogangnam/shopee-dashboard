@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchBuyerHistory, fetchOrderDetail } from '../api/orders.js';
+import { fetchBuyerHistory, fetchOrderDetail, fetchOrderLogistics } from '../api/orders.js';
 import { formatKrw } from '../utils/format.js';
 import BuyerHistoryModal from './BuyerHistoryModal.jsx';
 import CopyIconButton from './CopyIconButton.jsx';
@@ -76,6 +76,15 @@ function formatRate(value, currency) {
 
 function statusClass(status) {
   return `status-pill status-${String(status || '').toLowerCase()}`;
+}
+
+function formatLogisticsTime(value) {
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return '-';
+  return new Date(timestamp * 1000).toLocaleString('ko-KR', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
 }
 
 function regionClass(region) {
@@ -264,6 +273,10 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
     useState('');
   const [buyerHistoryOpen, setBuyerHistoryOpen] =
     useState(false);
+  const [logisticsOpen, setLogisticsOpen] = useState(false);
+  const [logistics, setLogistics] = useState(null);
+  const [logisticsLoading, setLogisticsLoading] = useState(false);
+  const [logisticsError, setLogisticsError] = useState('');
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -294,6 +307,24 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
       setError('');
     };
   }, [orderSn, shopId]);
+
+  const loadLogistics = async () => {
+    if (!shopId || !orderSn) return;
+    setLogisticsLoading(true);
+    setLogisticsError('');
+    try {
+      const result = await fetchOrderLogistics(orderSn, shopId);
+      setLogistics(result?.data || result || null);
+    } catch (err) {
+      setLogisticsError(err?.message || '배송 정보를 불러오지 못했습니다.');
+    } finally {
+      setLogisticsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (logisticsOpen) loadLogistics();
+  }, [logisticsOpen, orderSn, shopId]);
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -543,7 +574,7 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
   return (
     <div className="modal-overlay order-settlement-overlay" onClick={onClose}>
       <div
-        className="modal-content order-settlement-modal"
+        className={`modal-content order-settlement-modal${logisticsOpen ? ' logistics-open' : ''}`}
         onClick={event => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -563,7 +594,50 @@ export default function OrderSettlementDetailModal({ orderSn, shopId, onClose })
             <h2>Payment Information</h2>
             <p>Order ID: {orderSn}</p>
           </div>
+          <button
+            type="button"
+            className="order-settlement-logistics-toggle"
+            onClick={() => setLogisticsOpen(open => !open)}
+          >
+            {logisticsOpen ? '배송 정보 닫기' : '배송 정보 보기'}
+          </button>
         </div>
+
+        {logisticsOpen && (
+          <aside className="order-settlement-logistics-panel" aria-label="배송 정보">
+            <div className="order-settlement-logistics-heading">
+              <div>
+                <h3>배송 정보</h3>
+                <p>Shopee에서 현재 정보를 조회합니다.</p>
+              </div>
+              <button type="button" className="ghost-button" onClick={loadLogistics} disabled={logisticsLoading}>
+                {logisticsLoading ? '조회 중' : '새로 조회'}
+              </button>
+            </div>
+            {logisticsError && <p className="order-settlement-logistics-error">{logisticsError}</p>}
+            {logisticsLoading && !logistics && <p className="order-settlement-logistics-empty">배송 정보를 불러오는 중입니다.</p>}
+            {logistics && (
+              <>
+                <div className="order-settlement-logistics-summary">
+                  <div><span>주문 상태</span><strong>{orderStatusLabel(logistics.order_status)}</strong></div>
+                  <div><span>물류사</span><strong>{logistics.shipping_carrier || logistics.checkout_shipping_carrier || '-'}</strong></div>
+                  <div><span>픽업 완료</span><strong>{formatLogisticsTime(logistics.pickup_done_time)}</strong></div>
+                </div>
+                <div className="order-settlement-logistics-packages">
+                  <h4>패키지</h4>
+                  {logistics.package_list?.length ? logistics.package_list.map((pkg, index) => (
+                    <div className="order-settlement-logistics-package" key={pkg.package_number || index}>
+                      <strong>패키지 {index + 1}</strong>
+                      <span>상태 <b>{pkg.logistics_status || '-'}</b></span>
+                      <span>물류사 <b>{pkg.shipping_carrier || logistics.shipping_carrier || '-'}</b></span>
+                      <span>패키지 번호 <b>{pkg.package_number || '-'}</b></span>
+                    </div>
+                  )) : <p className="order-settlement-logistics-empty">Shopee 패키지 정보가 아직 없습니다.</p>}
+                </div>
+              </>
+            )}
+          </aside>
+        )}
 
         {loading && (
           <div className="order-settlement-state">주문 상세 불러오는 중...</div>

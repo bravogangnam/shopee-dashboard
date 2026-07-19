@@ -52,6 +52,14 @@ export function fetchOrderDetail(orderSn, shopId) {
   );
 }
 
+export function fetchOrderLogistics(orderSn, shopId) {
+  return apiRequest(
+    `/api/orders/${encodeURIComponent(orderSn)}/logistics${buildQuery({
+      shop_id: shopId,
+    })}`
+  );
+}
+
 export function fetchBuyerHistory({
   shopId,
   buyerUserId,

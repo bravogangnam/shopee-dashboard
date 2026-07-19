@@ -1686,39 +1686,44 @@ label {
 
 .order-management-table th:nth-child(2),
 .order-management-table td:nth-child(2) {
-  width: 145px;
+  width: 132px;
 }
 
 .order-management-table th:nth-child(3),
 .order-management-table td:nth-child(3) {
-  width: 55px;
+  width: 112px;
 }
 
 .order-management-table th:nth-child(4),
 .order-management-table td:nth-child(4) {
-  width: 115px;
+  width: 58px;
 }
 
 .order-management-table th:nth-child(5),
 .order-management-table td:nth-child(5) {
-  text-align: left;
-  width: 33%;
+  width: 108px;
 }
 
 .order-management-table th:nth-child(6),
 .order-management-table td:nth-child(6) {
   text-align: left;
-  width: 19%;
+  width: 34%;
 }
 
 .order-management-table th:nth-child(7),
 .order-management-table td:nth-child(7) {
-  text-align: center;
-  width: 50px;
+  text-align: left;
+  width: 18%;
 }
 
 .order-management-table th:nth-child(8),
 .order-management-table td:nth-child(8) {
+  text-align: center;
+  width: 48px;
+}
+
+.order-management-table th:nth-child(9),
+.order-management-table td:nth-child(9) {
   width: 95px;
 }
 
@@ -1727,11 +1732,11 @@ label {
   max-width: none;
 }
 
-.order-management-table td:nth-child(6) .truncate-short {
-  white-space: normal;
-  overflow: visible;
-  text-overflow: unset;
-  word-break: break-word;
+.order-management-table td:nth-child(7) .truncate-short {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
   line-height: 1.35;
 }
 
@@ -1741,12 +1746,12 @@ label {
   gap: 4px;
 }
 
-.order-management-table td:nth-child(5) .order-item-lines,
-.order-management-table td:nth-child(6) .order-item-lines {
+.order-management-table td:nth-child(6) .order-item-lines,
+.order-management-table td:nth-child(7) .order-item-lines {
   justify-content: center;
 }
 
-.order-management-table td:nth-child(7) .order-item-lines {
+.order-management-table td:nth-child(8) .order-item-lines {
   align-items: center;
   justify-content: center;
 }
@@ -1757,7 +1762,7 @@ label {
   word-break: break-word;
 }
 
-.order-management-table td:nth-child(7) .order-item-line {
+.order-management-table td:nth-child(8) .order-item-line {
   text-align: center;
 }
 
@@ -1771,8 +1776,16 @@ label {
 }
 
 .order-management-table .order-option-line {
-  white-space: normal;
-  word-break: break-word;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+}
+
+.order-management-table .ledger-sku-line {
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .order-management-table .order-item-line.clickable {
@@ -1784,9 +1797,9 @@ label {
   text-decoration: underline;
 }
 
-.order-management-table td:nth-child(5),
 .order-management-table td:nth-child(6),
-.order-management-table td:nth-child(7) {
+.order-management-table td:nth-child(7),
+.order-management-table td:nth-child(8) {
   vertical-align: middle;
 }
 
@@ -4137,8 +4150,174 @@ label {
 }
 
 .order-settlement-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   padding-right: 44px;
   margin-bottom: 18px;
+}
+
+.order-settlement-logistics-toggle {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid #b9d3ff;
+  border-radius: 7px;
+  background: #f7fbff;
+  color: #2563eb;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.order-settlement-modal.logistics-open {
+  position: relative;
+  width: min(1280px, calc(100vw - 32px));
+  max-width: 1280px;
+  padding-right: 400px;
+}
+
+.order-settlement-logistics-panel {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 374px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  padding: 26px 20px;
+  border-left: 1px solid #e4e7ec;
+  background: #f8fafc;
+  border-radius: 0 12px 12px 0;
+}
+
+.order-settlement-logistics-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e4e7ec;
+}
+
+.order-settlement-logistics-heading h3,
+.order-settlement-logistics-packages h4 {
+  margin: 0;
+  color: #172b4d;
+  font-size: 16px;
+}
+
+.order-settlement-logistics-heading p {
+  margin: 5px 0 0;
+  color: #667085;
+  font-size: 12px;
+}
+
+.order-settlement-logistics-heading .ghost-button {
+  padding: 6px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.order-settlement-logistics-summary {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.order-settlement-logistics-summary > div,
+.order-settlement-logistics-package {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #dbe4f0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.order-settlement-logistics-summary span,
+.order-settlement-logistics-package span {
+  color: #667085;
+  font-size: 12px;
+}
+
+.order-settlement-logistics-summary strong,
+.order-settlement-logistics-package b {
+  color: #172b4d;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.order-settlement-logistics-packages {
+  display: grid;
+  gap: 10px;
+}
+
+.order-settlement-logistics-package > strong {
+  color: #2563eb;
+  font-size: 13px;
+}
+
+.order-settlement-logistics-empty,
+.order-settlement-logistics-error {
+  margin: 18px 0;
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.order-settlement-logistics-error { color: #b42318; }
+
+html[data-theme='dark'] .order-settlement-logistics-toggle {
+  border-color: #315784;
+  background: #13233a;
+  color: #9bc7ff;
+}
+
+html[data-theme='dark'] .order-settlement-logistics-panel {
+  border-color: var(--theme-border);
+  background: var(--theme-surface);
+}
+
+html[data-theme='dark'] .order-settlement-logistics-heading,
+html[data-theme='dark'] .order-settlement-logistics-summary > div,
+html[data-theme='dark'] .order-settlement-logistics-package {
+  border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .order-settlement-logistics-summary > div,
+html[data-theme='dark'] .order-settlement-logistics-package {
+  background: var(--theme-surface-soft);
+}
+
+html[data-theme='dark'] .order-settlement-logistics-heading h3,
+html[data-theme='dark'] .order-settlement-logistics-packages h4,
+html[data-theme='dark'] .order-settlement-logistics-summary strong,
+html[data-theme='dark'] .order-settlement-logistics-package b,
+html[data-theme='dark'] .order-settlement-logistics-package > strong {
+  color: var(--theme-text-strong);
+}
+
+html[data-theme='dark'] .order-settlement-logistics-heading p,
+html[data-theme='dark'] .order-settlement-logistics-summary span,
+html[data-theme='dark'] .order-settlement-logistics-package span,
+html[data-theme='dark'] .order-settlement-logistics-empty {
+  color: var(--theme-text-muted);
+}
+
+@media (max-width: 900px) {
+  .order-settlement-modal.logistics-open {
+    width: min(900px, calc(100vw - 32px));
+    max-width: 900px;
+    padding-right: 26px;
+  }
+
+  .order-settlement-logistics-panel {
+    position: static;
+    width: auto;
+    max-height: none;
+    margin: 20px -26px -26px;
+    border-width: 1px 0 0;
+    border-radius: 0 0 12px 12px;
+  }
 }
 
 .order-settlement-title h2 {

@@ -12,6 +12,8 @@ const { requireAuth, requireApprovedTenant } = require('../middleware/auth');
 const db = require('../config/database');
 const { getCurrentTenantId } = require('../config/tenant');
 const { addClient } = require('../services/orderEventHub');
+const { getOrRefreshShopToken } = require('../services/shopeeAuth');
+const { getOrderDetail } = require('../services/shopeeOrder');
 
 router.use(requireAuth);
 router.use(requireApprovedTenant);
@@ -1434,6 +1436,64 @@ router.get('/buyer-history', async (req, res) => {
       success: false,
       error: err.message,
     });
+  }
+});
+
+router.get('/:orderSn/logistics', async (req, res) => {
+  const { orderSn } = req.params;
+  const tenantId = getCurrentTenantId(req);
+  const shopId = Number(req.query.shop_id);
+
+  if (!Number.isFinite(shopId)) {
+    return res.status(400).json({ success: false, error: 'Invalid shop_id' });
+  }
+
+  try {
+    const [rows] = await db.query(
+      `SELECT shop_id
+         FROM orders
+        WHERE tenant_id = ? AND shop_id = ? AND order_sn = ?
+        LIMIT 1`,
+      [tenantId, shopId, orderSn]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+
+    const accessToken = await getOrRefreshShopToken(shopId, { tenantId });
+    if (!accessToken) {
+      return res.status(503).json({ success: false, error: 'Shopee shop token is unavailable' });
+    }
+
+    const [snapshot] = await getOrderDetail(shopId, [orderSn], accessToken);
+    if (!snapshot) {
+      return res.status(404).json({ success: false, error: 'Shopee order detail not found' });
+    }
+
+    const packageList = Array.isArray(snapshot.package_list)
+      ? snapshot.package_list.map(pkg => ({
+          package_number: pkg.package_number || null,
+          logistics_status: pkg.logistics_status || null,
+          shipping_carrier: pkg.shipping_carrier || null,
+          parcel_chargeable_weight_gram: pkg.parcel_chargeable_weight_gram ?? null,
+        }))
+      : [];
+
+    return res.json({
+      success: true,
+      data: {
+        order_status: snapshot.order_status || null,
+        shipping_carrier: snapshot.shipping_carrier || null,
+        checkout_shipping_carrier: snapshot.checkout_shipping_carrier || null,
+        pickup_done_time: snapshot.pickup_done_time ?? null,
+        package_list: packageList,
+        fetched_at: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('[OrdersRoute] logistics detail error:', err.message);
+    return res.status(502).json({ success: false, error: 'Failed to fetch Shopee logistics information' });
   }
 });
 

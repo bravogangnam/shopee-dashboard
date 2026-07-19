@@ -4320,6 +4320,110 @@ html[data-theme='dark'] .order-settlement-logistics-empty {
   }
 }
 
+/* Dark theme: order settlement and buyer history modals */
+html[data-theme='dark'] .order-settlement-modal,
+html[data-theme='dark'] .buyer-history-modal.modal-content {
+  background: var(--theme-surface);
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .order-settlement-modal .order-settlement-title p,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-meta span,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-product-meta,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-detail-row span,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-internal-card span,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-internal-card small,
+html[data-theme='dark'] .buyer-history-header p,
+html[data-theme='dark'] .buyer-history-message,
+html[data-theme='dark'] .buyer-history-summary span,
+html[data-theme='dark'] .buyer-history-return {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme='dark'] .order-settlement-modal .order-settlement-meta > div,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-product-table-wrap,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-finance-card,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-detail-rows,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-total-bar,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-internal,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-internal-card,
+html[data-theme='dark'] .buyer-history-summary > div,
+html[data-theme='dark'] .buyer-history-table-wrap {
+  border-color: var(--theme-border);
+  background: var(--theme-surface-soft);
+}
+
+html[data-theme='dark'] .order-settlement-modal .order-settlement-product-table th,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-detail-row,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-detail-row.strong,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-detail-rows.tone-fees .order-settlement-detail-row.strong,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-detail-rows.tone-buyer .order-settlement-detail-row.strong,
+html[data-theme='dark'] .buyer-history-table th {
+  border-color: var(--theme-border);
+  background: var(--theme-surface-soft);
+}
+
+html[data-theme='dark'] .order-settlement-modal .order-settlement-product-table td,
+html[data-theme='dark'] .buyer-history-table td {
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .order-settlement-modal .order-settlement-title h2,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-meta strong,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-section > h3,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-finance-card > h3,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-internal > h3,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-product-table th,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-product-table td,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-product-name,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-detail-row strong,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-detail-row.strong span,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-total-bar strong,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-internal-card strong,
+html[data-theme='dark'] .buyer-history-header h2,
+html[data-theme='dark'] .buyer-history-summary strong,
+html[data-theme='dark'] .buyer-history-summary strong small,
+html[data-theme='dark'] .buyer-history-table th {
+  color: var(--theme-text-strong);
+}
+
+html[data-theme='dark'] .order-settlement-modal .order-settlement-detail-row,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-internal-card,
+html[data-theme='dark'] .order-settlement-modal .order-settlement-total-bar {
+  background: var(--theme-surface);
+}
+
+html[data-theme='dark'] .order-settlement-modal .order-settlement-internal-card.weight {
+  border-color: #315784;
+  background: #13233a;
+}
+
+html[data-theme='dark'] .order-settlement-modal .order-settlement-internal-card.profit {
+  border-color: #245c47;
+  background: #112c24;
+}
+
+html[data-theme='dark'] .order-settlement-modal .order-settlement-internal-card.product-profit {
+  border-color: #384f91;
+  background: #172545;
+}
+
+html[data-theme='dark'] .buyer-history-current-row {
+  background: #132b48;
+}
+
+html[data-theme='dark'] .buyer-history-purchase-number {
+  border-color: #315784;
+  background: #132b48;
+  color: #9bc7ff;
+}
+
+html[data-theme='dark'] .buyer-history-current-badge {
+  background: #173d70;
+  color: #b8d8ff;
+}
+
 .order-settlement-title h2 {
   margin: 0 0 5px;
   font-size: 22px;

@@ -110,7 +110,7 @@ export default function BuyerHistoryModal({
 
   return (
     <>
-      <div
+      {!selectedOrder && <div
         className="modal-overlay buyer-history-overlay"
         onClick={event => {
           event.stopPropagation();
@@ -327,13 +327,13 @@ export default function BuyerHistoryModal({
             </>
           )}
         </div>
-      </div>
+      </div>}
 
       {selectedOrder && (
         <OrderSettlementDetailModal
           orderSn={selectedOrder.order_sn}
           shopId={selectedOrder.shop_id}
-          onClose={() => setSelectedOrder(null)}
+          onClose={onClose}
         />
       )}
     </>

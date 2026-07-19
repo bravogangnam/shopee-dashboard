@@ -7244,7 +7244,7 @@ html[data-theme='dark'] input[type='datetime-local']::-webkit-calendar-picker-in
 
 .payout-balance-summary-row {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) auto auto;
+  grid-template-columns: minmax(300px, 0.8fr) minmax(0, 2.2fr) auto;
   align-items: center;
   gap: 22px;
   padding: 17px 20px;
@@ -7297,7 +7297,8 @@ html[data-theme='dark'] input[type='datetime-local']::-webkit-calendar-picker-in
 .payout-balance-totals {
   display: flex;
   align-items: stretch;
-  min-width: max-content;
+  min-width: 0;
+  width: 100%;
   border: 1px solid #e3eaf5;
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.85);
@@ -7308,13 +7309,14 @@ html[data-theme='dark'] input[type='datetime-local']::-webkit-calendar-picker-in
   display: grid;
   align-content: center;
   gap: 6px;
-  min-width: 144px;
+  min-width: 0;
+  flex: 1;
   padding: 9px 15px;
   border-left: 1px solid #edf0f5;
 }
 
 .payout-balance-local-totals {
-  min-width: 245px;
+  flex: 1.7;
   border-left: 0;
 }
 

@@ -92,7 +92,8 @@ async function getSettlementForecast(tenantId, now = new Date()) {
               COALESCE(SUM(o.escrow_amount), 0) AS local_amount
        FROM order_completion_events e
        INNER JOIN orders o
-         ON o.tenant_id = e.tenant_id AND o.shop_id = e.shop_id AND o.order_sn = e.order_sn
+         ON o.tenant_id = e.tenant_id AND o.shop_id = e.shop_id
+         AND o.order_sn COLLATE utf8mb4_unicode_ci = e.order_sn COLLATE utf8mb4_unicode_ci
        INNER JOIN shops s ON s.tenant_id = e.tenant_id AND s.shop_id = e.shop_id
        WHERE e.tenant_id = ?
          AND e.completed_at >= ? AND e.completed_at < ?

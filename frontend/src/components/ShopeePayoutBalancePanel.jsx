@@ -143,8 +143,8 @@ export default function ShopeePayoutBalancePanel({
               <div className="payout-balance-state">정산 예상 금액을 집계하는 중입니다.</div>
             ) : (
               <div className="payout-forecast-grid">
-                <ForecastCard title="다음 주 정산 예상" forecast={forecast?.next_payout} balanceShops={shops} />
-                <ForecastCard title="다다음 주 정산 예상" forecast={forecast?.following_payout} balanceShops={shops} />
+                <ForecastCard title="지난주 완료분 예상 정산" forecast={forecast?.next_payout} balanceShops={shops} />
+                <ForecastCard title="이번 주 완료분 예상 정산" forecast={forecast?.following_payout} balanceShops={shops} />
               </div>
             )}
           </section>

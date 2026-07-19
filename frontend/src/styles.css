@@ -7605,6 +7605,28 @@ html[data-theme='dark'] .ledger-page .payout-balance-shop {
   color: var(--theme-text) !important;
 }
 
+html[data-theme='dark'] .ledger-page .payout-balance-totals {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface-soft) !important;
+}
+
+html[data-theme='dark'] .ledger-page .payout-balance-shop-list {
+  border-color: var(--theme-border) !important;
+  background: #0b1627 !important;
+}
+
+html[data-theme='dark'] .ledger-page .payout-balance-shop-values div {
+  background: #14233a !important;
+}
+
+html[data-theme='dark'] .ledger-page .payout-balance-shop-values .payout-balance-local-value {
+  background: linear-gradient(135deg, #102d55, #132845) !important;
+}
+
+html[data-theme='dark'] .ledger-page .payout-balance-local-value strong {
+  color: #8fc1ff !important;
+}
+
 html[data-theme='dark'] .ledger-page .payout-balance-title-wrap h2,
 html[data-theme='dark'] .ledger-page .payout-balance-total strong,
 html[data-theme='dark'] .ledger-page .payout-balance-currency-total,
@@ -7617,6 +7639,16 @@ html[data-theme='dark'] .ledger-page .payout-balance-local-totals,
 html[data-theme='dark'] .ledger-page .payout-balance-total,
 html[data-theme='dark'] .ledger-page .payout-balance-shop-list {
   border-color: var(--theme-border-soft) !important;
+}
+
+html[data-theme='dark'] .ledger-page .payout-balance-title-wrap p,
+html[data-theme='dark'] .ledger-page .payout-balance-updated,
+html[data-theme='dark'] .ledger-page .payout-balance-local-totals > span,
+html[data-theme='dark'] .ledger-page .payout-balance-total > span,
+html[data-theme='dark'] .ledger-page .payout-balance-shop-values span,
+html[data-theme='dark'] .ledger-page .payout-balance-shop-currency,
+html[data-theme='dark'] .ledger-page .payout-balance-state {
+  color: var(--theme-text-muted) !important;
 }
 
 html[data-theme='dark'] .ledger-page .payout-balance-toggle {

@@ -7233,6 +7233,21 @@ html[data-theme='dark'] input[type='datetime-local']::-webkit-calendar-picker-in
   opacity: 0.85;
 }
 
+.cancellation-inventory-panel { margin-top: 16px; padding: 18px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+.cancellation-inventory-heading h2 { margin: 0; font-size: 17px; }
+.cancellation-inventory-heading p { margin: 5px 0 14px; color: #64748b; font-size: 13px; }
+.cancellation-inventory-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.cancellation-summary-card { text-align: left; padding: 13px 15px; border: 1px solid #e1e7ef; border-radius: 8px; background: #f8fafc; cursor: pointer; }
+.cancellation-summary-card span { display: block; color: #64748b; font-size: 12px; font-weight: 700; }
+.cancellation-summary-card strong { display: block; margin-top: 4px; color: #172033; font-size: 18px; }
+.cancellation-summary-card.active { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.12); }
+.cancellation-inventory-table td small { display: block; margin-top: 3px; color: #64748b; }
+.ledger-sku-line { display: flex; align-items: center; gap: 5px; min-width: 90px; }
+.cancellation-decision { display: inline-flex; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.cancellation-decision.auto_restored,.cancellation-decision.restored_manually { background: #ecfdf3; color: #15803d; }
+.cancellation-decision.restore_pending { background: #fff7e6; color: #b45309; }
+.cancellation-decision.do_not_restore { background: #f1f5f9; color: #64748b; }
+
 .payout-balance-panel {
   margin-bottom: 20px;
   overflow: hidden;
@@ -7587,6 +7602,7 @@ html[data-theme='dark'] .inventory-page .today-order-inventory,
 html[data-theme='dark'] .inventory-page .today-order-table-wrap,
 html[data-theme='dark'] .inventory-page .inventory-table-wrap,
 html[data-theme='dark'] .inventory-page .inventory-history-wrap,
+html[data-theme='dark'] .inventory-page .cancellation-inventory-panel,
 html[data-theme='dark'] .inventory-page .table-state,
 html[data-theme='dark'] .inventory-page .receipt-sync-panel,
 html[data-theme='dark'] .product-capture-page .product-capture-bookmarklet-panel,
@@ -7597,6 +7613,15 @@ html[data-theme='dark'] .product-capture-page .product-capture-result-wrap {
   background: var(--theme-surface) !important;
   color: var(--theme-text) !important;
 }
+
+html[data-theme='dark'] .inventory-page .cancellation-summary-card { border-color: var(--theme-border); background: var(--theme-surface-soft); }
+html[data-theme='dark'] .inventory-page .cancellation-summary-card strong { color: var(--theme-text-strong); }
+html[data-theme='dark'] .inventory-page .cancellation-inventory-heading p,
+html[data-theme='dark'] .inventory-page .cancellation-inventory-table td small { color: var(--theme-text-muted); }
+html[data-theme='dark'] .inventory-page .cancellation-decision.do_not_restore { background: #26364a; color: #cbd5e1; }
+html[data-theme='dark'] .inventory-page .cancellation-decision.restore_pending { background: #49330e; color: #f8d477; }
+html[data-theme='dark'] .inventory-page .cancellation-decision.auto_restored,
+html[data-theme='dark'] .inventory-page .cancellation-decision.restored_manually { background: #123b2b; color: #92e6b8; }
 
 html[data-theme='dark'] .ledger-page .payout-balance-panel,
 html[data-theme='dark'] .ledger-page .payout-balance-shop {

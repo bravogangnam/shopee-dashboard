@@ -10,7 +10,9 @@ const {
   manuallyAdjustStock,
   adjustStartBalanceStock,
   getInventoryMovements,
+  restorePendingCancellation,
 } = require('../services/inventoryService');
+const { getCancellationReviews } = require('../services/inventoryCancellationReviewService');
 const { getCurrentTenantId } = require('../config/tenant');
 const { syncPendingInventoryReceipts } = require('../services/inventoryReceiptSync');
 const { refreshSkuCompositionsFromSheet } = require('../services/skuCompositionService');
@@ -40,6 +42,26 @@ router.get('/inventory/today-orders', async (req, res) => {
   const tenantId = getCurrentTenantId(req);
   const result = await getTodayOrderInventory({ tenantId });
   return res.json({ success: true, ...result });
+});
+
+router.get('/inventory/cancellation-reviews', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const data = await getCancellationReviews({
+    tenantId,
+    decision: req.query.decision,
+    limit: req.query.limit,
+  });
+  return res.json({ success: true, data });
+});
+
+router.post('/inventory/cancellation-reviews/:shopId/:orderSn/restore', async (req, res) => {
+  const tenantId = getCurrentTenantId(req);
+  const result = await restorePendingCancellation({
+    tenantId,
+    shopId: req.params.shopId,
+    orderSn: req.params.orderSn,
+  });
+  return res.json({ success: true, result });
 });
 
 router.post('/inventory-receipts/sync', async (req, res) => {

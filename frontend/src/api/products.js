@@ -58,3 +58,14 @@ export async function fetchInventoryMovements(sku, limit = 50) {
   );
   return result.data || [];
 }
+
+export async function fetchCancellationInventoryReviews(decision = '') {
+  const result = await apiRequest(`/api/products/inventory/cancellation-reviews${buildQuery({ decision, limit: 200 })}`);
+  return result.data || [];
+}
+
+export function restoreCancellationInventory(shopId, orderSn) {
+  return apiRequest(`/api/products/inventory/cancellation-reviews/${encodeURIComponent(shopId)}/${encodeURIComponent(orderSn)}/restore`, {
+    method: 'POST',
+  });
+}

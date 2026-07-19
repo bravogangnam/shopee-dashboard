@@ -75,7 +75,11 @@ async function applyShopeeOrderSnapshot({
       existing.order_status !== orderRow.order_status
     );
     if (created || inventoryRelevantUpdate) {
-      await processInventoryForOrders([{ shopId, orderSn: orderRow.order_sn }], { tenantId });
+      await processInventoryForOrders([{
+        shopId,
+        orderSn: orderRow.order_sn,
+        previousOrderStatus,
+      }], { tenantId });
     }
 
     return {

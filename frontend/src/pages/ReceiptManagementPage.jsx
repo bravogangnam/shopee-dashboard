@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { cancelStockReceipt, completeStockReceipt, createSkuComposition, createStockReceipt, deleteSkuComposition, fetchReceiptDashboard, fetchSkuCompositions, fetchStockReceiptHistory, fetchStockReceiptSummary, fetchStockReceipts, previewStockBatchCost, searchReceiptProducts, updateSkuComposition, updateStockBatchCost, updateStockReceipt } from '../api/receipts.js';
 import CopyIconButton from '../components/CopyIconButton.jsx';
+import { normalizeClipboardText } from '../utils/clipboard.js';
 
 function formatNumber(value, digits = 0) {
   const number = Number(value || 0);
@@ -485,7 +486,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
   }
 
   async function copyText(value, label) {
-    const text = String(value || '').trim();
+    const text = normalizeClipboardText(value);
     if (!text) return;
 
     try {

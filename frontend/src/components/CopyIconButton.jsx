@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { normalizeClipboardText } from '../utils/clipboard.js';
 
 function fallbackCopyText(text) {
   const textarea = document.createElement('textarea');
@@ -43,7 +44,7 @@ export default function CopyIconButton({
   const [copied, setCopied] = useState(false);
   const timerRef = useRef(null);
 
-  const text = String(value ?? '').trim();
+  const text = normalizeClipboardText(value);
   const disabled = !text;
 
   useEffect(() => {

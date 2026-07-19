@@ -174,7 +174,7 @@ CREATE TABLE IF NOT EXISTS products (
     updated_at                      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS inventory_movements (
+  CREATE TABLE IF NOT EXISTS inventory_movements (
     id              INT AUTO_INCREMENT PRIMARY KEY,
     sku             VARCHAR(100) NOT NULL,
     order_sn        VARCHAR(50) NULL,
@@ -188,7 +188,23 @@ CREATE TABLE IF NOT EXISTS inventory_movements (
     UNIQUE KEY uniq_inventory_sale (movement_type, order_sn, shop_id, sku, item_id, model_id),
     INDEX idx_inventory_sku (sku),
     INDEX idx_inventory_order (order_sn, shop_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+  CREATE TABLE IF NOT EXISTS inventory_cancellation_reviews (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      tenant_id INT NOT NULL,
+      shop_id BIGINT NOT NULL,
+      order_sn VARCHAR(50) NOT NULL,
+      previous_order_status VARCHAR(30) NOT NULL,
+      decision VARCHAR(30) NOT NULL,
+      decision_reason VARCHAR(255) NOT NULL,
+      cancelled_update_time BIGINT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      resolved_at DATETIME NULL,
+      UNIQUE KEY uq_inventory_cancellation_review (tenant_id, shop_id, order_sn),
+      INDEX idx_inventory_cancellation_decision (tenant_id, decision, created_at)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 운영 DB에 기존 inventory_movements 테이블이 있으면 아래 ALTER를 수동 실행:
 -- ALTER TABLE inventory_movements

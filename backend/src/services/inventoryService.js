@@ -1,4 +1,10 @@
 const db = require('../config/database');
+const {
+  DECISIONS,
+  classifyCancellation,
+  recordCancellationReview,
+  markCancellationReviewRestored,
+} = require('./inventoryCancellationReviewService');
 const { CURRENT_TENANT_ID } = require('../config/tenant');
 
 const SALE_STOCK_STATUSES = new Set([
@@ -295,13 +301,13 @@ function shouldSkipCancelRestoreByCutoff(order) {
 }
 
 async function restoreCancelledOrder(order) {
-  if (!order?.order_sn || !order?.shop_id || order.order_status !== 'CANCELLED') return;
+  if (!order?.order_sn || !order?.shop_id || order.order_status !== 'CANCELLED') return 0;
 
   const tenantId = order?.tenant_id ?? CURRENT_TENANT_ID;
 
   if (shouldSkipCancelRestoreByCutoff(order)) {
     console.log(`[Inventory] CANCEL_RESTORE cutoff skip: 주문=${orderKey(order)}, update_time=${order.update_time || '-'}`);
-    return;
+    return 0;
   }
 
   const conn = await db.getConnection();
@@ -318,9 +324,10 @@ async function restoreCancelledOrder(order) {
 
     if (!saleMovements.length) {
       console.log(`[Inventory] CANCEL_RESTORE 스킵: 기존 SALE movement 없음, 주문=${orderKey(order)}`);
-      return;
+      return 0;
     }
 
+    let restoredCount = 0;
     for (const saleMovement of saleMovements) {
       const exists = await cancelRestoreMovementExists(conn, saleMovement);
       if (exists) {
@@ -378,6 +385,7 @@ async function restoreCancelledOrder(order) {
           [restoreQty, tenantId, saleMovement.sku]
         );
         await conn.commit();
+        restoredCount++;
         console.log(`[Inventory] CANCEL_RESTORE movement 생성: sku=${saleMovement.sku}, qty=+${restoreQty}, 주문=${orderKey(order)}`);
       } catch (err) {
         await conn.rollback();
@@ -389,17 +397,32 @@ async function restoreCancelledOrder(order) {
         throw err;
       }
     }
+    return restoredCount;
   } finally {
     conn.release();
   }
 }
 
-async function processInventoryForOrder(order) {
+async function processInventoryForOrder(order, { previousOrderStatus = null } = {}) {
   try {
     const { isInventoryFifoEnabled, allocateSaleInventoryForOrder } = require('./inventoryFifoService');
     if (!isInventoryFifoEnabled()) return;
     if (order.order_status === 'CANCELLED') {
-      await restoreCancelledOrder(order);
+      if (!previousOrderStatus || previousOrderStatus === 'CANCELLED') return;
+      const classification = classifyCancellation(previousOrderStatus);
+      if (classification.decision === DECISIONS.AUTO_RESTORED) {
+        const restoredCount = await restoreCancelledOrder(order);
+        if (!restoredCount) return;
+      }
+      await recordCancellationReview({
+        tenantId: order.tenant_id,
+        shopId: order.shop_id,
+        orderSn: order.order_sn,
+        previousOrderStatus,
+        updateTime: order.update_time,
+        decision: classification.decision,
+        reason: classification.reason,
+      });
       return;
     }
     if (SALE_STOCK_STATUSES.has(order.display_status || order.order_status)) {
@@ -436,8 +459,36 @@ async function processInventoryForOrders(orderKeys, { tenantId = CURRENT_TENANT_
   );
 
   for (const order of orders) {
-    await processInventoryForOrder(order);
+    const key = uniqueKeys.find(candidate => String(candidate.shopId) === String(order.shop_id) && candidate.orderSn === order.order_sn);
+    await processInventoryForOrder(order, { previousOrderStatus: key?.previousOrderStatus || null });
   }
+}
+
+async function restorePendingCancellation({ tenantId = CURRENT_TENANT_ID, shopId, orderSn }) {
+  const [reviews] = await db.query(
+    `SELECT decision FROM inventory_cancellation_reviews
+      WHERE tenant_id = ? AND shop_id = ? AND order_sn = ? LIMIT 1`,
+    [tenantId, shopId, orderSn]
+  );
+  if (reviews[0]?.decision !== DECISIONS.RESTORE_PENDING) {
+    throw new Error('복원 대기 상태의 취소 주문만 복원할 수 있습니다.');
+  }
+  const [orders] = await db.query(
+    `SELECT tenant_id, order_sn, shop_id, order_status, display_status, order_created_at, create_time, update_time
+       FROM orders WHERE tenant_id = ? AND shop_id = ? AND order_sn = ? LIMIT 1`,
+    [tenantId, shopId, orderSn]
+  );
+  const order = orders[0];
+  if (!order || order.order_status !== 'CANCELLED') {
+    throw new Error('취소 주문을 찾을 수 없습니다.');
+  }
+  const restoredCount = await restoreCancelledOrder(order);
+  if (!restoredCount) {
+    throw new Error('복원할 판매 재고 이력이 없거나 이미 복원되었습니다.');
+  }
+  const marked = await markCancellationReviewRestored({ tenantId, shopId, orderSn });
+  if (!marked) throw new Error('복원 상태를 갱신하지 못했습니다.');
+  return { restored_count: restoredCount };
 }
 
 async function manuallyAdjustStock({ sku, qty_delta, note }, { tenantId = CURRENT_TENANT_ID } = {}) {
@@ -1185,6 +1236,7 @@ module.exports = {
   restoreCancelledOrder,
   processInventoryForOrder,
   processInventoryForOrders,
+  restorePendingCancellation,
   manuallyAdjustStock,
   adjustStartBalanceStock,
   getInventoryProducts,

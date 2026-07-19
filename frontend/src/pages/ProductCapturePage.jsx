@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { normalizeClipboardText } from '../utils/clipboard.js';
 
 const STORAGE_KEY = 'product_capture_v1';
 
@@ -137,7 +138,7 @@ export default function ProductCapturePage() {
 
   async function copyToClipboard(text, message) {
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(normalizeClipboardText(text));
       setCopyMessage(message);
       setError('');
     } catch (e) {

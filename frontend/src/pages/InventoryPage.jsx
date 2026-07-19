@@ -9,6 +9,8 @@ import {
 } from '../api/products.js';
 import ImagePreviewModal from '../components/ImagePreviewModal.jsx';
 import CopyIconButton from '../components/CopyIconButton.jsx';
+import CancellationInventoryPanel from '../components/CancellationInventoryPanel.jsx';
+import { normalizeClipboardText } from '../utils/clipboard.js';
 
 function formatDateTime(value) {
   if (!value) return '-';
@@ -85,7 +87,7 @@ function fallbackCopyText(text) {
 }
 
 function copySkuToClipboard(sku) {
-  const text = String(sku || '').trim();
+  const text = normalizeClipboardText(sku);
   if (!text) return;
 
   if (navigator.clipboard?.writeText) {
@@ -1032,8 +1034,20 @@ export default function InventoryPage() {
           전체 SKU
           <span>{products.length.toLocaleString('ko-KR')}</span>
         </button>
+        <button
+          type="button"
+          className={activeInventoryTab === 'cancellations' ? 'active' : ''}
+          onClick={() => setActiveInventoryTab('cancellations')}
+        >
+          취소 재고 추적
+        </button>
       </div>
 
+      {activeInventoryTab === 'cancellations' && (
+        <CancellationInventoryPanel onMessage={setMessage} onError={setError} />
+      )}
+
+      {activeInventoryTab !== 'cancellations' && <>
       <div className="inventory-filters">
         <label className="filter-field order-search-field">
           SKU / 상품명 / 주문번호
@@ -1174,6 +1188,7 @@ export default function InventoryPage() {
       ) : (
         <div className="table-state">재고 부족 상품이 없습니다.</div>
       )}
+      </>}
 
       {settingsProduct && (
         <StockSettingsModal

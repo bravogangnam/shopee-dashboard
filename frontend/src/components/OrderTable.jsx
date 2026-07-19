@@ -67,6 +67,7 @@ export default function OrderTable({ orders, loading, onOrderDetail }) {
             <th>Shop</th>
             <th>Status</th>
             <th>상품명</th>
+            <th>SKU</th>
             <th>옵션명</th>
             <th className="num">수량</th>
             <th className="num">무게(g)</th>
@@ -119,6 +120,22 @@ export default function OrderTable({ orders, loading, onOrderDetail }) {
               ));
             };
 
+            const renderSkuLines = () => {
+              if (!items.length) return '-';
+              return items.map((item, index) => {
+                const sku = item.model_sku || item.item_sku || '-';
+                return (
+                  <div
+                    key={`sku-${item.item_id || index}-${item.model_id || ''}`}
+                    className="item-line ledger-sku-line"
+                  >
+                    <span>{sku}</span>
+                    {sku !== '-' && <CopyIconButton value={sku} label="SKU" />}
+                  </div>
+                );
+              });
+            };
+
             const renderQuantityLines = () => {
               if (!items.length) return quantity;
               return items.map((item, index) => (
@@ -148,6 +165,7 @@ export default function OrderTable({ orders, loading, onOrderDetail }) {
                 </td>
                 <td><span className={statusClass(getDisplayStatus(order))}>{getDisplayStatus(order)}</span></td>
                 <td>{renderProductLines()}</td>
+                <td>{renderSkuLines()}</td>
                 <td>{renderItemLines('model_name', 'truncate-short')}</td>
                 <td className="num">{renderQuantityLines()}</td>
                 <td className="num">{order.order_chargeable_weight_gram ?? "-"}</td>

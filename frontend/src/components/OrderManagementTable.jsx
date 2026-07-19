@@ -1,4 +1,5 @@
 import { formatCurrency, formatDateTime } from '../utils/format.js';
+import CopyIconButton from './CopyIconButton.jsx';
 
 function regionClass(region) {
   return `region-badge region-${String(region || '').toLowerCase()}`;
@@ -127,6 +128,23 @@ function renderOptionLines(items, onImagePreview) {
   );
 }
 
+function renderSkuLines(items) {
+  const sourceItems = items.length ? items : [{}];
+  return (
+    <div className="order-item-lines">
+      {sourceItems.map((item, index) => {
+        const sku = item.model_sku || item.item_sku || '-';
+        return (
+          <div className="order-item-line ledger-sku-line" key={`${item.item_id || 'sku'}-${item.model_id || index}-${index}`}>
+            <span>{sku}</span>
+            {sku !== '-' && <CopyIconButton value={sku} label="SKU" />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function renderQuantityLines(items, order) {
   const sourceItems = items.length ? items : [{}];
   return (
@@ -190,6 +208,7 @@ export default function OrderManagementTable({
               />
             </th>
             <th>Order ID</th>
+            <th>SKU</th>
             <th>Shop</th>
             <th>Order Status</th>
             <th>상품명</th>
@@ -222,6 +241,7 @@ export default function OrderManagementTable({
                   <strong>{orderSn}</strong>
                   <small>{formatDateTime(order.order_created_at)}</small>
                 </td>
+                <td>{renderSkuLines(items)}</td>
                 <td>
                   <span className={regionClass(order.region)}>{order.region || order.shop_alias || order.shop_id}</span>
                 </td>

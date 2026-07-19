@@ -64,10 +64,10 @@ export default function OrderTable({ orders, loading, onOrderDetail }) {
         <thead>
           <tr>
             <th>Order ID</th>
+            <th>SKU</th>
             <th>Shop</th>
             <th>Status</th>
             <th>상품명</th>
-            <th>SKU</th>
             <th>옵션명</th>
             <th className="num">수량</th>
             <th className="num">무게(g)</th>
@@ -160,12 +160,12 @@ export default function OrderTable({ orders, loading, onOrderDetail }) {
                   </div>
                   <small>{formatDateTime(order.order_created_at)}</small>
                 </td>
+                <td>{renderSkuLines()}</td>
                 <td>
                   <span className={regionClass(order.region)}>{region}</span>
                 </td>
                 <td><span className={statusClass(getDisplayStatus(order))}>{getDisplayStatus(order)}</span></td>
                 <td>{renderProductLines()}</td>
-                <td>{renderSkuLines()}</td>
                 <td>{renderItemLines('model_name', 'truncate-short')}</td>
                 <td className="num">{renderQuantityLines()}</td>
                 <td className="num">{order.order_chargeable_weight_gram ?? "-"}</td>

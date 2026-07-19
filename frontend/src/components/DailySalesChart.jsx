@@ -64,6 +64,7 @@ function DailySalesTooltip({ active, payload, label }) {
       <span>{item.selected_month_label} 매출 {formatKrw(item.sales_krw)}</span>
       <span>{item.selected_month_label} 주문수 {item.order_count}건</span>
       {item.show_current_month && <span>이번 달 매출 {formatKrw(item.current_month_sales_krw)}</span>}
+      {item.show_current_month && <span>이번 달 주문수 {item.current_month_order_count}건</span>}
     </div>
   );
 }
@@ -89,6 +90,7 @@ export default function DailySalesChart({
       sales_krw: Number(selected.sales_krw || 0),
       order_count: Number(selected.order_count || 0),
       current_month_sales_krw: Number(current.sales_krw || 0),
+      current_month_order_count: Number(current.order_count || 0),
       selected_month_label: month,
       show_current_month: showCurrentMonth,
     };

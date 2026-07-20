@@ -301,6 +301,11 @@ export default function OrderManagementPage() {
     setQuery({ ...filters, page: 1 });
   }
 
+  function handleApplyFilters(nextFilters) {
+    setMessage('');
+    setQuery({ ...nextFilters, page: 1 });
+  }
+
   function handleReset() {
     const defaultFilters = createDefaultFilters();
     setMessage('');
@@ -591,6 +596,7 @@ setMessage('송장 생성 중입니다. 새 창에서 진행 상황을 확인하
         onChange={setFilters}
         onSubmit={handleSubmit}
         onReset={handleReset}
+        onApply={handleApplyFilters}
       />
 
       <OrderManagementTable

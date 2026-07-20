@@ -26,30 +26,55 @@ function getStatusCount(stats, status) {
   return item?.count || 0;
 }
 
-export default function OrderManagementFilters({ filters, stats, onChange, onSubmit, onReset }) {
+function todayKST() {
+  const now = new Date();
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
+}
+
+export default function OrderManagementFilters({ filters, stats, onChange, onSubmit, onReset, onApply }) {
   const isAllPeriodStatus = Boolean(filters.order_status);
 
   const dateRangeValue = filters.date_from && filters.date_to
     ? [dayjs(filters.date_from), dayjs(filters.date_to)]
     : null;
 
+  function commitFilters(nextFilters, { apply = false } = {}) {
+    onChange(nextFilters);
+    if (apply && typeof onApply === 'function') {
+      onApply(nextFilters);
+    }
+  }
+
   function setField(field, value) {
     if (field === 'order_status' && value) {
-      onChange({
+      commitFilters({
         ...filters,
         order_status: value,
         date_from: '',
         date_to: '',
         page: 1,
-      });
+      }, { apply: true });
       return;
     }
 
-    onChange({
+    if (field === 'order_status' && !value) {
+      const today = todayKST();
+      commitFilters({
+        ...filters,
+        order_status: '',
+        date_from: filters.date_from || today,
+        date_to: filters.date_to || today,
+        page: 1,
+      }, { apply: true });
+      return;
+    }
+
+    commitFilters({
       ...filters,
       [field]: value,
       page: 1,
-    });
+    }, { apply: field === 'region' });
   }
 
   function setDateRange(dates) {

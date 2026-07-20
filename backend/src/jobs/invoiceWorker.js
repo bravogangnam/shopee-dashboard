@@ -339,20 +339,7 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID, pr
       await updateProgress(jobId, processedCount, orderRows.length, `처리 중 (${i + 1}/${orderRows.length}): ${order_sn} [${order_status}]`);
       console.log(`[InvoiceWorker] prepare [${i + 1}/${orderRows.length}] ${order_sn} status=${order_status} tracking=${trackingNumber || 'none'}`);
 
-      if (HARD_SKIP_STATUSES.has(order_status)) {
-        results.push({ order_sn, status: 'skipped', reason: `${order_status}: 송장 발행 불가`, shop_id });
-        await markOrderProcessed(order_sn);
-        continue;
-      }
-
-      if (order_status === 'COMPLETED') {
-        results.push({ order_sn, status: 'skipped', reason: COMPLETED_SKIP_REASON, shop_id });
-        await markOrderProcessed(order_sn);
-        continue;
-      }
-
-      const useCache = order_status !== 'READY_TO_SHIP';
-      if (useCache && labelStorage.exists(shop_id, order_sn)) {
+      if (labelStorage.exists(shop_id, order_sn)) {
         const cached = labelStorage.load(shop_id, order_sn);
         if (cached) {
           console.log(`[InvoiceWorker] cache hit: ${order_sn}`);
@@ -367,6 +354,18 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID, pr
           await markOrderProcessed(order_sn);
           continue;
         }
+      }
+
+      if (HARD_SKIP_STATUSES.has(order_status)) {
+        results.push({ order_sn, status: 'skipped', reason: `${order_status}: 송장 발행 불가`, shop_id });
+        await markOrderProcessed(order_sn);
+        continue;
+      }
+
+      if (order_status === 'COMPLETED') {
+        results.push({ order_sn, status: 'skipped', reason: COMPLETED_SKIP_REASON, shop_id });
+        await markOrderProcessed(order_sn);
+        continue;
       }
 
       if (order_status !== 'READY_TO_SHIP' && !trackingNumber) {

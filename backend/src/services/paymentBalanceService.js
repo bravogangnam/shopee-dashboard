@@ -5,7 +5,9 @@ const { getOrRefreshShopToken, refreshShopToken } = require('./shopeeAuth');
 
 // Shopee Income Detail shows this status for the part of To Release that is
 // already available to use. Processing statuses are intentionally excluded.
-const BALANCE_STATUSES = new Set(['Payment initiated']);
+// TW returns the same state localized from the API, so keep the known labels
+// together and use this set for both balance and weekly forecast calculations.
+const BALANCE_STATUSES = new Set(['Payment initiated', '撥款進行中']);
 const REGION_CURRENCY = {
   SG: 'SGD',
   MY: 'MYR',
@@ -34,10 +36,34 @@ async function ensurePaymentBalanceTable() {
       UNIQUE KEY uq_payment_balance_tenant_shop (tenant_id, shop_id),
       INDEX idx_payment_balance_tenant_synced (tenant_id, synced_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-  `).catch((err) => {
-    paymentBalanceTableReady = null;
-    throw err;
-  });
+  `)
+    .then(() => db.query(`
+      CREATE TABLE IF NOT EXISTS shopee_payment_income_items (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id INT NOT NULL,
+        shop_id BIGINT NOT NULL,
+        item_key CHAR(40) NOT NULL,
+        order_sn VARCHAR(50) NULL,
+        status VARCHAR(100) NULL,
+        currency VARCHAR(12) NULL,
+        to_release_amount DECIMAL(18, 4) NOT NULL DEFAULT 0,
+        creation_time BIGINT NULL,
+        creation_at DATETIME NULL,
+        description VARCHAR(500) NULL,
+        payment_method VARCHAR(120) NULL,
+        payee_id VARCHAR(120) NULL,
+        first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_payment_income_item (tenant_id, shop_id, item_key),
+        INDEX idx_payment_income_tenant_creation (tenant_id, creation_at),
+        INDEX idx_payment_income_shop_creation (tenant_id, shop_id, creation_at),
+        INDEX idx_payment_income_order (tenant_id, shop_id, order_sn)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `))
+    .catch((err) => {
+      paymentBalanceTableReady = null;
+      throw err;
+    });
 
   return paymentBalanceTableReady;
 }
@@ -45,6 +71,26 @@ async function ensurePaymentBalanceTable() {
 function toFiniteNumber(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function toSqlUtcFromUnix(seconds) {
+  const numeric = Number(seconds || 0);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  return new Date(numeric * 1000).toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function createIncomeItemKey(item) {
+  const crypto = require('crypto');
+  return crypto.createHash('sha1').update(JSON.stringify({
+    order_sn: item?.order_sn || '',
+    status: item?.status || '',
+    currency: item?.currency || '',
+    to_release_amount: item?.to_release_amount ?? '',
+    creation_date: item?.creation_date ?? '',
+    description: item?.description || '',
+    payment_method: item?.payment_method || '',
+    payee_id: item?.payee_id || '',
+  })).digest('hex');
 }
 
 function calculateAvailableBalance(items, fallbackCurrency = null) {
@@ -152,6 +198,51 @@ async function saveSuccessfulSnapshot({ tenantId, shopId, currency, balanceAmoun
   );
 }
 
+async function saveIncomeItems({ tenantId, shopId, items }) {
+  const rows = (Array.isArray(items) ? items : [])
+    .filter((item) => BALANCE_STATUSES.has(String(item?.status || '').trim()))
+    .map((item) => [
+      tenantId,
+      shopId,
+      createIncomeItemKey(item),
+      item.order_sn || null,
+      item.status || null,
+      item.currency || null,
+      toFiniteNumber(item.to_release_amount),
+      Number(item.creation_date || 0) || null,
+      toSqlUtcFromUnix(item.creation_date),
+      item.description ? String(item.description).slice(0, 500) : null,
+      item.payment_method ? String(item.payment_method).slice(0, 120) : null,
+      item.payee_id ? String(item.payee_id).slice(0, 120) : null,
+    ]);
+
+  if (!rows.length) return { inserted: 0, seen: 0 };
+
+  const placeholders = rows.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+  const [result] = await db.query(
+    `INSERT INTO shopee_payment_income_items
+       (tenant_id, shop_id, item_key, order_sn, status, currency, to_release_amount,
+        creation_time, creation_at, description, payment_method, payee_id)
+     VALUES ${placeholders}
+     ON DUPLICATE KEY UPDATE
+       status = VALUES(status),
+       currency = VALUES(currency),
+       to_release_amount = VALUES(to_release_amount),
+       creation_time = VALUES(creation_time),
+       creation_at = VALUES(creation_at),
+       description = VALUES(description),
+       payment_method = VALUES(payment_method),
+       payee_id = VALUES(payee_id),
+       last_seen_at = CURRENT_TIMESTAMP`,
+    rows.flat()
+  );
+
+  return {
+    inserted: result.affectedRows,
+    seen: rows.length,
+  };
+}
+
 async function saveFailedAttempt({ tenantId, shopId, message }) {
   await db.query(
     `INSERT INTO shopee_payment_balance_snapshots
@@ -174,7 +265,8 @@ async function refreshPaymentBalances(tenantId) {
       const items = await fetchIncomeDetailItems({ tenantId, shopId: shop.shop_id });
       const snapshot = calculateAvailableBalance(items, REGION_CURRENCY[shop.region] || null);
       await saveSuccessfulSnapshot({ tenantId, shopId: shop.shop_id, ...snapshot });
-      console.log(`[PaymentBalance] tenant_id=${tenantId} shop_id=${shop.shop_id} mode=manual_refresh items=${items.length} available_items=${snapshot.itemCount} success`);
+      const savedItems = await saveIncomeItems({ tenantId, shopId: shop.shop_id, items });
+      console.log(`[PaymentBalance] tenant_id=${tenantId} shop_id=${shop.shop_id} mode=manual_refresh items=${items.length} available_items=${snapshot.itemCount} saved_income_items=${savedItems.seen} success`);
       results.push({ shop_id: shop.shop_id, success: true });
     } catch (err) {
       await saveFailedAttempt({ tenantId, shopId: shop.shop_id, message: err.message });
@@ -263,6 +355,7 @@ module.exports = {
   BALANCE_STATUSES,
   calculateAvailableBalance,
   ensurePaymentBalanceTable,
+  saveIncomeItems,
   getPaymentBalanceSnapshot,
   refreshPaymentBalances,
   summarizePaymentBalances,

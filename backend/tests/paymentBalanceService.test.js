@@ -11,6 +11,12 @@ const available = calculateAvailableBalance([
 ], 'SGD');
 assert.deepStrictEqual(available, { currency: 'SGD', balanceAmount: 13, itemCount: 2 });
 
+const twAvailable = calculateAvailableBalance([
+  { status: '撥款進行中', currency: 'TWD', to_release_amount: 265 },
+  { status: 'Processing', currency: 'TWD', to_release_amount: 1000 },
+], 'TWD');
+assert.deepStrictEqual(twAvailable, { currency: 'TWD', balanceAmount: 265, itemCount: 1 });
+
 const summary = summarizePaymentBalances([
   { shop_id: 1, currency: 'SGD', balance_amount: 10 },
   { shop_id: 2, currency: 'MYR', balance_amount: 100 },

@@ -32,7 +32,7 @@ function ForecastCard({ title, forecast, balanceShops }) {
         <small>{forecast?.period_label || '-'}</small>
       </div>
       <strong>{hasOrders ? formatKrw(forecast?.krw_amount) : '집계 대기'}</strong>
-      <p>{hasOrders ? `${formatNumber(forecast.order_count, 0)}건 · COMPLETED 전환 기준` : '완료 전환 주문이 아직 없습니다.'}</p>
+      <p>{hasOrders ? `${formatNumber(forecast.order_count, 0)}건 · Payment initiated 기준` : '정산예정 항목이 아직 없습니다.'}</p>
       <div className="payout-forecast-shop-list">
         {balanceShops.map((balanceShop) => {
           const shop = forecastByShop.get(String(balanceShop.shop_id));
@@ -135,16 +135,16 @@ export default function ShopeePayoutBalancePanel({
             <div className="payout-forecast-heading">
               <div>
                 <h3>주차별 정산 예상</h3>
-                <p>한국시간 월~일 사이 COMPLETED로 전환된 주문의 예상 정산액입니다.</p>
+                <p>한국시간 월~일 사이 Payment initiated로 잡힌 주문의 예상 정산액입니다.</p>
               </div>
-              <span>실제 지급일·지급액은 Shopee 심사 및 지급 처리에 따라 달라질 수 있습니다.</span>
+              <span>2026-07-20 00:00 KST 이후 데이터만 집계하며, 실제 지급일·지급액은 Shopee 처리에 따라 달라질 수 있습니다.</span>
             </div>
             {forecastLoading ? (
               <div className="payout-balance-state">정산 예상 금액을 집계하는 중입니다.</div>
             ) : (
               <div className="payout-forecast-grid">
-                <ForecastCard title="지난주 완료분 예상 정산" forecast={forecast?.next_payout} balanceShops={shops} />
-                <ForecastCard title="이번 주 완료분 예상 정산" forecast={forecast?.following_payout} balanceShops={shops} />
+                <ForecastCard title="이번주 정산 예정" forecast={forecast?.next_payout} balanceShops={shops} />
+                <ForecastCard title="다음주 정산 예정" forecast={forecast?.following_payout} balanceShops={shops} />
               </div>
             )}
           </section>

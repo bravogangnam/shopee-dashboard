@@ -1,6 +1,10 @@
 const db = require('../config/database');
+const { ensurePaymentBalanceTable } = require('./paymentBalanceService');
 
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const FORECAST_BASELINE_KST = '2026-07-20 00:00:00';
+const FORECAST_BASELINE_UTC = '2026-07-19 15:00:00';
+const PAYMENT_INITIATED_STATUSES = ['Payment initiated', '撥款進行中'];
 let completionEventsTableReady = null;
 
 function toSqlUtc(date) {
@@ -80,28 +84,29 @@ async function recordOrderCompletion({ tenantId, shopId, orderSn, updateTime }) 
 
 async function getSettlementForecast(tenantId, now = new Date()) {
   await ensureOrderCompletionEventsTable();
+  await ensurePaymentBalanceTable();
   const windows = getKstWeekWindows(now);
   const [rates] = await db.query('SELECT currency, rate_to_krw FROM exchange_rates');
   const rateMap = new Map(rates.map((row) => [String(row.currency).toUpperCase(), Number(row.rate_to_krw || 0)]));
   const usdRate = rateMap.get('USD') || null;
 
   async function getWindow(key, window) {
+    const from = window.completed_from < FORECAST_BASELINE_UTC ? FORECAST_BASELINE_UTC : window.completed_from;
+    const to = window.completed_to;
+    const isBeforeBaseline = to <= FORECAST_BASELINE_UTC;
     const [rows] = await db.query(
-      `SELECT e.shop_id, s.alias, s.shop_name, s.region, o.currency,
+      `SELECT p.shop_id, s.alias, s.shop_name, s.region, p.currency,
               COUNT(*) AS order_count,
-              COALESCE(SUM(o.escrow_amount), 0) AS local_amount
-       FROM order_completion_events e
-       INNER JOIN orders o
-         ON o.tenant_id = e.tenant_id AND o.shop_id = e.shop_id
-         AND o.order_sn COLLATE utf8mb4_unicode_ci = e.order_sn COLLATE utf8mb4_unicode_ci
-       INNER JOIN shops s ON s.tenant_id = e.tenant_id AND s.shop_id = e.shop_id
-       WHERE e.tenant_id = ?
-         AND e.completed_at >= ? AND e.completed_at < ?
-         AND o.order_status = 'COMPLETED'
-         AND COALESCE(o.display_status, o.order_status) NOT IN ('TO_RETURN', 'CANCELLED')
-       GROUP BY e.shop_id, s.alias, s.shop_name, s.region, o.currency
-       ORDER BY CASE s.region WHEN 'SG' THEN 1 WHEN 'MY' THEN 2 WHEN 'PH' THEN 3 WHEN 'TW' THEN 4 ELSE 99 END, e.shop_id`,
-      [tenantId, window.completed_from, window.completed_to]
+              COALESCE(SUM(p.to_release_amount), 0) AS local_amount
+       FROM shopee_payment_income_items p
+       INNER JOIN shops s ON s.tenant_id = p.tenant_id AND s.shop_id = p.shop_id
+       WHERE p.tenant_id = ?
+         AND p.status IN (?, ?)
+         AND p.creation_at >= ? AND p.creation_at < ?
+         AND ? = 0
+       GROUP BY p.shop_id, s.alias, s.shop_name, s.region, p.currency
+       ORDER BY CASE s.region WHEN 'SG' THEN 1 WHEN 'MY' THEN 2 WHEN 'PH' THEN 3 WHEN 'TW' THEN 4 ELSE 99 END, p.shop_id`,
+      [tenantId, ...PAYMENT_INITIATED_STATUSES, from, to, isBeforeBaseline ? 1 : 0]
     );
 
     let krwAmount = 0;
@@ -125,6 +130,8 @@ async function getSettlementForecast(tenantId, now = new Date()) {
     return {
       key,
       period_label: window.period_label,
+      basis: 'payment_initiated',
+      baseline_kst: FORECAST_BASELINE_KST,
       order_count: rows.reduce((sum, row) => sum + Number(row.order_count || 0), 0),
       krw_amount: conversionAvailable ? krwAmount : null,
       usd_amount: conversionAvailable ? usdAmount : null,

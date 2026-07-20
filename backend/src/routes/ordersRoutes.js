@@ -153,9 +153,12 @@ function managementOrderStatusExpression(orderAlias = 'o') {
   const effectiveStatusSql = effectiveOrderStatusExpression(orderAlias);
   return `
     CASE
-      WHEN (${effectiveStatusSql}) = 'PROCESSED'
+      WHEN (${effectiveStatusSql}) IN ('READY_TO_SHIP', 'PROCESSED')
         AND ${orderAlias}.shipping_label_status = 'ready_to_print'
       THEN 'LABEL_READY'
+      WHEN (${effectiveStatusSql}) = 'READY_TO_SHIP'
+        AND ${orderAlias}.shipping_label_status = 'printed'
+      THEN 'PROCESSED'
       ELSE (${effectiveStatusSql})
     END
   `;

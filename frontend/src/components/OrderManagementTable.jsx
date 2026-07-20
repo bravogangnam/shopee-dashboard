@@ -11,8 +11,14 @@ function statusClass(status) {
 
 function getDisplayStatus(order) {
   const baseStatus = order?.display_status || order?.order_status;
-  if (baseStatus === 'PROCESSED' && order?.shipping_label_status === 'ready_to_print') {
+  if (
+    ['READY_TO_SHIP', 'PROCESSED'].includes(baseStatus) &&
+    order?.shipping_label_status === 'ready_to_print'
+  ) {
     return 'LABEL_READY';
+  }
+  if (baseStatus === 'READY_TO_SHIP' && order?.shipping_label_status === 'printed') {
+    return 'PROCESSED';
   }
   return baseStatus;
 }

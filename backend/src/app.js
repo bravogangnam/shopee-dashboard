@@ -146,6 +146,14 @@ app.listen(PORT, '0.0.0.0', () => {
     console.error('[App] googleSheetSync FAILED to load — product sync disabled:', e.message);
   }
 
+  // Shopee Payment Balance sync (5분 주기)
+  try {
+    const { startPaymentBalanceJob } = require('./jobs/paymentBalanceJob');
+    startPaymentBalanceJob();
+  } catch (e) {
+    console.error('[App] paymentBalanceJob FAILED to load — payment balance auto refresh disabled:', e.message);
+  }
+
   // 송장 파일 정리 Cron 시작 (하루 1회)
   try {
     const { startShippingLabelCleanupJob } = require('./services/shippingLabelCleanupService');

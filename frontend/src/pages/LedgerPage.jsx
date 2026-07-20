@@ -18,7 +18,6 @@ const getCurrentMonthRange = () => ({
   date_from: dayjs().startOf('month').format('YYYY-MM-DD'),
   date_to: dayjs().format('YYYY-MM-DD'),
 });
-const PAYMENT_BALANCE_AUTO_REFRESH_MS = 5 * 60 * 1000;
 
 const createDefaultFilters = () => ({
   page: 1,
@@ -441,20 +440,6 @@ export default function LedgerPage() {
       setPaymentBalancesRefreshing(false);
     }
   }
-
-  useEffect(() => {
-    let cancelled = false;
-    async function autoRefreshPaymentBalances() {
-      if (cancelled || document.hidden || paymentBalancesRefreshing) return;
-      await handlePaymentBalanceRefresh();
-    }
-
-    const intervalId = window.setInterval(autoRefreshPaymentBalances, PAYMENT_BALANCE_AUTO_REFRESH_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [paymentBalancesRefreshing]);
 
   const settlementCounts = orders.reduce(
     (acc, order) => {

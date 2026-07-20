@@ -574,8 +574,10 @@ router.get('/', async (req, res) => {
  *   shop_id (optional)
  */
 router.get('/stats', async (req, res) => {
-  const { date_from, date_to, shop_id } = req.query;
+  const { date_from, date_to, shop_id, region } = req.query;
   const tenantId = getCurrentTenantId(req);
+  const regionFilterValue =
+    region && region !== 'ALL' ? String(region).trim().toUpperCase() : '';
   await ensureShippingLabelStatusColumns();
 
   // ── 날짜 범위 결정 ─────────────────────────────────────────────
@@ -616,8 +618,10 @@ router.get('/stats', async (req, res) => {
   console.log(`[Stats] 기간: ${rangeFrom}~${rangeTo} | 전월비교: ${prevFrom}~${prevTo}`);
 
   // ── 필터 빌더 ──────────────────────────────────────────────────
-  const shopFilter = `AND o.tenant_id = ? AND o.shop_id IN (SELECT shop_id FROM shops WHERE tenant_id = ? AND is_active = 1)${shop_id ? ' AND o.shop_id = ?' : ''}`;
-  const shopParams = shop_id ? [tenantId, tenantId, shop_id] : [tenantId, tenantId];
+  const shopFilter = `AND o.tenant_id = ? AND o.shop_id IN (SELECT shop_id FROM shops WHERE tenant_id = ? AND is_active = 1)${shop_id ? ' AND o.shop_id = ?' : ''}${regionFilterValue ? ' AND o.region = ?' : ''}`;
+  const shopParams = [tenantId, tenantId];
+  if (shop_id) shopParams.push(shop_id);
+  if (regionFilterValue) shopParams.push(regionFilterValue);
 
   const buildDateFilter = (f, t) =>
     `AND o.order_created_at >= '${f} 00:00:00' AND o.order_created_at <= '${t} 23:59:59'`;
@@ -654,7 +658,7 @@ router.get('/stats', async (req, res) => {
     const prevSqlFull = salesQuery(prevFilter).replace(/\s+/g, ' ').trim();
     console.log(`[Stats SQL] 현재기간 쿼리:\n  ${curSqlFull}`);
     console.log(`[Stats SQL] 전월기간 쿼리:\n  ${prevSqlFull}`);
-    console.log(`[Stats SQL] shopParams: ${JSON.stringify(shopParams)}`);
+    console.log(`[Stats SQL] shopParams: ${JSON.stringify(shopParams)} region=${regionFilterValue || 'ALL'}`);
 
     const [curRows]  = await db.query(salesQuery(curFilter),  shopParams);
     const [prevRows] = await db.query(salesQuery(prevFilter), shopParams);
@@ -680,7 +684,7 @@ router.get('/stats', async (req, res) => {
       return Math.round(((cur - prev) / prev) * 1000) / 10; // 소수점1자리
     };
 
-    const shopFilter2 = `AND o.tenant_id = ? AND o.shop_id IN (SELECT shop_id FROM shops WHERE tenant_id = ? AND is_active = 1)${shop_id ? ' AND o.shop_id = ?' : ''}`;
+    const shopFilter2 = shopFilter;
 
     // 샵별 집계 (현재 기간) - UNPAID/PENDING/CANCELLED 제외, merchandise_subtotal 기준
     const [byShop] = await db.query(

@@ -5,9 +5,14 @@ export function fetchOrders(params) {
 }
 
 export function fetchStats(params = {}) {
+  const region =
+    params.region && params.region !== 'ALL' ? params.region : undefined;
+
   const searchParams = {
     date_from: params.date_from,
     date_to: params.date_to,
+    region,
+    shop_id: params.shop_id,
   };
 
   return apiRequest(

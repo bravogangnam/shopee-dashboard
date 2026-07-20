@@ -14,6 +14,7 @@ const { getCurrentTenantId } = require('../config/tenant');
 const { addClient } = require('../services/orderEventHub');
 const { getOrRefreshShopToken } = require('../services/shopeeAuth');
 const { getOrderDetail } = require('../services/shopeeOrder');
+const { ensureShippingLabelStatusColumns } = require('../services/shippingLabelStatusService');
 
 router.use(requireAuth);
 router.use(requireApprovedTenant);
@@ -148,6 +149,18 @@ function effectiveOrderStatusExpression(orderAlias = 'o') {
   `;
 }
 
+function managementOrderStatusExpression(orderAlias = 'o') {
+  const effectiveStatusSql = effectiveOrderStatusExpression(orderAlias);
+  return `
+    CASE
+      WHEN (${effectiveStatusSql}) = 'PROCESSED'
+        AND ${orderAlias}.shipping_label_status = 'ready_to_print'
+      THEN 'LABEL_READY'
+      ELSE (${effectiveStatusSql})
+    END
+  `;
+}
+
 const SUMMARY_PROFIT_RATE_FILTER_EXPRESSION = `
   (
     CASE
@@ -255,6 +268,7 @@ router.get('/', async (req, res) => {
   } = req.query;
 
   const tenantId = getCurrentTenantId(req);
+  await ensureShippingLabelStatusColumns();
 
   const pageNum = Math.max(1, parseInt(page));
   const pageSize = Math.min(100, Math.max(1, parseInt(page_size)));
@@ -280,11 +294,10 @@ router.get('/', async (req, res) => {
   // 활성 샵 기반 필터
   let whereClause = `o.tenant_id = ? AND o.shop_id IN (SELECT shop_id FROM shops WHERE tenant_id = ? AND is_active = 1)`;
   const params = [tenantId, tenantId];
-  const openBacklogStatuses = ['UNPAID', 'PENDING', 'READY_TO_SHIP'];
-  const allPeriodStatuses = ['PENDING', 'IN_CANCEL', 'TO_RETURN', 'CANCELLED'];
+  const openBacklogStatuses = ['UNPAID', 'PENDING', 'READY_TO_SHIP', 'LABEL_READY'];
   const includeOpenBacklog = ['1', 'true', 'yes'].includes(String(include_open_backlog || '').toLowerCase());
   let statusFilters = [];
-  const effectiveStatusSql = effectiveOrderStatusExpression('o');
+  const effectiveStatusSql = managementOrderStatusExpression('o');
 
   if (shop_id) {
     whereClause += ` AND o.shop_id = ?`;
@@ -313,8 +326,7 @@ router.get('/', async (req, res) => {
   const dateParams = [];
 
   const ignoresDateFilter =
-    statusFilters.length === 1 &&
-    allPeriodStatuses.includes(statusFilters[0]);
+    statusFilters.length > 0;
 
   if (date_from && !ignoresDateFilter) {
     // order_created_at은 KST 문자열로 저장 → KST 기준 필터
@@ -339,7 +351,7 @@ router.get('/', async (req, res) => {
   if (dateConditions.length) {
     if (shouldIncludeOpenBacklog) {
       const backlogPlaceholders = openBacklogStatuses.map(() => '?').join(',');
-      whereClause += ` AND ((${dateConditions.join(' AND ')}) OR COALESCE(o.display_status, o.order_status) IN (${backlogPlaceholders}))`;
+      whereClause += ` AND ((${dateConditions.join(' AND ')}) OR (${effectiveStatusSql}) IN (${backlogPlaceholders}))`;
       params.push(...dateParams, ...openBacklogStatuses);
     } else {
       whereClause += ` AND ${dateConditions.join(' AND ')}`;
@@ -460,6 +472,8 @@ router.get('/', async (req, res) => {
       `SELECT
         o.id, o.shop_id, o.region, o.order_sn, o.order_status,
           o.display_status, o.display_status_reason, o.display_status_checked_at,
+          o.shipping_label_status, o.shipping_label_prepared_at,
+          o.shipping_label_printed_at, o.shipping_label_error,
           o.is_final_status,
         COALESCE(o.merchandise_subtotal, o.total_amount) AS merchandise_subtotal, o.total_amount, o.currency,
         o.original_price, o.seller_discount, o.voucher_from_seller, o.voucher_from_shopee,
@@ -562,6 +576,7 @@ router.get('/', async (req, res) => {
 router.get('/stats', async (req, res) => {
   const { date_from, date_to, shop_id } = req.query;
   const tenantId = getCurrentTenantId(req);
+  await ensureShippingLabelStatusColumns();
 
   // ── 날짜 범위 결정 ─────────────────────────────────────────────
   // 기본값: 이번달 1일 ~ 오늘 (KST)
@@ -686,72 +701,22 @@ router.get('/stats', async (req, res) => {
       shopParams
     );
 
-    // 일반 주문 상태는 현재 선택 기간 기준으로 집계
-    const [periodStatusRows] = await db.query(
+    // 주문관리 상태 탭은 날짜와 무관하게 "현재 해당 상태 전체" 기준으로 집계한다.
+    const managementStatusSql = managementOrderStatusExpression('o');
+    const [allPeriodStatusRows] = await db.query(
       `SELECT
-         ${effectiveStatusSql} AS order_status,
+         ${managementStatusSql} AS order_status,
          COUNT(*) AS count
        FROM orders o
-       WHERE 1=1 ${shopFilter} ${curFilter}
-       GROUP BY ${effectiveStatusSql}
+       WHERE 1=1 ${shopFilter}
+       GROUP BY ${managementStatusSql}
        ORDER BY count DESC`,
       shopParams
     );
-
-    /*
-     * 취소 요청 / 반품·환불 / 취소 완료는 날짜 필터를 적용하지 않고
-     * 활성 샵 전체 기간을 기준으로 집계한다.
-     *
-     * Return 데이터가 연결된 주문은 기존 표시 규칙과 동일하게
-     * 실제 order_status보다 TO_RETURN을 우선한다.
-     */
-    const [allPeriodExceptionRows] = await db.query(
-      `SELECT
-         effective_status AS order_status,
-         COUNT(*) AS count
-       FROM (
-         SELECT
-           ${effectiveStatusSql} AS effective_status
-         FROM orders o
-         WHERE 1=1 ${shopFilter}
-       ) exception_orders
-       WHERE effective_status IN (
-         'PENDING',
-         'IN_CANCEL',
-         'TO_RETURN',
-         'CANCELLED'
-       )
-       GROUP BY effective_status`,
-      shopParams
-    );
-
-    const exceptionStatuses = new Set([
-      'PENDING',
-      'IN_CANCEL',
-      'TO_RETURN',
-      'CANCELLED',
-    ]);
-
-    const exceptionCountMap = new Map(
-      allPeriodExceptionRows.map(row => [
-        row.order_status,
-        Number(row.count || 0),
-      ])
-    );
-
-    const byStatus = periodStatusRows
-      .filter(row => !exceptionStatuses.has(row.order_status))
-      .map(row => ({
-        ...row,
-        count: Number(row.count || 0),
-      }));
-
-    for (const status of exceptionStatuses) {
-      byStatus.push({
-        order_status: status,
-        count: exceptionCountMap.get(status) || 0,
-      });
-    }
+    const byStatus = allPeriodStatusRows.map(row => ({
+      ...row,
+      count: Number(row.count || 0),
+    }));
 
     // ── 월매출 고정 쿼리 (당월 1일~오늘, 날짜 필터와 무관) ────────────
     const monthlyFrom = `${kstYear}-${String(kstMonth).padStart(2,'0')}-01`;

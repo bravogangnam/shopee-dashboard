@@ -52,6 +52,20 @@ export async function startInvoiceJob(orderSnList) {
   return parseJsonResponse(response);
 }
 
+export async function prepareInvoiceJob(orderSnList) {
+  const response = await fetch('/api/invoices/jobs/prepare', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      ...authHeaders(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ order_sns: orderSnList }),
+  });
+
+  return parseJsonResponse(response);
+}
+
 export async function startInvoice(orderSnList) {
   const response = await fetch('/api/invoice/start', {
     method: 'POST',

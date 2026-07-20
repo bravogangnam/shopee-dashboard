@@ -6,6 +6,7 @@ import {
   downloadInvoiceJob,
   formatInvoiceJobError,
   getInvoiceJob,
+  prepareInvoiceJob,
   startInvoiceJob,
 } from '../api/invoice.js';
 import { startSync } from '../api/sync.js';
@@ -101,6 +102,10 @@ function invoiceStatusLabel(status) {
   if (value === 'failed') return '송장 생성 실패';
   if (value === 'cancelled') return '취소됨';
   return status || '-';
+}
+
+function invoiceModeLabel(job) {
+  return job?.mode === 'prepare' ? '송장 준비' : '송장 출력';
 }
 
 export default function OrderManagementPage() {
@@ -235,6 +240,7 @@ export default function OrderManagementPage() {
 
   useEffect(() => {
     if (!invoiceJob?.jobId) return;
+    if (invoiceJob?.mode === 'prepare') return;
     if (!isInvoiceJobDone(invoiceJob)) return;
     if (!invoiceJob.print_url) return;
     if (Number(invoiceJob.percent || 0) < 100) return;
@@ -247,12 +253,25 @@ export default function OrderManagementPage() {
     }, 1200);
   }, [
     invoiceJob?.jobId,
+    invoiceJob?.mode,
     invoiceJob?.status,
     invoiceJob?.print_url,
     invoiceJob?.percent,
     invoiceJob?.completed,
     invoiceJob?.total,
   ]);
+
+  useEffect(() => {
+    if (!invoiceJob?.jobId) return;
+    if (invoiceJob.mode !== 'prepare') return;
+    if (!isInvoiceJobDone(invoiceJob)) return;
+    if (invoiceCompleteNotifiedRef.current === invoiceJob.jobId) return;
+
+    invoiceCompleteNotifiedRef.current = invoiceJob.jobId;
+    const successCount = Number(invoiceJob.results?.filter?.(item => item.status === 'success').length || invoiceJob.completed || 0);
+    setMessage(`송장 준비가 완료되었습니다. 성공 ${successCount}건은 송장출력대기 상태로 표시됩니다.`);
+    setReloadKey(value => value + 1);
+  }, [invoiceJob]);
 
   useEffect(() => {
     const printWindow = invoicePrintWindowRef.current;
@@ -265,7 +284,7 @@ export default function OrderManagementPage() {
       <html>
         <head><title>송장 출력 진행</title></head>
         <body style="font-family: sans-serif; padding: 24px;">
-          <h2>${invoiceStatusLabel(invoiceJob.status)}</h2>
+          <h2>${invoiceModeLabel(invoiceJob)} ${invoiceStatusLabel(invoiceJob.status)}</h2>
           <p>${invoiceJob.message || ''}</p>
           <p>진행 ${invoiceJob.completed || 0}/${invoiceJob.total || 0} (${percent}%)</p>
           <p>실패 ${invoiceJob.failed || 0}건</p>
@@ -313,7 +332,7 @@ export default function OrderManagementPage() {
       <html>
         <head><title>송장 준비 중</title></head>
         <body style="font-family: sans-serif; padding: 24px;">
-          <h2>송장 준비 중입니다...</h2>
+          <h2>송장 출력 준비 중입니다...</h2>
           <p>완료되면 자동으로 인쇄창이 열립니다.</p>
         </body>
       </html>
@@ -323,6 +342,7 @@ export default function OrderManagementPage() {
   }
 
   async function autoOpenInvoicePrintWindow(job) {
+    if (job?.mode === 'prepare') return;
     const printUrl = job.print_url || null;
 
     if (!printUrl) {
@@ -408,6 +428,49 @@ setMessage('송장 생성 중입니다. 새 창에서 진행 상황을 확인하
     }
   }
 
+  async function handleInvoicePrepare(orderSnList) {
+    if (!orderSnList.length) return;
+    setError('');
+    setMessage('');
+    setInvoicePollingError('');
+    setInvoiceFallbackVisible(false);
+    skipHideInvoiceFallbackOnceRef.current = false;
+    setInvoiceJob(null);
+    setInvoiceLoading(true);
+    autoPrintedInvoiceJobRef.current = '';
+
+    try {
+      const result = await prepareInvoiceJob(orderSnList);
+      setInvoiceJob(result.job || {
+        jobId: result.jobId || result.job_id,
+        mode: 'prepare',
+        status: 'queued',
+        total: orderSnList.length,
+        completed: 0,
+        failed: 0,
+        message: '송장 준비 작업을 시작했습니다.',
+        errors: [],
+      });
+      setSelectedOrders([]);
+      setMessage('송장 준비 중입니다. 완료되면 송장출력대기 상태로 표시됩니다.');
+    } catch (err) {
+      if (err.code === 'ALREADY_RUNNING' && (err.job || err.jobId)) {
+        setInvoiceJob(err.job || {
+          jobId: err.jobId,
+          mode: 'prepare',
+          status: 'running',
+          message: '이미 송장 작업이 진행 중입니다.',
+          errors: [],
+        });
+        setMessage('이미 송장 작업이 진행 중입니다. 현재 작업 상태를 확인하세요.');
+      } else {
+        setError(formatInvoiceJobError(err.message || '송장 준비에 실패했습니다.'));
+      }
+    } finally {
+      setInvoiceLoading(false);
+    }
+  }
+
 
   async function handleInvoiceDownload() {
     if (!invoiceJob?.jobId) return;
@@ -476,10 +539,18 @@ setMessage('송장 생성 중입니다. 새 창에서 진행 상황을 확인하
           <button
             type="button"
             className="action-btn primary"
+            onClick={() => handleInvoicePrepare(selectedOrders)}
+            disabled={!selectedOrders.length || invoiceLoading || isInvoiceJobActive(invoiceJob)}
+          >
+            {invoiceLoading || isInvoiceJobActive(invoiceJob) ? '송장 작업 중...' : `송장준비 (${selectedOrders.length})`}
+          </button>
+          <button
+            type="button"
+            className="action-btn primary"
             onClick={() => handleInvoice(selectedOrders)}
             disabled={!selectedOrders.length || invoiceLoading || isInvoiceJobActive(invoiceJob)}
           >
-            {invoiceLoading || isInvoiceJobActive(invoiceJob) ? '송장 생성 중...' : `송장출력 (${selectedOrders.length})`}
+            {invoiceLoading || isInvoiceJobActive(invoiceJob) ? '송장 작업 중...' : `송장출력 (${selectedOrders.length})`}
           </button>
           <button type="button" className="action-btn" onClick={handleSync} disabled={syncLoading}>
             {syncLoading ? '동기화 중' : '동기화'}

@@ -666,6 +666,12 @@ label {
   color: #08979c;
 }
 
+.status-label_ready {
+  border-color: #ffd591;
+  background: #fff7e6;
+  color: #ad6800;
+}
+
 .status-ready_to_ship {
   border-color: #91caff;
   background: #e6f4ff;

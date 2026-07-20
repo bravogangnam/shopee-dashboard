@@ -23,6 +23,12 @@ const {
   completeJob,
   failJob,
 } = require('../services/jobManager');
+const {
+  ensureShippingLabelStatusColumns,
+  markLabelReady,
+  markLabelPrinted,
+  markLabelFailed,
+} = require('../services/shippingLabelStatusService');
 
 const MERGED_DIR = path.resolve(__dirname, '../../../data/shipping-labels/_merged');
 if (!fs.existsSync(MERGED_DIR)) fs.mkdirSync(MERGED_DIR, { recursive: true });
@@ -120,10 +126,11 @@ function isWaitingDocumentError(err) {
     /document.*not ready|label.*not ready|Shipping document not ready/i.test(err?.message || '');
 }
 
-async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } = {}) {
-  console.log(`[InvoiceWorker] start job=${jobId} orders=${orderSnList.length}`);
+async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID, prepareOnly = false } = {}) {
+  console.log(`[InvoiceWorker] start job=${jobId} orders=${orderSnList.length} mode=${prepareOnly ? 'prepare' : 'print'}`);
 
   try {
+    await ensureShippingLabelStatusColumns();
     await startJob(jobId, orderSnList.length);
 
     const orderSnStrings = orderSnList.map(o => (typeof o === 'string' ? o : o.order_sn));
@@ -131,6 +138,7 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } =
 
       const [orderRowsRaw] = await db.query(
         `SELECT o.tenant_id, o.order_sn, o.shop_id, o.order_status, o.tracking_number, o.currency,
+                o.shipping_label_status,
                 o.region, o.merchandise_subtotal, s.alias AS shop_alias
          FROM orders o
          LEFT JOIN shops s ON s.tenant_id = o.tenant_id AND s.shop_id = o.shop_id
@@ -220,11 +228,11 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } =
       try {
         const filePath = await labelStorage.save(order.shop_id, order.order_sn, finalPdf, trackingNumber, { tenantId });
         pdfBuffers.push(finalPdf);
-        results.push({ order_sn: order.order_sn, status: 'success', reason: null, filePath });
+        results.push({ order_sn: order.order_sn, status: 'success', reason: null, shop_id: order.shop_id, filePath });
       } catch (saveErr) {
         console.error(`[InvoiceWorker] save error ${order.order_sn}: ${saveErr.message}`);
         pdfBuffers.push(finalPdf);
-        results.push({ order_sn: order.order_sn, status: 'success', reason: 'save_warn', filePath: null });
+        results.push({ order_sn: order.order_sn, status: 'success', reason: 'save_warn', shop_id: order.shop_id, filePath: null });
       }
     };
 
@@ -246,10 +254,12 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } =
             order_sn: order.order_sn,
             status: 'waiting_label',
             reason: '송장 생성 대기 중입니다. Shopee에서 송장 준비가 끝난 뒤 다시 송장출력을 눌러주세요.',
+            shop_id: order.shop_id,
           });
         } else {
           console.error(`[InvoiceWorker] individual document error ${order.order_sn}: ${err.message}`);
-          results.push({ order_sn: order.order_sn, status: 'error', reason: `AWB 다운로드 실패: ${err.message}` });
+          results.push({ order_sn: order.order_sn, status: 'error', reason: `AWB 다운로드 실패: ${err.message}`, shop_id: order.shop_id });
+          await markLabelFailed({ tenantId, shopId: order.shop_id, orderSn: order.order_sn, error: err.message });
         }
       }
       await markOrderProcessed(order.order_sn);
@@ -286,7 +296,18 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } =
             });
           } catch (buildErr) {
             console.error(`[InvoiceWorker] buildInvoicePdf error ${candidate.order.order_sn}: ${buildErr.message}`);
-            results.push({ order_sn: candidate.order.order_sn, status: 'error', reason: `PDF 생성 실패: ${buildErr.message}` });
+            results.push({
+              order_sn: candidate.order.order_sn,
+              status: 'error',
+              reason: `PDF 생성 실패: ${buildErr.message}`,
+              shop_id: candidate.order.shop_id,
+            });
+            await markLabelFailed({
+              tenantId,
+              shopId: candidate.order.shop_id,
+              orderSn: candidate.order.order_sn,
+              error: buildErr.message,
+            });
           }
           await markOrderProcessed(candidate.order.order_sn);
         }
@@ -298,6 +319,7 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } =
               order_sn: candidate.order.order_sn,
               status: 'waiting_label',
               reason: '송장 생성 대기 중입니다. Shopee에서 송장 준비가 끝난 뒤 다시 송장출력을 눌러주세요.',
+              shop_id: candidate.order.shop_id,
             });
             await markOrderProcessed(candidate.order.order_sn);
           }
@@ -318,13 +340,13 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } =
       console.log(`[InvoiceWorker] prepare [${i + 1}/${orderRows.length}] ${order_sn} status=${order_status} tracking=${trackingNumber || 'none'}`);
 
       if (HARD_SKIP_STATUSES.has(order_status)) {
-        results.push({ order_sn, status: 'skipped', reason: `${order_status}: 송장 발행 불가` });
+        results.push({ order_sn, status: 'skipped', reason: `${order_status}: 송장 발행 불가`, shop_id });
         await markOrderProcessed(order_sn);
         continue;
       }
 
       if (order_status === 'COMPLETED') {
-        results.push({ order_sn, status: 'skipped', reason: COMPLETED_SKIP_REASON });
+        results.push({ order_sn, status: 'skipped', reason: COMPLETED_SKIP_REASON, shop_id });
         await markOrderProcessed(order_sn);
         continue;
       }
@@ -339,6 +361,7 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } =
             order_sn,
             status: 'success',
             reason: 'cache',
+            shop_id,
             filePath: labelStorage.filePath(shop_id, order_sn),
           });
           await markOrderProcessed(order_sn);
@@ -347,7 +370,7 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } =
       }
 
       if (order_status !== 'READY_TO_SHIP' && !trackingNumber) {
-        results.push({ order_sn, status: 'skipped', reason: 'tracking_number 없음 - 동기화 후 다시 시도' });
+        results.push({ order_sn, status: 'skipped', reason: 'tracking_number 없음 - 동기화 후 다시 시도', shop_id });
         await markOrderProcessed(order_sn);
         continue;
       }
@@ -357,7 +380,8 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } =
         accessToken = await getAccessToken(shop_id);
       } catch (authErr) {
         console.error(`[InvoiceWorker] auth error shop=${shop_id}: ${authErr.message}`);
-        results.push({ order_sn, status: 'error', reason: `인증 실패: ${authErr.message}` });
+        results.push({ order_sn, status: 'error', reason: `인증 실패: ${authErr.message}`, shop_id });
+        await markLabelFailed({ tenantId, shopId: shop_id, orderSn: order_sn, error: authErr.message });
         await markOrderProcessed(order_sn);
         continue;
       }
@@ -403,7 +427,18 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } =
     for (const readyResult of readyResults) {
       if (readyResult.error) {
         console.error(`[InvoiceWorker] ship_order stage failed ${readyResult.order.order_sn}: ${readyResult.error.message}`);
-        results.push({ order_sn: readyResult.order.order_sn, status: 'error', reason: `배송처리 실패: ${readyResult.error.message}` });
+        results.push({
+          order_sn: readyResult.order.order_sn,
+          status: 'error',
+          reason: `배송처리 실패: ${readyResult.error.message}`,
+          shop_id: readyResult.order.shop_id,
+        });
+        await markLabelFailed({
+          tenantId,
+          shopId: readyResult.order.shop_id,
+          orderSn: readyResult.order.order_sn,
+          error: readyResult.error.message,
+        });
         await markOrderProcessed(readyResult.order.order_sn);
         continue;
       }
@@ -413,6 +448,7 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } =
           order_sn: readyResult.order.order_sn,
           status: readyResult.prepared.status || 'skipped',
           reason: readyResult.prepared.reason || 'AWB 다운로드 불가',
+          shop_id: readyResult.order.shop_id,
         });
         await markOrderProcessed(readyResult.order.order_sn);
         continue;
@@ -500,6 +536,7 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } =
                 order_sn: candidate.order.order_sn,
                 status: 'waiting_label',
                 reason: '운송장 번호 생성 대기 중입니다. 잠시 후 다시 송장출력을 눌러주세요.',
+                shop_id: candidate.order.shop_id,
               });
               await markOrderProcessed(candidate.order.order_sn);
             }
@@ -560,7 +597,13 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } =
 
     // Merge once at the end.
     let mergedPath = null;
-    if (pdfBuffers.length > 0) {
+    if (!prepareOnly && pdfBuffers.length === 1) {
+      const successResult = results.find(result => result.status === 'success' && result.filePath);
+      if (successResult?.filePath && fs.existsSync(successResult.filePath)) {
+        mergedPath = successResult.filePath;
+        console.log(`[InvoiceWorker] single PDF: ${mergedPath}`);
+      }
+    } else if (!prepareOnly && pdfBuffers.length > 1) {
       try {
         const mergedPdf = await mergePdfs(pdfBuffers);
         mergedPath = path.join(MERGED_DIR, `${jobId}.pdf`);
@@ -577,6 +620,7 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } =
     const errorCount = results.filter(r => r.status === 'error').length;
 
     const finalResult = {
+      mode: prepareOnly ? 'prepare' : 'print',
       success: successCount,
       skipped: skippedCount,
       waiting: waitingCount,
@@ -585,6 +629,15 @@ async function runInvoice(jobId, orderSnList, { tenantId = CURRENT_TENANT_ID } =
       merged_pdf_path: mergedPath,
       results,
     };
+
+    for (const result of results) {
+      if (result.status !== 'success' || !result.shop_id) continue;
+      if (prepareOnly) {
+        await markLabelReady({ tenantId, shopId: result.shop_id, orderSn: result.order_sn });
+      } else {
+        await markLabelPrinted({ tenantId, shopId: result.shop_id, orderSn: result.order_sn });
+      }
+    }
 
     await updateProgress(jobId, orderRows.length, orderRows.length, '완료');
     await safeUpdateJobResult(jobId, finalResult, 'final');

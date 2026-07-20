@@ -5,19 +5,13 @@ const { RangePicker } = DatePicker;
 
 const REGIONS = ['ALL', 'SG', 'MY', 'PH', 'TW'];
 
-const ALL_PERIOD_STATUSES = new Set([
-  'PENDING',
-  'IN_CANCEL',
-  'TO_RETURN',
-  'CANCELLED',
-]);
 const STATUSES = [
   { value: '', label: '전체' },
   { value: 'UNPAID', label: '결제 대기' },
   { value: 'PENDING', label: '펜딩' },
-  { value: 'READY_TO_SHIP', label: '발송 대기' },
-  { value: 'PROCESSED', label: '발송 처리' },
-  { value: 'RETRY_SHIP', label: '재배송' },
+  { value: 'READY_TO_SHIP', label: '송장준비' },
+  { value: 'LABEL_READY', label: '송장출력대기' },
+  { value: 'PROCESSED', label: '발송처리' },
   { value: 'SHIPPED', label: '배송 중' },
   { value: 'TO_CONFIRM_RECEIVE', label: '수취 확인' },
   { value: 'COMPLETED', label: '배송 완료' },
@@ -33,16 +27,14 @@ function getStatusCount(stats, status) {
 }
 
 export default function OrderManagementFilters({ filters, stats, onChange, onSubmit, onReset }) {
-  const isAllPeriodStatus = ALL_PERIOD_STATUSES.has(
-    filters.order_status
-  );
+  const isAllPeriodStatus = Boolean(filters.order_status);
 
   const dateRangeValue = filters.date_from && filters.date_to
     ? [dayjs(filters.date_from), dayjs(filters.date_to)]
     : null;
 
   function setField(field, value) {
-    if (field === 'order_status' && ALL_PERIOD_STATUSES.has(value)) {
+    if (field === 'order_status' && value) {
       onChange({
         ...filters,
         order_status: value,

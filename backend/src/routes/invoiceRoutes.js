@@ -44,7 +44,52 @@ router.get('/jobs/:jobId/print', async (req, res) => {
   }
 
   const pdfUrl = `/api/invoices/jobs/${encodeURIComponent(job.id)}/print-pdf?token=${encodeURIComponent(expectedToken)}`;
-  return res.redirect(302, pdfUrl);
+  return res.send(`<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>송장 인쇄</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #f3f4f6; font-family: Arial, sans-serif; }
+    .toolbar { position: fixed; top: 12px; right: 12px; z-index: 2; display: flex; gap: 8px; }
+    button, a { border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: #0f172a; padding: 8px 12px; font-weight: 700; text-decoration: none; cursor: pointer; }
+    iframe { width: 100%; height: 100%; border: 0; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button type="button" onclick="printPdf()">인쇄창 열기</button>
+    <a href="${pdfUrl}" target="_blank" rel="noreferrer">PDF 열기</a>
+  </div>
+  <iframe id="invoicePdf" src="${pdfUrl}" title="송장 PDF"></iframe>
+  <script>
+    let printed = false;
+    const notifyComplete = () => {
+      try {
+        if (window.opener) {
+          window.opener.postMessage({ type: 'INVOICE_PRINT_COMPLETE' }, window.location.origin);
+        }
+      } catch (error) {}
+    };
+    function printPdf() {
+      const frame = document.getElementById('invoicePdf');
+      try {
+        frame.contentWindow.focus();
+        frame.contentWindow.print();
+        notifyComplete();
+        printed = true;
+      } catch (error) {
+        window.open('${pdfUrl}', '_blank');
+      }
+    }
+    document.getElementById('invoicePdf').addEventListener('load', () => {
+      if (printed) return;
+      setTimeout(printPdf, 350);
+    });
+  </script>
+</body>
+</html>`);
 });
 
 router.get('/jobs/:jobId/print-pdf', async (req, res) => {
@@ -188,6 +233,7 @@ function formatInvoiceJob(job) {
   return {
     jobId: job.id,
     id: job.id,
+    mode: resultData.mode || 'print',
     status,
     db_status: job.status,
     total,
@@ -215,7 +261,7 @@ function extractCurrentOrderSn(message) {
   return match ? match[1] : null;
 }
 
-async function startInvoiceJob(req, res, { legacy = false } = {}) {
+async function startInvoiceJob(req, res, { legacy = false, prepareOnly = false } = {}) {
   const tenantId = getCurrentTenantId(req);
   const orderSnList = normalizeOrderSnList(req.body);
 
@@ -245,7 +291,7 @@ async function startInvoiceJob(req, res, { legacy = false } = {}) {
 
   const jobId = await createJob('invoice', { tenantId });
 
-  runInvoice(jobId, orderSnList, { tenantId }).catch(err => {
+  runInvoice(jobId, orderSnList, { tenantId, prepareOnly }).catch(err => {
     console.error('[InvoiceRoute] Unhandled error:', err.message);
   });
 
@@ -253,7 +299,10 @@ async function startInvoiceJob(req, res, { legacy = false } = {}) {
     success: true,
     jobId,
     job_id: jobId,
-    message: legacy
+    mode: prepareOnly ? 'prepare' : 'print',
+    message: prepareOnly
+      ? '송장 준비 작업을 시작했습니다.'
+      : legacy
       ? `송장출력 시작: ${orderSnList.length}건`
       : '송장 생성 작업을 시작했습니다.',
   });
@@ -290,6 +339,10 @@ async function sendInvoiceJobDownload(req, res, jobId) {
 
 router.post('/jobs', async (req, res) => {
   return startInvoiceJob(req, res);
+});
+
+router.post('/jobs/prepare', async (req, res) => {
+  return startInvoiceJob(req, res, { prepareOnly: true });
 });
 
 router.get('/jobs/:jobId', async (req, res) => {

@@ -10,16 +10,20 @@ function statusClass(status) {
 }
 
 function getDisplayStatus(order) {
-  return order?.display_status || order?.order_status;
+  const baseStatus = order?.display_status || order?.order_status;
+  if (baseStatus === 'PROCESSED' && order?.shipping_label_status === 'ready_to_print') {
+    return 'LABEL_READY';
+  }
+  return baseStatus;
 }
 
 function orderStatusLabel(status) {
   const labels = {
     UNPAID: '결제 대기',
     PENDING: '펜딩',
-    READY_TO_SHIP: '발송 대기',
-    PROCESSED: '발송 처리',
-    RETRY_SHIP: '재배송',
+    READY_TO_SHIP: '송장준비',
+    LABEL_READY: '송장출력대기',
+    PROCESSED: '발송처리',
     SHIPPED: '배송 중',
     TO_CONFIRM_RECEIVE: '수취 확인',
     COMPLETED: '배송 완료',

@@ -1038,6 +1038,27 @@ label {
   color: #fff;
 }
 
+html[data-theme='dark'] .order-management-page .region-tab,
+html[data-theme='dark'] .order-management-page .status-tab {
+  border-color: #2f4361;
+  background: #122038;
+  color: #d7e3f2;
+}
+
+html[data-theme='dark'] .order-management-page .region-tab:hover,
+html[data-theme='dark'] .order-management-page .status-tab:hover {
+  border-color: #3b82f6;
+  background: #172b49;
+  color: #f8fbff;
+}
+
+html[data-theme='dark'] .order-management-page .region-tab.active,
+html[data-theme='dark'] .order-management-page .status-tab.active {
+  border-color: #2f80ed;
+  background: #1684ff;
+  color: #fff;
+}
+
 .order-filter-row {
   display: flex;
   flex-wrap: wrap;

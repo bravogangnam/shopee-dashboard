@@ -18,6 +18,7 @@ const getCurrentMonthRange = () => ({
   date_from: dayjs().startOf('month').format('YYYY-MM-DD'),
   date_to: dayjs().format('YYYY-MM-DD'),
 });
+const PAYMENT_BALANCE_AUTO_REFRESH_MS = 5 * 60 * 1000;
 
 const createDefaultFilters = () => ({
   page: 1,
@@ -418,6 +419,7 @@ export default function LedgerPage() {
   }
 
   async function handlePaymentBalanceRefresh() {
+    if (paymentBalancesRefreshing) return;
     setPaymentBalancesRefreshing(true);
     try {
       const response = await refreshPaymentBalances();
@@ -425,6 +427,11 @@ export default function LedgerPage() {
       setPaymentBalances(next);
       ledgerPageCache.paymentBalances = next;
       ledgerPageCache.paymentBalancesLoaded = true;
+      const forecastResponse = await fetchSettlementForecast();
+      const nextForecast = forecastResponse.data || null;
+      setSettlementForecast(nextForecast);
+      ledgerPageCache.settlementForecast = nextForecast;
+      ledgerPageCache.settlementForecastLoaded = true;
       if (response.refresh?.failed) {
         setError(`${response.refresh.failed}개 샵의 지급 가능 금액 조회에 실패했습니다. 기존 저장 금액을 유지했습니다.`);
       }
@@ -434,6 +441,20 @@ export default function LedgerPage() {
       setPaymentBalancesRefreshing(false);
     }
   }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function autoRefreshPaymentBalances() {
+      if (cancelled || document.hidden || paymentBalancesRefreshing) return;
+      await handlePaymentBalanceRefresh();
+    }
+
+    const intervalId = window.setInterval(autoRefreshPaymentBalances, PAYMENT_BALANCE_AUTO_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [paymentBalancesRefreshing]);
 
   const settlementCounts = orders.reduce(
     (acc, order) => {

@@ -18,7 +18,14 @@ async function columnExists(tableName, columnName) {
 
 async function addColumnIfMissing(tableName, columnName, definition) {
   if (await columnExists(tableName, columnName)) return;
-  await db.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  try {
+    await db.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  } catch (err) {
+    if (err?.code === 'ER_DUP_FIELDNAME' || /Duplicate column name/i.test(err?.message || '')) {
+      return;
+    }
+    throw err;
+  }
 }
 
 async function ensureShippingLabelStatusColumns() {

@@ -27,7 +27,33 @@ export function formatKrw(value) {
 
 export function formatDateTime(value) {
   if (isBlank(value)) return '-';
-  return String(value).replace('T', ' ').replace('.000Z', '');
+  const rawValue = String(value);
+  const hasTimezone = /(?:Z|[+-]\d{2}:\d{2})$/.test(rawValue);
+
+  if (!hasTimezone) {
+    return rawValue.replace('T', ' ').replace('.000', '');
+  }
+
+  const date = new Date(rawValue);
+  if (Number.isNaN(date.getTime())) {
+    return rawValue.replace('T', ' ').replace('.000Z', '');
+  }
+
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).formatToParts(date).map((part) => [part.type, part.value])
+  );
+
+  const hour = parts.hour === '24' ? '00' : parts.hour;
+  return `${parts.year}-${parts.month}-${parts.day} ${hour}:${parts.minute}:${parts.second}`;
 }
 
 export function profitTone(value) {

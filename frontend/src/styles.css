@@ -351,8 +351,8 @@ label {
 }
 
 .date-range-field {
-  width: 260px;
-  min-width: 260px !important;
+  width: 390px;
+  min-width: 390px !important;
 }
 
 .filter-field .ant-picker,
@@ -360,6 +360,175 @@ label {
   width: 100%;
   height: 36px;
   min-height: 36px;
+}
+
+.date-range-control {
+  position: relative;
+  display: flex;
+  width: 100%;
+  gap: 8px;
+  align-items: center;
+}
+
+.date-range-control .ant-picker {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.quick-date-range {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.quick-date-trigger {
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid #d6dee9;
+  border-radius: 6px;
+  background: #fff;
+  color: #24405f;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.quick-date-trigger:hover,
+.quick-date-trigger.active {
+  border-color: #2f80ed;
+  background: #eef6ff;
+  color: #1368d6;
+}
+
+.quick-date-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 1100;
+  width: 360px;
+  border: 1px solid #d8e2f0;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.18);
+  padding: 14px;
+}
+
+.quick-date-popover::before {
+  position: absolute;
+  top: -7px;
+  right: 38px;
+  width: 12px;
+  height: 12px;
+  border-top: 1px solid #d8e2f0;
+  border-left: 1px solid #d8e2f0;
+  background: inherit;
+  content: '';
+  transform: rotate(45deg);
+}
+
+.quick-date-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 2px 12px;
+  border-bottom: 1px solid #edf1f7;
+}
+
+.quick-date-header strong {
+  color: #102033;
+  font-size: 14px;
+}
+
+.quick-date-year {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #dce5f2;
+  border-radius: 999px;
+  background: #f7faff;
+  padding: 3px;
+}
+
+.quick-date-year button {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #5b6f8a;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.quick-date-year button:hover {
+  background: #e8f1ff;
+  color: #1267d8;
+}
+
+.quick-date-year span {
+  min-width: 42px;
+  color: #1f3654;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.quick-date-section {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+.quick-date-section > span {
+  color: #7b8ba2;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.quick-date-grid {
+  display: grid;
+  gap: 6px;
+}
+
+.quick-date-month-grid {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.quick-date-quarter-grid {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.quick-date-half-grid {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.quick-date-grid button {
+  height: 34px;
+  border: 1px solid #dbe5f1;
+  border-radius: 8px;
+  background: #f8fbff;
+  color: #29435f;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.quick-date-grid button:hover {
+  border-color: #7bb7ff;
+  background: #edf6ff;
+  color: #0b66d8;
+}
+
+.quick-date-grid button.active {
+  border-color: #1684ff;
+  background: #1684ff;
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(22, 132, 255, 0.22);
 }
 
 .filter-actions {
@@ -8163,6 +8332,90 @@ html[data-theme='dark'] .ledger-page .date-range-field .ant-picker-input input {
 html[data-theme='dark'] .order-management-page .date-range-field .ant-picker-suffix svg,
 html[data-theme='dark'] .ledger-page .date-range-field .ant-picker-suffix svg {
   fill: currentColor;
+}
+
+html[data-theme='dark'] .order-management-page .quick-date-trigger,
+html[data-theme='dark'] .ledger-page .quick-date-trigger {
+  border-color: var(--theme-input-border);
+  background: var(--theme-input-bg);
+  color: var(--theme-text-strong);
+}
+
+html[data-theme='dark'] .order-management-page .quick-date-trigger:hover,
+html[data-theme='dark'] .order-management-page .quick-date-trigger.active,
+html[data-theme='dark'] .ledger-page .quick-date-trigger:hover,
+html[data-theme='dark'] .ledger-page .quick-date-trigger.active {
+  border-color: #3b82f6;
+  background: #172b49;
+  color: #f8fbff;
+}
+
+html[data-theme='dark'] .order-management-page .quick-date-popover,
+html[data-theme='dark'] .ledger-page .quick-date-popover {
+  border-color: var(--theme-border);
+  background: #0f1b2d;
+  box-shadow: 0 22px 55px rgba(0, 0, 0, 0.38);
+}
+
+html[data-theme='dark'] .order-management-page .quick-date-popover::before,
+html[data-theme='dark'] .ledger-page .quick-date-popover::before {
+  border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .order-management-page .quick-date-header,
+html[data-theme='dark'] .ledger-page .quick-date-header {
+  border-color: var(--theme-border-soft);
+}
+
+html[data-theme='dark'] .order-management-page .quick-date-header strong,
+html[data-theme='dark'] .ledger-page .quick-date-header strong {
+  color: var(--theme-text-strong);
+}
+
+html[data-theme='dark'] .order-management-page .quick-date-year,
+html[data-theme='dark'] .ledger-page .quick-date-year {
+  border-color: #2f4361;
+  background: #122038;
+}
+
+html[data-theme='dark'] .order-management-page .quick-date-year button,
+html[data-theme='dark'] .ledger-page .quick-date-year button {
+  color: #b7c7db;
+}
+
+html[data-theme='dark'] .order-management-page .quick-date-year button:hover,
+html[data-theme='dark'] .ledger-page .quick-date-year button:hover {
+  background: #1b3354;
+  color: #ffffff;
+}
+
+html[data-theme='dark'] .order-management-page .quick-date-year span,
+html[data-theme='dark'] .ledger-page .quick-date-year span,
+html[data-theme='dark'] .order-management-page .quick-date-section > span,
+html[data-theme='dark'] .ledger-page .quick-date-section > span {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme='dark'] .order-management-page .quick-date-grid button,
+html[data-theme='dark'] .ledger-page .quick-date-grid button {
+  border-color: #2f4361;
+  background: #122038;
+  color: #d7e3f2;
+}
+
+html[data-theme='dark'] .order-management-page .quick-date-grid button:hover,
+html[data-theme='dark'] .ledger-page .quick-date-grid button:hover {
+  border-color: #3b82f6;
+  background: #172b49;
+  color: #f8fbff;
+}
+
+html[data-theme='dark'] .order-management-page .quick-date-grid button.active,
+html[data-theme='dark'] .ledger-page .quick-date-grid button.active {
+  border-color: #1684ff;
+  background: #1684ff;
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(22, 132, 255, 0.28);
 }
 
 html[data-theme='dark'] .inventory-page .today-order-toolbar {

@@ -1,5 +1,6 @@
 import { DatePicker } from 'antd';
 import dayjs from 'dayjs';
+import QuickDateRangePicker from './QuickDateRangePicker.jsx';
 
 const { RangePicker } = DatePicker;
 
@@ -47,6 +48,14 @@ export default function OrderFilters({
     });
   }
 
+  function setQuickDateRange(range) {
+    onChange({
+      ...filters,
+      date_from: range.date_from,
+      date_to: range.date_to,
+    });
+  }
+
   return (
     <form className="filters" onSubmit={onSubmit}>
       <label className="filter-field order-search-field">
@@ -75,14 +84,21 @@ export default function OrderFilters({
       </label>
       <label className="filter-field date-range-field">
         기간
-        <RangePicker
-          allowClear
-          format="YYYY-MM-DD"
-          value={dateRangeValue}
-          onChange={setDateRange}
-          placeholder={['시작일', '종료일']}
-          style={{ width: 260 }}
-        />
+        <div className="date-range-control">
+          <RangePicker
+            allowClear
+            format="YYYY-MM-DD"
+            value={dateRangeValue}
+            onChange={setDateRange}
+            placeholder={['시작일', '종료일']}
+            style={{ width: 260 }}
+          />
+          <QuickDateRangePicker
+            dateFrom={filters.date_from}
+            dateTo={filters.date_to}
+            onSelect={setQuickDateRange}
+          />
+        </div>
       </label>
         <label className="filter-field settlement-filter-field">
           확정상태

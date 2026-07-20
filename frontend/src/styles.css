@@ -5936,6 +5936,12 @@ html[data-theme='dark'] .ledger-page .chart-summary-pill:nth-child(7) strong { c
   font-weight: 600;
 }
 
+html[data-theme='dark'] .order-management-page .order-all-period-notice {
+  border-color: var(--theme-input-border);
+  background: var(--theme-input-bg);
+  color: var(--theme-text-strong);
+}
+
 
 /* =========================================================
    Buyer History Modal

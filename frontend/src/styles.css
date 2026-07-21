@@ -4394,6 +4394,17 @@ html[data-theme='dark'] .order-management-page .status-tab.active {
   border-radius: 6px;
 }
 
+.product-capture-no-image {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  color: #94a3b8;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+}
+
 .product-capture-image-label {
   min-height: 20px;
   overflow: hidden;

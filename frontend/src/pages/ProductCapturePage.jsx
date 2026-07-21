@@ -64,9 +64,13 @@ function safeStem(value, fallback) {
   return stem || fallback;
 }
 
-function uniqueOptionImages(products) {
-  const seen = new Set();
-  return products.flatMap((product) => product.rows.map((row) => ({ ...row, productName: product.name }))).filter((row) => row.optionImage && !seen.has(row.optionImage) && seen.add(row.optionImage));
+function orderedOptionRows(products) {
+  let sequence = 0;
+  return products.flatMap((product) => product.rows.map((row) => ({
+    ...row,
+    productName: product.name,
+    sequence: ++sequence,
+  })));
 }
 
 export default function ProductCapturePage() {
@@ -78,7 +82,7 @@ export default function ProductCapturePage() {
 
   const tableRows = useMemo(() => state.products.flatMap((product) => product.rows.map((row, idx) => ({ id: `${product.id}-${idx}`, productId: product.id, rowIndex: idx, productName: product.name, ...row, isFirst: idx === 0 }))), [state.products]);
   const mainImages = useMemo(() => state.products.flatMap((product) => product.mainImages), [state.products]);
-  const optionImages = useMemo(() => uniqueOptionImages(state.products), [state.products]);
+  const optionImages = useMemo(() => orderedOptionRows(state.products), [state.products]);
 
   function persist(nextState) {
     const normalized = normalizeStoredState(nextState);
@@ -147,9 +151,17 @@ export default function ProductCapturePage() {
     setDownloading(true); setError(''); setMessage('');
     const failures = [];
     const usedNames = new Map();
-    for (let index = 0; index < items.length; index += 1) {
-      const item = items[index];
-      const base = kind === 'main' ? `main_${String(index + 1).padStart(2, '0')}` : `option_${safeStem(item.option, '사진')}`;
+    const seenUrls = new Set();
+    const downloadableItems = items.filter((item) => {
+      const url = item.url || item.optionImage;
+      if (!url || (kind === 'option' && seenUrls.has(url))) return false;
+      seenUrls.add(url);
+      return true;
+    });
+    for (let index = 0; index < downloadableItems.length; index += 1) {
+      const item = downloadableItems[index];
+      const optionNumber = String(item.sequence || index + 1).padStart(2, '0');
+      const base = kind === 'main' ? `main_${String(index + 1).padStart(2, '0')}` : `option_${optionNumber}_${safeStem(item.option, '사진')}`;
       const count = (usedNames.get(base) || 0) + 1; usedNames.set(base, count);
       const name = count === 1 ? base : `${base}_${count}`;
       try { await downloadImage(item, name); }
@@ -157,7 +169,7 @@ export default function ProductCapturePage() {
     }
     setDownloading(false);
     if (failures.length) setError(`${failures.length}개 이미지 다운로드 실패: ${failures.join(' / ')}`);
-    setMessage(`${items.length - failures.length}개 이미지 다운로드 완료${failures.length ? `, ${failures.length}개 실패` : ''}`);
+    setMessage(`${downloadableItems.length - failures.length}개 이미지 다운로드 완료${failures.length ? `, ${failures.length}개 실패` : ''}`);
   }
 
   return (
@@ -170,7 +182,7 @@ export default function ProductCapturePage() {
       </div>
       <div className="product-capture-image-sections">
         <ImageSection title="메인 사진" empty="수집된 메인 사진이 없습니다" items={mainImages} downloading={downloading} onAll={() => downloadMany(mainImages, 'main')} renderLabel={(_, i) => `메인 사진 ${i + 1}`} onOne={(item, i) => downloadMany([item], 'main')} />
-        <ImageSection title="옵션 사진" empty="수집된 옵션 사진이 없습니다" items={optionImages} downloading={downloading} onAll={() => downloadMany(optionImages, 'option')} renderLabel={(item) => item.option} onOne={(item) => downloadMany([item], 'option')} />
+        <ImageSection title="옵션 사진" empty="수집된 옵션이 없습니다" items={optionImages} downloading={downloading} onAll={() => downloadMany(optionImages, 'option')} renderLabel={(item) => `${item.sequence}. ${item.option}`} onOne={(item) => downloadMany([item], 'option')} />
       </div>
       {error && <div className="alert product-capture-status">{error}</div>}
       {message && <div className="notice product-capture-status">{message}</div>}
@@ -179,5 +191,6 @@ export default function ProductCapturePage() {
 }
 
 function ImageSection({ title, empty, items, downloading, onAll, onOne, renderLabel }) {
-  return <section className="card product-capture-image-panel"><div className="product-capture-image-header"><h3>{title}</h3><button type="button" className="action-btn" disabled={!items.length || downloading} onClick={onAll}>{title} 전체 다운로드</button></div>{items.length ? <div className="product-capture-image-grid">{items.map((item, index) => { const url = item.url || item.optionImage; return <article className="product-capture-image-card" key={url}><div className="product-capture-image-label">{renderLabel(item, index)}</div><img src={url} alt={renderLabel(item, index)} loading="lazy" referrerPolicy="no-referrer" /><button type="button" className="action-btn" disabled={downloading} onClick={() => onOne(item, index)}>개별 다운로드</button></article>; })}</div> : <p className="product-capture-image-empty">{empty}</p>}</section>;
+  const downloadableCount = items.filter((item) => item.url || item.optionImage).length;
+  return <section className="card product-capture-image-panel"><div className="product-capture-image-header"><h3>{title}</h3><button type="button" className="action-btn" disabled={!downloadableCount || downloading} onClick={onAll}>{title} 전체 다운로드</button></div>{items.length ? <div className="product-capture-image-grid">{items.map((item, index) => { const url = item.url || item.optionImage; const label = renderLabel(item, index); return <article className="product-capture-image-card" key={`${item.sequence || index}-${url || 'no-image'}`}><div className="product-capture-image-label" title={label}>{label}</div>{url ? <img src={url} alt={label} loading="lazy" referrerPolicy="no-referrer" /> : <div className="product-capture-no-image">사진 없음</div>}<button type="button" className="action-btn" disabled={!url || downloading} onClick={() => onOne(item, index)}>개별 다운로드</button></article>; })}</div> : <p className="product-capture-image-empty">{empty}</p>}</section>;
 }

@@ -4360,6 +4360,8 @@ html[data-theme='dark'] .order-management-page .status-tab.active {
   gap: 14px;
 }
 
+.naver-detail-panel { grid-column: 1 / -1; }
+
 .product-capture-image-header {
   display: flex;
   align-items: center;

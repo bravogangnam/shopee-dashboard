@@ -48,6 +48,11 @@ function naverCollector() {
     }));
     return map;
   };
+  const collectDetailImages = () => {
+    const documents = [document];
+    document.querySelectorAll('iframe').forEach((frame) => { try { if (frame.contentDocument) documents.push(frame.contentDocument); } catch {} });
+    return unique(documents.flatMap((doc) => [...doc.querySelectorAll('img.se-image-resource, .se-main-container img')].map((element) => element.dataset.src || element.dataset.original || element.currentSrc || element.src)));
+  };
   const fallbackCopy = (text) => {
     const textarea = document.createElement('textarea');
     textarea.value = text;
@@ -67,6 +72,7 @@ function naverCollector() {
         ...(product.optionalImageUrls || []), ...(product.productImages || []), ...(product.channelProductImages || []), ...(product.galleryImages || []),
       ]).map((url) => ({ url }));
       const imageMap = optionImageMap(product);
+      const detailImages = collectDetailImages().map((url) => ({ url }));
       const combinations = Array.isArray(product.optionCombinations) ? product.optionCombinations : [];
       const rows = combinations.length ? combinations.map((option) => {
         const parts = [1, 2, 3, 4, 5].map((index) => clean(option[`optionName${index}`])).filter(Boolean);
@@ -76,9 +82,9 @@ function naverCollector() {
         const price = Number(option.dispDiscountedSalePrice ?? option.discountedSalePrice ?? (basePrice + Number(option.price || 0)));
         return { optionName, price, optionImage: directImage || mappedImage };
       }) : [{ optionName: '-', price: basePrice, optionImage: '' }];
-      const payload = { source: 'naver', productName, mainImages, rows };
+      const payload = { source: 'naver', productName, mainImages, detailImages, rows };
       const text = JSON.stringify(payload, null, 2);
-      try { await navigator.clipboard.writeText(text); toast(`네이버 상품수집 완료 · 옵션 ${rows.length}개 · 메인 사진 ${mainImages.length}장`); }
+      try { await navigator.clipboard.writeText(text); toast(`네이버 상품수집 완료 · 옵션 ${rows.length}개 · 메인 ${mainImages.length}장 · 상세 ${detailImages.length}장`); }
       catch { fallbackCopy(text); }
     } catch (error) { toast(`네이버 상품수집 실패: ${error.message}`, true); }
   })();
@@ -94,6 +100,7 @@ function normalizeState(raw) {
   return { product: {
     name: String(product.name || ''),
     mainImages: [...new Set((product.mainImages || []).map((item) => cleanUrl(item?.url || item)).filter(Boolean))].map((url) => ({ url })),
+    detailImages: [...new Set((product.detailImages || []).map((item) => cleanUrl(item?.url || item)).filter(Boolean))].map((url) => ({ url })),
     rows: (product.rows || []).map((row) => ({ option: String(row.option || '-'), price: String(row.price ?? ''), optionImage: cleanUrl(row.optionImage) })),
   } };
 }
@@ -106,6 +113,7 @@ function parseCapture(text) {
   return normalizeState({ product: {
     name: parsed.productName,
     mainImages: parsed.mainImages,
+    detailImages: parsed.detailImages,
     rows: parsed.rows.map((row) => ({ option: row.optionName ?? row.option ?? '-', price: row.price, optionImage: row.optionImage })),
   } }).product;
 }
@@ -136,7 +144,7 @@ export default function NaverProductCapturePage() {
   };
   const downloadMany = async (items, kind) => {
     setDownloading(true); setError(''); const seen = new Set(), failures = []; const targets = items.filter((item) => { const url = item.url || item.optionImage; if (!url || seen.has(url)) return false; seen.add(url); return true; });
-    for (let index = 0; index < targets.length; index += 1) { const item = targets[index], number = String(item.sequence || index + 1).padStart(2, '0'), name = kind === 'main' ? `main_${number}` : `option_${number}_${safeStem(item.option)}`; try { await downloadOne(item.url || item.optionImage, name); } catch (e) { failures.push(`${name}: ${e.message}`); } }
+    for (let index = 0; index < targets.length; index += 1) { const item = targets[index], number = String(item.sequence || index + 1).padStart(2, '0'), name = kind === 'main' ? `main_${number}` : kind === 'detail' ? `detail_${number}` : `option_${number}_${safeStem(item.option)}`; try { await downloadOne(item.url || item.optionImage, name); } catch (e) { failures.push(`${name}: ${e.message}`); } }
     setDownloading(false); setMessage(`${targets.length - failures.length}개 이미지 다운로드 완료`); if (failures.length) setError(`${failures.length}개 실패: ${failures.join(' / ')}`);
   };
 
@@ -150,11 +158,12 @@ export default function NaverProductCapturePage() {
     <div className="product-capture-image-sections">
       <NaverImages title="메인 사진" items={(product?.mainImages || []).map((item, index) => ({ ...item, sequence: index + 1 }))} empty="수집된 메인 사진이 없습니다" downloading={downloading} onAll={(items) => downloadMany(items, 'main')} onOne={(item) => downloadMany([item], 'main')} />
       <NaverImages title="옵션 사진" items={optionRows} empty="수집된 옵션이 없습니다" downloading={downloading} onAll={(items) => downloadMany(items, 'option')} onOne={(item) => downloadMany([item], 'option')} />
+      <NaverImages className="naver-detail-panel" title="상세 사진" items={(product?.detailImages || []).map((item, index) => ({ ...item, sequence: index + 1 }))} empty="수집된 상세 사진이 없습니다" downloading={downloading} onAll={(items) => downloadMany(items, 'detail')} onOne={(item) => downloadMany([item], 'detail')} />
     </div>
     {error && <div className="alert product-capture-status">{error}</div>}{message && <div className="notice product-capture-status">{message}</div>}
   </section>;
 }
 
-function NaverImages({ title, items, empty, downloading, onAll, onOne }) {
-  return <section className="card"><div className="product-capture-image-header"><h3>{title}</h3><button className="action-btn" type="button" disabled={downloading || !items.some((item) => item.url || item.optionImage)} onClick={() => onAll(items)}>{title} 전체 다운로드</button></div>{items.length ? <div className="product-capture-image-grid">{items.map((item, index) => { const url = item.url || item.optionImage, label = title === '메인 사진' ? `메인 사진 ${item.sequence}` : `${item.sequence}. ${item.option}`; return <article className="product-capture-image-card" key={`${item.sequence}-${url || index}`}><div className="product-capture-image-label" title={label}>{label}</div>{url ? <img src={url} alt={label} referrerPolicy="no-referrer" /> : <div className="product-capture-no-image">사진 없음</div>}<button className="action-btn" type="button" disabled={!url || downloading} onClick={() => onOne(item)}>개별 다운로드</button></article>; })}</div> : <p className="product-capture-image-empty">{empty}</p>}</section>;
+function NaverImages({ className = '', title, items, empty, downloading, onAll, onOne }) {
+  return <section className={`card ${className}`}><div className="product-capture-image-header"><h3>{title}</h3><button className="action-btn" type="button" disabled={downloading || !items.some((item) => item.url || item.optionImage)} onClick={() => onAll(items)}>{title} 전체 다운로드</button></div>{items.length ? <div className="product-capture-image-grid">{items.map((item, index) => { const url = item.url || item.optionImage, label = title === '옵션 사진' ? `${item.sequence}. ${item.option}` : `${title} ${item.sequence}`; return <article className="product-capture-image-card" key={`${item.sequence}-${url || index}`}><div className="product-capture-image-label" title={label}>{label}</div>{url ? <img src={url} alt={label} referrerPolicy="no-referrer" /> : <div className="product-capture-no-image">사진 없음</div>}<button className="action-btn" type="button" disabled={!url || downloading} onClick={() => onOne(item)}>개별 다운로드</button></article>; })}</div> : <p className="product-capture-image-empty">{empty}</p>}</section>;
 }

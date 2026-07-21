@@ -5,7 +5,9 @@ function isAllowedImageUrl(value) {
     const host = url.hostname.toLowerCase();
     return /(^|\.)shopee\.[a-z.]+$/.test(host)
       || /(^|\.)susercontent\.com$/.test(host)
-      || /(^|\.)shopeemobile\.com$/.test(host);
+      || /(^|\.)shopeemobile\.com$/.test(host)
+      || /(^|\.)pstatic\.net$/.test(host)
+      || /(^|\.)phinf\.naver\.net$/.test(host);
   } catch {
     return false;
   }

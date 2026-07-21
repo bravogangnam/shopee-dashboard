@@ -14,6 +14,10 @@ router.get('/image-download', requireAuth, async (req, res) => {
   if (!isAllowedImageUrl(sourceUrl)) return res.status(400).json({ error: '허용되지 않은 이미지 URL입니다.' });
 
   try {
+    const sourceHost = new URL(sourceUrl).hostname.toLowerCase();
+    const referer = sourceHost.endsWith('pstatic.net') || sourceHost.endsWith('phinf.naver.net')
+      ? 'https://shopping.naver.com/'
+      : 'https://shopee.sg/';
     const upstream = await axios.get(sourceUrl, {
       responseType: 'stream',
       timeout: 20000,
@@ -21,7 +25,7 @@ router.get('/image-download', requireAuth, async (req, res) => {
       maxContentLength: 30 * 1024 * 1024,
       headers: {
         Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8',
-        Referer: 'https://shopee.sg/',
+        Referer: referer,
         'User-Agent': 'Mozilla/5.0 (compatible; ShopeeDashboardImageDownloader/1.0)',
       },
       validateStatus: (status) => status >= 200 && status < 300,

@@ -111,12 +111,16 @@ const safeStem = (value) => String(value || '파일').normalize('NFC').replace(/
 function normalizeState(raw) {
   const product = raw?.product;
   if (!product) return { product: null };
+  const name = String(product.name || '');
   return { product: {
-    name: String(product.name || ''), warning: String(product.warning || ''),
+    name, warning: String(product.warning || ''),
     mainImages: [...new Set((product.mainImages || []).map((item) => cleanUrl(item?.url || item)).filter(Boolean))].map((url) => ({ url })),
     detailImages: [...new Set((product.detailImages || []).map((item) => cleanUrl(item?.url || item)).filter(Boolean))].map((url) => ({ url })),
     detailVideos: [...new Map((product.detailVideos || []).filter((item) => /^[A-F0-9]+$/i.test(item?.vid || '') && item?.inkey).map((item) => [item.vid, { vid: String(item.vid), inkey: String(item.inkey), thumbnail: cleanUrl(item.thumbnail) }])).values()],
-    rows: (product.rows || []).map((row) => ({ option: String(row.option || '-'), price: String(row.price ?? ''), optionImage: cleanUrl(row.optionImage) })),
+    rows: (product.rows || []).map((row) => {
+      const option = String(row.option || '-');
+      return { productName: String(row.productName || (option === '-' ? name : `${name} ${option}`)), option, price: String(row.price ?? ''), optionImage: cleanUrl(row.optionImage) };
+    }),
   } };
 }
 
@@ -134,8 +138,11 @@ export default function NaverProductCapturePage() {
   const persist = (next) => { const normalized = normalizeState(next); setState(normalized); localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized)); };
   const handlePaste = (value) => { setPasteText(value); if (!value.trim()) { localStorage.removeItem(STORAGE_KEY); setState({ product: null }); setError(''); setMessage(''); return; } try { const next = parseCapture(value); persist({ product: next }); setError(next.warning ? `일부 정보 제한: ${next.warning}. 페이지에 표시된 정보와 사진·동영상은 수집했습니다.` : ''); setMessage('붙여넣기 자동 적용 완료'); } catch (e) { if (value.trim().endsWith('}')) setError(`붙여넣기 오류: ${e.message}`); } };
   const reset = () => { localStorage.removeItem(STORAGE_KEY); setState({ product: null }); setPasteText(''); setError(''); setMessage(''); };
-  const updateName = (name) => persist({ product: { ...product, name } });
-  const updateRow = (index, patch) => persist({ product: { ...product, rows: product.rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row) } });
+  const updateRow = (index, patch) => persist({ product: { ...product, rows: product.rows.map((row, rowIndex) => {
+    if (rowIndex !== index) return row;
+    if (patch.option !== undefined) return { ...row, ...patch, productName: patch.option === '-' ? product.name : `${product.name} ${patch.option}` };
+    return { ...row, ...patch };
+  }) } });
   const copy = async (text, success) => { try { await navigator.clipboard.writeText(normalizeClipboardText(text)); setMessage(success); setError(''); } catch { setError('복사에 실패했습니다.'); } };
   const authHeaders = () => { const token = getStoredToken(); return token ? { Authorization: `Bearer ${token}` } : {}; };
   const saveResponse = async (response, fallbackName) => { if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || `HTTP ${response.status}`); } const blob = await response.blob(); const disposition = response.headers.get('content-disposition') || ''; const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]; const objectUrl = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = objectUrl; anchor.download = encoded ? decodeURIComponent(encoded) : fallbackName; document.body.appendChild(anchor); anchor.click(); anchor.remove(); setTimeout(() => URL.revokeObjectURL(objectUrl), 1000); };
@@ -149,8 +156,8 @@ export default function NaverProductCapturePage() {
     <div className="page-header"><div><h1>네이버 상품 수집</h1><p>네이버 브랜드스토어와 스마트스토어의 상품명, 옵션, 가격, 상품 사진과 상세 사진·동영상을 수집합니다.</p></div></div>
     <div className="card"><h3>네이버 북마클릿 안내</h3><p>아래 링크를 <strong>북마크바로 드래그해서 등록</strong>하세요.</p><div className="bookmarklet-actions"><button className="action-btn" type="button" onClick={() => navigator.clipboard.writeText(BOOKMARKLET_CODE)}>북마클릿 코드 복사</button><a className="action-btn" href={BOOKMARKLET_CODE} onClick={(e) => e.preventDefault()}>네이버 상품수집 (드래그 등록)</a></div></div>
     <div className="product-capture-workspace">
-      <section className="card"><h3>상품정보 붙여넣기</h3><textarea rows={3} value={pasteText} onChange={(e) => handlePaste(e.target.value)} placeholder="네이버 북마클릿 JSON을 붙여넣으세요." /><div className="product-capture-paste-actions"><button className="action-btn" type="button" onClick={reset}>전체 초기화</button><button className="action-btn" type="button" disabled={!product} onClick={() => copy(optionRows.map((row) => row.option === '-' ? product.name : `${product.name}\t${row.option}`).join('\n'), '상품명+옵션명 복사 완료')}>상품명+옵션명 복사</button><button className="action-btn" type="button" disabled={!product} onClick={() => copy(optionRows.map((row) => row.price).join('\n'), '가격 복사 완료')}>가격 복사</button></div></section>
-      <section className="card product-capture-reference-panel"><h3>수집 결과</h3><div className="table-wrap product-capture-result-wrap"><table className="table"><thead><tr><th>상품명</th><th>옵션명</th><th>가격</th></tr></thead><tbody>{optionRows.length ? optionRows.map((row, index) => <tr key={index}><td>{index === 0 ? <input value={product.name} onChange={(e) => updateName(e.target.value)} /> : ''}</td><td><input value={row.option} onChange={(e) => updateRow(index, { option: e.target.value })} /></td><td><input value={row.price} onChange={(e) => updateRow(index, { price: e.target.value })} /></td></tr>) : <tr><td colSpan="3" className="empty-cell">네이버 수집 JSON을 붙여넣으세요.</td></tr>}</tbody></table></div></section>
+      <section className="card"><h3>상품정보 붙여넣기</h3><textarea rows={3} value={pasteText} onChange={(e) => handlePaste(e.target.value)} placeholder="네이버 북마클릿 JSON을 붙여넣으세요." /><div className="product-capture-paste-actions"><button className="action-btn" type="button" onClick={reset}>전체 초기화</button><button className="action-btn" type="button" disabled={!product} onClick={() => copy(optionRows.map((row) => row.productName).join('\n'), '상품명 복사 완료')}>상품명 복사</button><button className="action-btn" type="button" disabled={!product} onClick={() => copy(optionRows.map((row) => row.option).join('\n'), '옵션명 복사 완료')}>옵션명 복사</button><button className="action-btn" type="button" disabled={!product} onClick={() => copy(optionRows.map((row) => row.option === '-' ? product.name : `${product.name}\t${row.option}`).join('\n'), '상품명+옵션명 복사 완료')}>상품명+옵션명 복사</button><button className="action-btn" type="button" disabled={!product} onClick={() => copy(optionRows.map((row) => row.price).join('\n'), '가격 복사 완료')}>가격 복사</button></div></section>
+      <section className="card product-capture-reference-panel"><h3>수집 결과</h3><div className="table-wrap product-capture-result-wrap"><table className="table"><thead><tr><th>상품명</th><th>옵션명</th><th>가격</th></tr></thead><tbody>{optionRows.length ? optionRows.map((row, index) => <tr key={index}><td><input value={row.productName} onChange={(e) => updateRow(index, { productName: e.target.value })} /></td><td><input value={row.option} onChange={(e) => updateRow(index, { option: e.target.value })} /></td><td><input value={row.price} onChange={(e) => updateRow(index, { price: e.target.value })} /></td></tr>) : <tr><td colSpan="3" className="empty-cell">네이버 수집 JSON을 붙여넣으세요.</td></tr>}</tbody></table></div></section>
     </div>
     <div className="product-capture-image-sections">
       <NaverImages title="메인 사진" items={(product?.mainImages || []).map((item, index) => ({ ...item, sequence: index + 1 }))} empty="수집된 메인 사진이 없습니다" downloading={downloading} onAll={(items) => downloadMany(items, 'main')} onOne={(item) => downloadMany([item], 'main')} />

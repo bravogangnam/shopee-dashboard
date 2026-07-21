@@ -15,6 +15,16 @@ const BOOKMARKLET_CODE_WITH_IMAGES = BOOKMARKLET_CODE
   .replace('optionObjects.push(o);const n=opt(o)', 'optionObjects.push(o);optionPictures.push((Array.isArray(imgs(group))?imgs(group):[])[v]);const n=opt(o)')
   .replace('...optionObjects.map(o=>', '...optionPictures,...optionObjects.map(o=>');
 
+const BOOKMARKLET_CODE_READY = BOOKMARKLET_CODE_WITH_IMAGES
+  .replace(
+    'javascript:(async()=>{const c=',
+    'javascript:(async()=>{const toast=(m,b=false)=>{const e=document.createElement("div");e.textContent=m;Object.assign(e.style,{position:"fixed",top:"20px",right:"20px",maxWidth:"420px",padding:"14px 18px",borderRadius:"10px",background:b?"#b91c1c":"#166534",color:"white",fontSize:"14px",fontWeight:"700",lineHeight:"1.5",boxShadow:"0 12px 30px rgba(0,0,0,.28)",zIndex:"2147483647",transition:"opacity .3s"});document.body.appendChild(e);setTimeout(()=>{e.style.opacity="0";setTimeout(()=>e.remove(),300)},4000)},c=',
+  )
+  .replace('alert("현재 URL에서 Shopee item_id를 찾지 못했습니다. 상품 URL을 확인하세요.")', 'toast("현재 URL에서 Shopee item_id를 찾지 못했습니다. 상품 URL을 확인하세요.",true)')
+  .replace('alert("현재 상품과 일치하는 모델 데이터를 찾지 못했습니다. 페이지가 완전히 로딩된 뒤 다시 실행하세요.")', 'toast("현재 상품과 일치하는 모델 데이터를 찾지 못했습니다. 페이지가 완전히 로딩된 뒤 다시 실행하세요.",true)')
+  .replace('alert("복사창이 열렸습니다. Ctrl+C 후 붙여넣기 해보세요.")', 'toast("자동 복사에 실패했습니다. 열린 복사창에서 Ctrl+C를 눌러주세요.",true)')
+  .replace('alert("Shopee 상품수집 복사 완료: "+rows.length+"행, 메인 사진 "+main.length+"장")', 'toast("상품수집 완료 · 옵션 "+rows.length+"개 · 메인 사진 "+main.length+"장")');
+
 const cleanUrl = (value) => (typeof value === 'string' && /^https?:\/\//i.test(value.trim()) ? value.trim() : '');
 
 function normalizeStoredState(raw) {
@@ -115,7 +125,6 @@ export default function ProductCapturePage() {
   }
 
   function resetAll() {
-    if (!window.confirm('붙여넣기와 수집 데이터를 전부 초기화할까요?')) return;
     localStorage.removeItem(STORAGE_KEY);
     setState(normalizeStoredState({})); setPasteText(''); setError(''); setMessage('');
   }
@@ -175,7 +184,7 @@ export default function ProductCapturePage() {
   return (
     <section className="page product-capture-page">
       <div className="page-header"><div><h1>상품 수집</h1><p>Shopee 상품명, 옵션명, 가격과 상품 사진을 수집해 정리합니다.</p></div></div>
-      <div className="card product-capture-bookmarklet-panel"><h3>북마클릿 안내</h3><p>아래 링크를 <strong>북마크바로 드래그해서 등록</strong>하세요.</p><div className="bookmarklet-actions"><button type="button" className="action-btn" onClick={() => navigator.clipboard.writeText(BOOKMARKLET_CODE_WITH_IMAGES)}>북마클릿 코드 복사</button><a className="action-btn" href={BOOKMARKLET_CODE_WITH_IMAGES} onClick={(e) => e.preventDefault()}>Shopee 상품수집 (드래그 등록용)</a></div></div>
+      <div className="card product-capture-bookmarklet-panel"><h3>북마클릿 안내</h3><p>아래 링크를 <strong>북마크바로 드래그해서 등록</strong>하세요.</p><div className="bookmarklet-actions"><button type="button" className="action-btn" onClick={() => navigator.clipboard.writeText(BOOKMARKLET_CODE_READY)}>북마클릿 코드 복사</button><a className="action-btn" href={BOOKMARKLET_CODE_READY} onClick={(e) => e.preventDefault()}>Shopee 상품수집 (드래그 등록용)</a></div></div>
       <div className="product-capture-workspace">
         <section className="card product-capture-paste-panel"><h3>상품정보 붙여넣기</h3><textarea rows={3} value={pasteText} onChange={(e) => handlePasteTextChange(e.target.value)} placeholder="북마클릿 JSON을 붙여넣으세요. 붙여넣으면 자동 적용됩니다." /><div className="product-capture-paste-actions"><button type="button" className="action-btn" onClick={resetAll}>전체 초기화</button><button type="button" className="action-btn" onClick={copyNamesAndOptions} disabled={!tableRows.length}>상품명+옵션명 복사</button><button type="button" className="action-btn" onClick={copyPrices} disabled={!tableRows.length}>가격 복사</button></div></section>
         <section className="card product-capture-reference-panel"><h3>수집 결과</h3><div className="table-wrap product-capture-result-wrap"><table className="table product-capture-result-table"><colgroup><col className="product-capture-name-col" /><col className="product-capture-option-col" /><col className="product-capture-price-col" /></colgroup><thead><tr><th>상품명</th><th>옵션명</th><th>가격</th></tr></thead><tbody>{tableRows.length ? tableRows.map((row) => <tr key={row.id}><td>{row.isFirst ? <input value={row.productName} onChange={(e) => updateProductName(row.productId, e.target.value)} /> : ''}</td><td><input value={row.option} onChange={(e) => updateRow(row.productId, row.rowIndex, { option: e.target.value })} /></td><td><input value={row.price} onChange={(e) => updateRow(row.productId, row.rowIndex, { price: e.target.value })} /></td></tr>) : <tr><td colSpan="3" className="empty-cell">북마클릿 JSON을 붙여넣으면 수집 결과가 표시됩니다.</td></tr>}</tbody></table></div></section>

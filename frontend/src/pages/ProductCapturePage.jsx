@@ -16,6 +16,7 @@ const BOOKMARKLET_CODE_WITH_IMAGES = BOOKMARKLET_CODE
   .replace('...optionObjects.map(o=>', '...optionPictures,...optionObjects.map(o=>');
 
 const BOOKMARKLET_CODE_READY = BOOKMARKLET_CODE_WITH_IMAGES
+  .replace('if(n>=100000)return(n/100000).toFixed(2);if(n>=1000)return(n/100).toFixed(2)', 'if(n>=1000)return(n/100000).toFixed(2)')
   .replace(
     'javascript:(async()=>{const c=',
     'javascript:(async()=>{const toast=(m,b=false)=>{const e=document.createElement("div");e.textContent=m;Object.assign(e.style,{position:"fixed",top:"20px",right:"20px",maxWidth:"420px",padding:"14px 18px",borderRadius:"10px",background:b?"#b91c1c":"#166534",color:"white",fontSize:"14px",fontWeight:"700",lineHeight:"1.5",boxShadow:"0 12px 30px rgba(0,0,0,.28)",zIndex:"2147483647",transition:"opacity .3s"});document.body.appendChild(e);setTimeout(()=>{e.style.opacity="0";setTimeout(()=>e.remove(),300)},4000)},c=',

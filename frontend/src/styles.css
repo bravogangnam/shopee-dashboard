@@ -9150,6 +9150,8 @@ html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-range-end .ant-pic
 }
 
 .server-storage-card {
+  display: flex;
+  flex-direction: column;
   grid-column: 1 / -1;
   gap: 14px;
   min-height: 0;
@@ -9171,6 +9173,8 @@ html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-range-end .ant-pic
 
 .server-storage-heading p {
   margin-top: 4px;
+  color: var(--theme-text-muted, #64748b);
+  font-size: 13px;
 }
 
 .server-storage-summary {

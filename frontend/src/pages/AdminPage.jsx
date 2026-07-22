@@ -7,6 +7,7 @@ import {
   rejectTenant,
   suspendTenant,
 } from '../api/admin.js';
+import { cleanupServerStorage, fetchServerStorage } from '../api/settings.js';
 
 const STATUS_OPTIONS = [
   { value: '', label: '전체' },
@@ -40,6 +41,19 @@ function formatDate(value) {
   }
 }
 
+function formatStorageBytes(value) {
+  const bytes = Number(value || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let size = bytes / 1024;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size >= 10 ? size.toFixed(1) : size.toFixed(2)} ${units[unitIndex]}`;
+}
+
 export default function AdminPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [tenants, setTenants] = useState([]);
@@ -48,6 +62,9 @@ export default function AdminPage() {
   const [actionLoading, setActionLoading] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [serverStorage, setServerStorage] = useState(null);
+  const [storageLoading, setStorageLoading] = useState(true);
+  const [storageCleanupLoading, setStorageCleanupLoading] = useState(false);
 
   const tenantStats = useMemo(() => {
     return tenants.reduce(
@@ -80,9 +97,46 @@ export default function AdminPage() {
     }
   }, [statusFilter]);
 
+  const loadServerStorage = useCallback(async () => {
+    setStorageLoading(true);
+    try {
+      const result = await fetchServerStorage();
+      setServerStorage(result.data || null);
+    } catch (err) {
+      setError(err.message || '서버 용량을 확인하지 못했습니다.');
+    } finally {
+      setStorageLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadAdminData();
   }, [loadAdminData]);
+
+  useEffect(() => {
+    loadServerStorage();
+  }, [loadServerStorage]);
+
+  async function handleServerCleanup() {
+    const confirmed = window.confirm(
+      '임시 합본 PDF, 45일이 지난 개별 송장, 최신 3개를 제외한 배포 백업, 애플리케이션 로그만 정리합니다. 주문·정산·재고·DB·브랜드 배경 이미지는 삭제하지 않습니다. 계속할까요?'
+    );
+    if (!confirmed) return;
+
+    setStorageCleanupLoading(true);
+    setError('');
+    setMessage('');
+    try {
+      const result = await cleanupServerStorage();
+      const data = result.data || {};
+      setServerStorage(data.after || null);
+      setMessage(`안전 정리 완료: ${formatStorageBytes(data.deletedBytes)}를 정리했습니다.`);
+    } catch (err) {
+      setError(err.message || '서버 안전 정리에 실패했습니다.');
+    } finally {
+      setStorageCleanupLoading(false);
+    }
+  }
 
   async function runTenantAction(type, tenant) {
     const reasonRequired = type === 'reject' || type === 'suspend';
@@ -176,6 +230,47 @@ export default function AdminPage() {
           <strong>{tenantStats.suspended || 0}</strong>
         </div>
       </div>
+
+      <section className="panel admin-panel server-storage-card">
+        <div className="server-storage-heading">
+          <div>
+            <h2>서버 저장공간</h2>
+            <p>서버 용량을 확인하고 다시 만들 수 있는 안전한 파일만 정리합니다.</p>
+          </div>
+          <button type="button" className="secondary-button" onClick={loadServerStorage} disabled={storageLoading || storageCleanupLoading}>
+            {storageLoading ? '확인 중...' : '용량 새로고침'}
+          </button>
+        </div>
+
+        {serverStorage ? (
+          <>
+            <div className="server-storage-summary">
+              <div><span>전체 용량</span><strong>{formatStorageBytes(serverStorage.volume?.totalBytes)}</strong></div>
+              <div><span>사용 중</span><strong>{formatStorageBytes(serverStorage.volume?.usedBytes)}</strong></div>
+              <div><span>사용 가능</span><strong>{formatStorageBytes(serverStorage.volume?.availableBytes)}</strong></div>
+              <div><span>정리 가능</span><strong className="cleanup-amount">{formatStorageBytes(serverStorage.cleanup?.reclaimableBytes)}</strong></div>
+            </div>
+            <div className="server-storage-meter" aria-label={`서버 사용률 ${serverStorage.volume?.usedPercent || 0}%`}>
+              <span style={{ width: `${Math.min(100, Number(serverStorage.volume?.usedPercent || 0))}%` }} />
+            </div>
+            <div className="server-storage-meta">
+              <span>사용률 <strong>{serverStorage.volume?.usedPercent || 0}%</strong></span>
+              <span>송장 {serverStorage.cleanup?.labels?.files || 0}개</span>
+              <span>오래된 배포 백업 {serverStorage.cleanup?.frontendBackups?.count || 0}개</span>
+              <span>정리 가능한 로그 {serverStorage.cleanup?.logs?.count || 0}개</span>
+            </div>
+          </>
+        ) : (
+          <p>{storageLoading ? '서버 용량을 확인하고 있습니다.' : '용량 새로고침을 눌러 확인하세요.'}</p>
+        )}
+
+        <div className="server-storage-actions">
+          <button type="button" className="primary-button" onClick={handleServerCleanup} disabled={storageCleanupLoading || storageLoading}>
+            {storageCleanupLoading ? '안전 정리 중...' : '안전한 데이터 정리'}
+          </button>
+          <small>주문·정산·재고·DB·브랜드 배경 이미지는 삭제하지 않습니다.</small>
+        </div>
+      </section>
 
       <div className="admin-toolbar">
         <label>

@@ -561,32 +561,36 @@ export default function BrandImageMakerPage() {
   }
 
   function addProductFiles(fileList) {
-    const files = Array.from(fileList || []).filter(
-      (file) => file.type === "image/png" || /\.png$/i.test(file.name),
+    const selected = Array.from(fileList || []);
+    const supported = selected.filter(
+      (file) =>
+        /^image\/(png|jpeg|webp|gif|bmp|avif)$/i.test(file.type) ||
+        /\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(file.name),
     );
-    setImages((current) => {
-      const existingKeys = new Set(
-        current.map((item) => `${item.file.name}-${item.file.size}-${item.file.lastModified}`),
-      );
-      const added = files
-        .filter((file) => {
-          const key = `${file.name}-${file.size}-${file.lastModified}`;
-          if (existingKeys.has(key)) return false;
-          existingKeys.add(key);
-          return true;
-        })
-        .map((file, index) => ({
-          id: `${file.name}-${file.size}-${file.lastModified}-${Date.now()}-${index}`,
-          file,
-          filename: file.name,
-          sku: skuFromFilename(file.name),
-          url: URL.createObjectURL(file),
-        }));
-      return [...current, ...added];
-    });
+    const existingKeys = new Set(
+      imagesRef.current.map(
+        (item) => `${item.file.name}-${item.file.size}-${item.file.lastModified}`,
+      ),
+    );
+    const added = supported
+      .filter((file) => {
+        const key = `${file.name}-${file.size}-${file.lastModified}`;
+        if (existingKeys.has(key)) return false;
+        existingKeys.add(key);
+        return true;
+      })
+      .map((file, index) => ({
+        id: `${file.name}-${file.size}-${file.lastModified}-${Date.now()}-${index}`,
+        file,
+        filename: file.name,
+        sku: skuFromFilename(file.name),
+        url: URL.createObjectURL(file),
+      }));
+    if (added.length) setImages((current) => [...current, ...added]);
+    const skipped = selected.length - added.length;
     setMessage(
-      files.length
-        ? `제품 PNG를 추가했습니다. 중복 파일은 제외되며 모두 1000×1000 작업판에 자동 맞춤됩니다.`
+      selected.length
+        ? `제품 이미지 ${added.length}장을 추가했습니다.${skipped ? ` 중복·지원하지 않는 파일 ${skipped}장은 제외했습니다.` : ""} 모두 1000×1000 작업판에 자동 맞춤됩니다.`
         : "",
     );
   }
@@ -830,7 +834,7 @@ export default function BrandImageMakerPage() {
               <span>3</span>
               <div>
                 <h2>제품 누끼 업로드</h2>
-                <p>SKU-c.png 여러 장을 선택하세요.</p>
+                <p>SKU-c 형식의 PNG·JPG·WebP 이미지를 선택하세요.</p>
               </div>
             </div>
             <b>{images.length}장</b>
@@ -853,11 +857,11 @@ export default function BrandImageMakerPage() {
           >
             <input
               type="file"
-              accept="image/png"
+              accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/avif"
               multiple
               onChange={handleFiles}
             />
-            <strong>제품 PNG 선택 또는 드래그</strong>
+            <strong>제품 이미지 선택 또는 드래그</strong>
             <span>여러 번 추가 가능 · 크기가 달라도 1000×1000에 자동 맞춤</span>
           </label>
         </section>
@@ -1075,7 +1079,7 @@ export default function BrandImageMakerPage() {
           </div>
         ) : (
           <div className="brand-maker-empty">
-            브랜드 목록과 제품 PNG를 준비하세요.
+            브랜드 목록과 제품 이미지를 준비하세요.
           </div>
         )}
       </section>

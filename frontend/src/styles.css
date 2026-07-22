@@ -355,6 +355,15 @@ label {
   min-width: 390px !important;
 }
 
+/* Desktop density: keep every authenticated screen fully usable at browser 100%. */
+@media (min-width: 1200px) {
+  .app-shell {
+    width: 111.111111%;
+    min-height: 111.111111vh;
+    zoom: 0.9;
+  }
+}
+
 .filter-field .ant-picker,
 .date-range-field .ant-picker {
   width: 100%;

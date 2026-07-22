@@ -315,6 +315,26 @@ router.get('/dashboard', async (req, res) => {
        p.supply_rate,
        p.discounted_price_with_vat,
        p.cost_price,
+       COALESCE(
+         (
+           SELECT NULLIF(TRIM(r.supplier), '')
+           FROM stock_receipts r
+           WHERE r.tenant_id = p.tenant_id
+             AND r.sku COLLATE utf8mb4_unicode_ci = p.sku COLLATE utf8mb4_unicode_ci
+             AND NULLIF(TRIM(r.supplier), '') IS NOT NULL
+           ORDER BY r.created_at DESC, r.id DESC
+           LIMIT 1
+         ),
+         (
+           SELECT NULLIF(TRIM(b.supplier), '')
+           FROM inventory_batches b
+           WHERE b.tenant_id = p.tenant_id
+             AND b.sku COLLATE utf8mb4_unicode_ci = p.sku COLLATE utf8mb4_unicode_ci
+             AND NULLIF(TRIM(b.supplier), '') IS NOT NULL
+           ORDER BY COALESCE(b.received_at, b.created_at) DESC, b.id DESC
+           LIMIT 1
+         )
+       ) AS latest_supplier,
        (
          SELECT ROUND(b.unit_cost * 1.1, 0)
          FROM inventory_batches b
@@ -957,6 +977,26 @@ router.get('/product-search', async (req, res) => {
        cost_price_with_vat,
        discounted_price_with_vat,
        supply_rate,
+       COALESCE(
+         (
+           SELECT NULLIF(TRIM(r.supplier), '')
+           FROM stock_receipts r
+           WHERE r.tenant_id = products.tenant_id
+             AND r.sku COLLATE utf8mb4_unicode_ci = products.sku COLLATE utf8mb4_unicode_ci
+             AND NULLIF(TRIM(r.supplier), '') IS NOT NULL
+           ORDER BY r.created_at DESC, r.id DESC
+           LIMIT 1
+         ),
+         (
+           SELECT NULLIF(TRIM(b.supplier), '')
+           FROM inventory_batches b
+           WHERE b.tenant_id = products.tenant_id
+             AND b.sku COLLATE utf8mb4_unicode_ci = products.sku COLLATE utf8mb4_unicode_ci
+             AND NULLIF(TRIM(b.supplier), '') IS NOT NULL
+           ORDER BY COALESCE(b.received_at, b.created_at) DESC, b.id DESC
+           LIMIT 1
+         )
+       ) AS latest_supplier,
        (
          SELECT ROUND(b.unit_cost * 1.1, 0)
          FROM inventory_batches b

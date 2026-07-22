@@ -284,6 +284,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
       supply_rate: product.supply_rate
         ? String(Math.round(Number(product.supply_rate) <= 1 ? Number(product.supply_rate) * 100 : Number(product.supply_rate)))
         : '100',
+      supplier: product.latest_supplier || '',
       memo: current.memo || '추가입고',
     }));
   }

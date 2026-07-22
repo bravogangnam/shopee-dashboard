@@ -301,7 +301,23 @@ label {
 
 .page {
   display: grid;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   gap: 16px;
+}
+
+.ledger-page {
+  overflow-x: clip;
+}
+
+.ledger-page > *,
+.ledger-page .summary-cards,
+.ledger-page .payout-balance-panel,
+.ledger-page .chart-card,
+.ledger-page .filters {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .page-header {
@@ -603,6 +619,8 @@ label {
 }
 
 .chart-card {
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #fff;
@@ -638,6 +656,8 @@ label {
 
 .chart-body {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 280px;
 }
 
@@ -2721,7 +2741,11 @@ html[data-theme='dark'] .order-management-page .status-tab.active {
 
 /* Ledger order table sticky header */
 .ledger-table-wrap {
-  overflow: visible;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: visible;
 }
 
 .ledger-table-wrap .data-table thead th {
@@ -4088,6 +4112,8 @@ html[data-theme='dark'] .order-management-page .status-tab.active {
 }
 
 .receipt-month-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
   margin-bottom: 4px;
 }
 
@@ -4135,7 +4161,37 @@ html[data-theme='dark'] .order-management-page .status-tab.active {
 }
 
 .receipt-month-summary .receipt-summary-card {
-  padding: 16px 18px;
+  position: relative;
+  min-height: 96px;
+  justify-content: center;
+  gap: 5px;
+  overflow: hidden;
+  padding: 15px 16px 15px 18px;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.receipt-month-summary .receipt-summary-card::before {
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: #3b82f6;
+  content: '';
+}
+
+.receipt-month-summary .receipt-summary-card:nth-child(n + 3)::before {
+  background: #f59e0b;
+}
+
+.receipt-month-summary .receipt-summary-card:nth-child(n + 3) {
+  background: linear-gradient(145deg, #ffffff 0%, #fffbeb 100%);
+}
+
+.receipt-month-summary .receipt-summary-card small {
+  line-height: 1.4;
 }
 
 .receipt-card h2 {
@@ -8217,6 +8273,18 @@ html[data-theme='dark'] input[type='datetime-local']::-webkit-calendar-picker-in
   background: #f1f5f9;
 }
 
+@media (max-width: 1500px) {
+  .payout-balance-summary-row {
+    grid-template-columns: minmax(250px, 0.7fr) minmax(0, 2fr);
+    gap: 14px;
+  }
+
+  .payout-balance-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+}
+
 @media (max-width: 1050px) {
   .payout-balance-summary-row {
     grid-template-columns: 1fr auto;
@@ -8853,4 +8921,12 @@ html[data-theme='dark'] .inventory-page .cancellation-summary-card,
 html[data-theme='dark'] .product-analytics-page .pa-country-grid article {
   border-color: #304660 !important;
   background: #15243a !important;
+}
+
+html[data-theme='dark'] .receipt-page .receipt-month-summary .receipt-summary-card {
+  background: linear-gradient(145deg, #15243a 0%, #122238 100%) !important;
+}
+
+html[data-theme='dark'] .receipt-page .receipt-month-summary .receipt-summary-card:nth-child(n + 3) {
+  background: linear-gradient(145deg, #15243a 0%, #292516 100%) !important;
 }

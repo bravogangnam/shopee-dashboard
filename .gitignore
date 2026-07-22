@@ -1,6 +1,7 @@
 .env
 backend/.env
 node_modules/
+.playwright-cli/
 backend/node_modules/
 frontend/node_modules/
 logs/

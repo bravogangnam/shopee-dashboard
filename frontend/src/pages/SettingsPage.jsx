@@ -58,11 +58,6 @@ function getJobPayload(result) {
 
 function GoogleSheetSettingsSection() {
   const [googleSheetId, setGoogleSheetId] = useState('');
-  const [sheetNames, setSheetNames] = useState({
-    chart: '차트',
-    receipts: '입고관리',
-    skuCompositions: '상품구성표',
-  });
   const [timestamps, setTimestamps] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -84,15 +79,8 @@ function GoogleSheetSettingsSection() {
         const settings = result.settings || {};
         if (!cancelled) {
           setGoogleSheetId(settings.google_sheet_id || '');
-          setSheetNames(settings.sheet_names || {
-            chart: '차트',
-            receipts: '입고관리',
-            skuCompositions: '상품구성표',
-          });
           setTimestamps({
             last_chart_synced_at: settings.last_chart_synced_at,
-            last_receipt_synced_at: settings.last_receipt_synced_at,
-            last_composition_synced_at: settings.last_composition_synced_at,
           });
         }
       } catch (err) {
@@ -169,10 +157,14 @@ function GoogleSheetSettingsSection() {
 
   return (
     <section className="settings-section google-sheet-settings-section">
-      <h2>Google Sheet 연결</h2>
-      <p className="settings-help-text">
-        제공된 템플릿을 복사해서 사용하세요. 시트명과 컬럼 위치는 변경하면 안 됩니다.
-      </p>
+      <div className="settings-section-heading">
+        <div>
+          <span className="settings-eyebrow">PRODUCT DATA</span>
+          <h2>마진차트 Google Sheet</h2>
+          <p className="settings-help-text">상품 원가와 한글 상품명을 가져오는 차트 시트를 연결합니다.</p>
+        </div>
+        <span className="settings-state-chip">최근 동기화 {timestamps.last_chart_synced_at || '기록 없음'}</span>
+      </div>
 
       <div className="settings-grid">
         <label className="settings-field google-sheet-id-field">
@@ -186,39 +178,20 @@ function GoogleSheetSettingsSection() {
         </label>
       </div>
 
-      <div className="fixed-sheet-names">
-        <strong>고정 시트명</strong>
-        <span>차트: {sheetNames.chart}</span>
-        <span>입고관리: {sheetNames.receipts}</span>
-        <span>상품구성표: {sheetNames.skuCompositions}</span>
-      </div>
-
-      <div className="google-sheet-sync-status">
-        <span>차트 동기화: {timestamps.last_chart_synced_at || '-'}</span>
-        <span>입고관리 동기화: {timestamps.last_receipt_synced_at || '-'}</span>
-        <span>상품구성표 동기화: {timestamps.last_composition_synced_at || '-'}</span>
-      </div>
-
       {error ? <p className="error-text">{error}</p> : null}
       {message ? <p className="success-text">{message}</p> : null}
 
-      <button
-        type="button"
-        className="btn btn-primary"
-        onClick={handleSave}
-        disabled={loading || saving}
-      >
-        {saving ? '저장 중...' : 'Google Sheet ID 저장'}
-      </button>
-
       <div className="google-sheet-action-row">
+        <button type="button" className="btn btn-primary" onClick={handleSave} disabled={loading || saving}>
+          {saving ? '저장 중...' : '연결 정보 저장'}
+        </button>
         <button
           type="button"
           className="btn btn-secondary"
           onClick={handleTestChartSheet}
           disabled={loading || testingChart || !googleSheetId.trim()}
         >
-          {testingChart ? '테스트 중...' : '차트 읽기 테스트'}
+          {testingChart ? '확인 중...' : '연결 확인'}
         </button>
 
         <button
@@ -227,7 +200,7 @@ function GoogleSheetSettingsSection() {
           onClick={handleSyncChartSheet}
           disabled={loading || syncingChart || !googleSheetId.trim()}
         >
-          {syncingChart ? '동기화 중...' : '마진차트 동기화'}
+          {syncingChart ? '동기화 중...' : '지금 동기화'}
         </button>
       </div>
 
@@ -558,7 +531,7 @@ export default function SettingsPage() {
       <div className="page-header">
         <div>
           <h1>설정</h1>
-          <p>Shopee 계정, 샵, 백필, 연결 테스트, 환율을 관리합니다.</p>
+          <p>외부 서비스 연결과 운영에 필요한 기준을 관리합니다.</p>
         </div>
       </div>
 
@@ -591,7 +564,17 @@ export default function SettingsPage() {
       <GoogleSheetSettingsSection />
 
       <section className="settings-section">
-        <h2>Shopee API 계정</h2>
+        <div className="settings-section-heading">
+          <div>
+            <span className="settings-eyebrow">SHOPEE CONNECTION</span>
+            <h2>Shopee API 계정</h2>
+            <p className="settings-help-text">인증 계정과 토큰 상태를 확인합니다.</p>
+          </div>
+          <div className="token-status compact">
+            <span className={tokenBadgeClass(tokenStatus?.token_status)}>{tokenStatus?.token_status === 'active' ? '연결 정상' : tokenStatus?.token_status === 'expired' ? '인증 만료' : '연결 정보 없음'}</span>
+            <span>만료 {formatDateTime(tokenStatus?.token_expires_at)}</span>
+          </div>
+        </div>
           {!isPlatformAdmin ? (
             <p className="settings-help-text">
               Main Account ID는 Shopee 인증 후 자동으로 표시됩니다. Merchant ID는 직접 입력하지 않습니다.
@@ -637,10 +620,6 @@ export default function SettingsPage() {
           </label>
           ) : null}
         </div>
-        <div className="token-status">
-          <span className={tokenBadgeClass(tokenStatus?.token_status)}>{tokenStatus?.token_status || 'none'}</span>
-          <span>만료: {formatDateTime(tokenStatus?.token_expires_at)}</span>
-        </div>
         <div className="settings-actions">
           <button type="button" className="btn btn-outline" onClick={handleRefreshToken} disabled={loading.refresh}>
             토큰 갱신
@@ -656,9 +635,16 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="settings-section backfill-section">
+      <div className="settings-group-heading">
+        <span>OPERATIONS</span>
+        <h2>운영 도구</h2>
+        <p>필요할 때만 실행하는 관리 기능입니다.</p>
+      </div>
+
+      <div className="settings-tools-grid">
+      <section className="settings-section settings-tool-card backfill-section">
         <h2>데이터 백필</h2>
-        <p>2026-01-01 ~ 현재까지의 주문 데이터를 수집합니다.</p>
+        <p>누락된 과거 주문을 2026-01-01부터 다시 수집합니다.</p>
         <button type="button" className="btn btn-primary" onClick={handleBackfill} disabled={loading.backfill}>
           {loading.backfill ? '실행 중...' : '백필 실행'}
         </button>
@@ -671,8 +657,9 @@ export default function SettingsPage() {
         )}
       </section>
 
-      <section className="settings-section platform-admin-test-section">
+      <section className="settings-section settings-tool-card platform-admin-test-section">
         <h2>Shopee API 연결 테스트</h2>
+        <p className="settings-help-text">연결된 전체 샵의 API 응답을 확인합니다.</p>
         <button type="button" className="btn btn-primary" onClick={handleConnectionTest} disabled={loading.connection}>
           {loading.connection ? '테스트 중...' : '연결 테스트'}
         </button>
@@ -705,10 +692,10 @@ export default function SettingsPage() {
       </section>
 
 
-      <section className="settings-section">
+      <section className="settings-section settings-tool-card">
         <h2>송장 파일 정리</h2>
         <p className="settings-help-text">
-          Shopee 공식 개별 송장 PDF는 기본 45일간 보관하고, 합본 송장은 영구 보관하지 않습니다. 이 작업은 송장 PDF 파일만 삭제하며 주문, 상품, FIFO, 재고, 정산 데이터는 삭제하지 않습니다.
+          45일이 지난 개별 송장과 임시 합본 PDF만 정리합니다. 주문·정산·재고 데이터는 유지됩니다.
         </p>
         <button
           type="button"
@@ -719,15 +706,19 @@ export default function SettingsPage() {
           {loading.shippingLabelCleanup ? '정리 중...' : '송장 파일 정리 실행'}
         </button>
       </section>
+      </div>
 
-      <section className="settings-section">
+      <section className="settings-section shops-section">
         <div className="section-header">
-          <h2>샵 관리 ({shops.length}개)</h2>
+          <div>
+            <span className="settings-eyebrow">CONNECTED SHOPS</span>
+            <h2>연결된 샵 <span className="settings-count">{shops.length}</span></h2>
+          </div>
           <button type="button" className="btn btn-primary" onClick={handleSyncShopProfiles} disabled={loading.shopProfileSync || loading.shops}>
             {loading.shopProfileSync ? '동기화 중...' : '샵 정보 동기화'}
           </button>
         </div>
-        <table className="shop-table">
+        <div className="settings-table-wrap"><table className="shop-table">
           <thead>
             <tr>
               <th>Shop ID</th>
@@ -799,11 +790,17 @@ export default function SettingsPage() {
               </tr>
             )}
           </tbody>
-        </table>
+        </table></div>
       </section>
 
-      <section className="settings-section platform-admin-rates-section">
-        <h2>환율 관리</h2>
+      <section className="settings-section platform-admin-rates-section exchange-rate-section">
+        <div className="settings-section-heading">
+          <div>
+            <span className="settings-eyebrow">EXCHANGE RATE</span>
+            <h2>환율 관리</h2>
+            <p className="settings-help-text">정산과 원화 환산에 적용할 기준 환율입니다.</p>
+          </div>
+        </div>
         {rates.map(rate => (
           <div className="rate-row" key={rate.currency}>
             <span className="currency-badge">{rate.currency}</span>
@@ -845,7 +842,7 @@ export default function SettingsPage() {
             저장
           </button>
         </div>
-        <p className="rate-note">* 환율 수정 후 [저장] 버튼을 클릭하세요.</p>
+        <p className="rate-note">변경한 환율은 저장 버튼을 눌러야 반영됩니다.</p>
       </section>
     </section>
   );

@@ -8916,6 +8916,192 @@ html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-range-end .ant-pic
   box-shadow: inset -2px 0 0 #e5e7eb !important;
 }
 
+/* Settings information architecture refresh */
+.settings-page .settings-section {
+  margin-bottom: 18px;
+  padding: 22px 24px;
+  border-radius: 14px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.035);
+}
+
+.settings-section-heading,
+.settings-page .settings-section .section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.settings-section-heading {
+  margin-bottom: 18px;
+}
+
+.settings-section-heading h2,
+.settings-page .settings-section .section-header h2 {
+  margin-bottom: 5px;
+}
+
+.settings-eyebrow,
+.settings-group-heading > span {
+  display: block;
+  margin-bottom: 5px;
+  color: #2563eb;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.settings-group-heading {
+  margin: 28px 2px 12px;
+}
+
+.settings-group-heading h2 {
+  margin: 0 0 4px;
+  color: #172033;
+  font-size: 19px;
+}
+
+.settings-group-heading p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.settings-state-chip,
+.settings-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.settings-count {
+  min-height: 22px;
+  margin-left: 5px;
+  padding: 2px 8px;
+  vertical-align: 2px;
+}
+
+.settings-page .settings-help-text {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.55;
+}
+
+.settings-page .token-status.compact {
+  margin: 0;
+  justify-content: flex-end;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.settings-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.settings-table-wrap .shop-table th {
+  background: #f8fafc;
+}
+
+.settings-table-wrap .shop-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.settings-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.settings-tools-grid .settings-section {
+  margin: 0;
+}
+
+.member-settings .settings-tools-grid {
+  grid-template-columns: 1fr;
+}
+
+.settings-tool-card {
+  display: flex;
+  min-height: 176px;
+  flex-direction: column;
+}
+
+.settings-tool-card h2 {
+  margin-bottom: 8px;
+  font-size: 16px;
+}
+
+.settings-tool-card > p {
+  min-height: 42px;
+  margin: 0 0 14px;
+  line-height: 1.55;
+}
+
+.settings-tool-card > .btn {
+  align-self: flex-start;
+  margin-top: auto;
+}
+
+html[data-theme='dark'] .settings-group-heading h2,
+html[data-theme='dark'] .settings-section-heading h2 {
+  color: var(--theme-text-strong) !important;
+}
+
+html[data-theme='dark'] .settings-group-heading p,
+html[data-theme='dark'] .settings-page .token-status.compact {
+  color: var(--theme-text-muted) !important;
+}
+
+html[data-theme='dark'] .settings-state-chip,
+html[data-theme='dark'] .settings-count {
+  background: var(--theme-primary-soft) !important;
+  color: #93c5fd !important;
+}
+
+html[data-theme='dark'] .settings-table-wrap {
+  border-color: var(--theme-border) !important;
+}
+
+html[data-theme='dark'] .settings-table-wrap .shop-table th {
+  background: var(--theme-surface-soft) !important;
+}
+
+@media (max-width: 1100px) {
+  .settings-tools-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-tool-card {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .settings-section-heading,
+  .settings-page .settings-section .section-header {
+    flex-direction: column;
+  }
+
+  .settings-page .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-page .token-status.compact {
+    justify-content: flex-start;
+  }
+}
+
 /* Settlement forecast inside the existing Shopee payout balance panel. */
 .payout-forecast { border-top: 1px solid #e6edf6; background: #fff; padding: 16px 20px; }
 .payout-forecast-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 12px; }

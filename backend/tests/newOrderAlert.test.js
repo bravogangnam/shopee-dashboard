@@ -38,6 +38,7 @@ const syncWorker = fs.readFileSync(path.join(__dirname, '../src/jobs/syncWorker.
 assert.match(pushService, /notifyNewOrderOnce/);
 assert.match(pushService, /applied\.displayStatus === 'READY_TO_SHIP'/);
 assert.match(syncWorker, /notifyNewOrderOnce/);
-assert.match(syncWorker, /orderRow\.display_status === 'READY_TO_SHIP'/);
+assert.match(syncWorker, /applied\.displayStatus === 'READY_TO_SHIP'/);
+assert.match(syncWorker, /applied\.previousDisplayStatus !== 'READY_TO_SHIP'/);
 
 console.log('new order Telegram alert tests passed');

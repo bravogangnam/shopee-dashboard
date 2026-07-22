@@ -378,6 +378,7 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID, discoveryMode = 'n
             // ── DB INSERT ──
             const insertStart = t();
             const insertedKeySet = new Set();
+            const readyToShipAlertKeySet = new Set();
             for (const orderRow of orderRows) {
               const orderItems = itemRowsAll.filter(item => item.order_sn === orderRow.order_sn);
               const applied = await applyShopeeOrderSnapshot({
@@ -389,34 +390,39 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID, discoveryMode = 'n
               });
               if (applied.created) {
                 insertedKeySet.add(`${orderRow.shop_id}::${orderRow.order_sn}`);
-                if (orderRow.display_status === 'READY_TO_SHIP') {
-                  await notifyNewOrderOnce({
-                    tenantId,
-                    shopId: shop.shop_id,
-                    orderSn: orderRow.order_sn,
-                  });
-                }
               }
               else shopExistingCount++;
+
+              // Discovery re-reads overlapping existing orders. An order can be
+              // inserted as PENDING and become READY_TO_SHIP in this step before
+              // Step 2 sees it, so handle both a new ready order and a transition.
+              if (
+                applied.displayStatus === 'READY_TO_SHIP' &&
+                (applied.created || applied.previousDisplayStatus !== 'READY_TO_SHIP')
+              ) {
+                await notifyNewOrderOnce({
+                  tenantId,
+                  shopId: shop.shop_id,
+                  orderSn: orderRow.order_sn,
+                });
+                readyToShipAlertKeySet.add(`${orderRow.shop_id}::${orderRow.order_sn}`);
+              }
             }
             const inserted = insertedKeySet.size;
-            const insertedItemRows = itemRowsAll.filter(item =>
-              insertedKeySet.has(`${item.shop_id}::${item.order_sn}`)
+            const alertItemRows = itemRowsAll.filter(item =>
+              readyToShipAlertKeySet.has(`${item.shop_id}::${item.order_sn}`)
             );
             console.log(`[Sync][Step1] │  batchInsert: ${ms(insertStart)}  → inserted=${inserted}`);
-              const readyToShipInserted = orderRows.filter(order =>
-                insertedKeySet.has(`${order.shop_id}::${order.order_sn}`) &&
-                order.display_status === 'READY_TO_SHIP'
-              ).length;
-              shopReadyToShipAlertCount += readyToShipInserted;
-              if (readyToShipInserted > 0) {
-                console.log(`[Sync][Step1] │  새주문 알림 대상 READY_TO_SHIP=${readyToShipInserted}건`);
-                const insertedOrderRows = orderRows.filter(order =>
-                  insertedKeySet.has(`${order.shop_id}::${order.order_sn}`)
+              const readyToShipAlertCount = readyToShipAlertKeySet.size;
+              shopReadyToShipAlertCount += readyToShipAlertCount;
+              if (readyToShipAlertCount > 0) {
+                console.log(`[Sync][Step1] │  새주문 알림 대상 READY_TO_SHIP=${readyToShipAlertCount}건`);
+                const alertOrderRows = orderRows.filter(order =>
+                  readyToShipAlertKeySet.has(`${order.shop_id}::${order.order_sn}`)
                 );
                 readyToShipAlertItems.push(...await buildReadyToShipAlertItemsFromRows({
-                  orderRows: insertedOrderRows,
-                  itemRows: insertedItemRows,
+                  orderRows: alertOrderRows,
+                  itemRows: alertItemRows,
                   shop,
                   tenantId,
                 }));

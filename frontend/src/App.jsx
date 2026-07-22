@@ -12,6 +12,7 @@ import AdminPage from './pages/AdminPage.jsx';
 import ProductCapturePage from './pages/ProductCapturePage.jsx';
 import NaverProductCapturePage from './pages/NaverProductCapturePage.jsx';
 import ProductAnalyticsPage from './pages/ProductAnalyticsPage.jsx';
+import BrandImageMakerPage from './pages/BrandImageMakerPage.jsx';
 
 export default function App() {
   return (
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/product-capture" element={<ProductCapturePage />} />
           <Route path="/naver-product-capture" element={<NaverProductCapturePage />} />
+          <Route path="/brand-image-maker" element={<BrandImageMakerPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/settings/rates" element={<Navigate to="/settings" replace />} />
           <Route path="/settings/*" element={<Navigate to="/settings" replace />} />

@@ -80,6 +80,7 @@ const navItems = [
   { to: '/product-analytics', label: '상품 분석', icon: <AnalyticsIcon /> },
   { to: '/product-capture', label: '상품 수집', icon: <ListIcon /> },
   { to: '/naver-product-capture', label: '네이버 수집', icon: <ListIcon /> },
+  { to: '/brand-image-maker', label: '이미지 제작', icon: <InventoryIcon /> },
   { to: '/admin', label: '관리자', icon: <AdminIcon />, adminOnly: true },
   { to: '/settings', label: '설정', icon: <SettingsIcon /> },
 ];

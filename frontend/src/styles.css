@@ -8832,3 +8832,35 @@ html[data-theme='dark'] .product-analytics-page .quick-date-grid button:hover { 
 html[data-theme='dark'] .product-analytics-page .quick-date-grid button.active { border-color:#1684ff; background:#1684ff; color:#fff; box-shadow:0 8px 18px rgba(22,132,255,.28); }
 html[data-theme='dark'] .product-analytics-page .pa-rate.great,html[data-theme='dark'] .product-analytics-page .pa-rate.good { background:#14372d; color:#78d6ad; }html[data-theme='dark'] .product-analytics-page .pa-rate.info { background:#19365d; color:#9ac3ff; }html[data-theme='dark'] .product-analytics-page .pa-rate.warn { background:#3a2c14; color:#f1bf66; }html[data-theme='dark'] .product-analytics-page .pa-rate.bad { background:#3c1f27; color:#f0959d; }html[data-theme='dark'] .product-analytics-page .great,html[data-theme='dark'] .product-analytics-page .good { color:#72d7a9; }html[data-theme='dark'] .product-analytics-page .info { color:#8dbbfa; }html[data-theme='dark'] .product-analytics-page .warn { color:#eec06f; }html[data-theme='dark'] .product-analytics-page .bad { color:#f08e98; }
 @media(max-width:760px){.product-analytics-page .pa-date-field{min-width:100%}.product-analytics-page .date-range-control{align-items:stretch;flex-direction:column}.product-analytics-page .pa-pagination{align-items:flex-start;flex-direction:column}.product-analytics-page .pa-detail-head{padding:18px}.product-analytics-page .pa-detail>h3,.product-analytics-page .pa-detail>.pa-country-grid,.product-analytics-page .pa-detail>.pa-table-wrap,.product-analytics-page .pa-detail>.pa-batches{margin-left:18px;margin-right:18px}}
+
+/* Dark page hierarchy: page canvas → section card → inner control/table. */
+html[data-theme='dark'] .receipt-page,
+html[data-theme='dark'] .inventory-page,
+html[data-theme='dark'] .product-capture-page,
+html[data-theme='dark'] .product-analytics-page {
+  background: #08111f !important;
+}
+
+html[data-theme='dark'] .receipt-page .receipt-card,
+html[data-theme='dark'] .inventory-page .inventory-stat-card,
+html[data-theme='dark'] .inventory-page .receipt-sync-panel,
+html[data-theme='dark'] .inventory-page .today-order-inventory,
+html[data-theme='dark'] .inventory-page .inventory-filters,
+html[data-theme='dark'] .inventory-page .inventory-table-wrap,
+html[data-theme='dark'] .inventory-page .cancellation-inventory-panel,
+html[data-theme='dark'] .product-capture-page .card,
+html[data-theme='dark'] .product-analytics-page .pa-toolbar,
+html[data-theme='dark'] .product-analytics-page .pa-kpis article,
+html[data-theme='dark'] .product-analytics-page .pa-panel {
+  border-color: #2c405d !important;
+  background: #111e31 !important;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.2) !important;
+}
+
+html[data-theme='dark'] .product-capture-page .product-capture-image-card,
+html[data-theme='dark'] .receipt-page .receipt-summary-card,
+html[data-theme='dark'] .inventory-page .cancellation-summary-card,
+html[data-theme='dark'] .product-analytics-page .pa-country-grid article {
+  border-color: #304660 !important;
+  background: #15243a !important;
+}

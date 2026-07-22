@@ -544,14 +544,6 @@ setMessage('송장 생성 중입니다. 새 창에서 진행 상황을 확인하
           <button
             type="button"
             className="action-btn primary"
-            onClick={() => handleInvoicePrepare(selectedOrders)}
-            disabled={!selectedOrders.length || invoiceLoading || isInvoiceJobActive(invoiceJob)}
-          >
-            {invoiceLoading || isInvoiceJobActive(invoiceJob) ? '송장 작업 중...' : `송장준비 (${selectedOrders.length})`}
-          </button>
-          <button
-            type="button"
-            className="action-btn primary"
             onClick={() => handleInvoice(selectedOrders)}
             disabled={!selectedOrders.length || invoiceLoading || isInvoiceJobActive(invoiceJob)}
           >
@@ -597,6 +589,9 @@ setMessage('송장 생성 중입니다. 새 창에서 진행 상황을 확인하
         onSubmit={handleSubmit}
         onReset={handleReset}
         onApply={handleApplyFilters}
+        onInvoicePrepare={() => handleInvoicePrepare(selectedOrders)}
+        selectedOrderCount={selectedOrders.length}
+        invoicePreparing={invoiceLoading || isInvoiceJobActive(invoiceJob)}
       />
 
       <OrderManagementTable

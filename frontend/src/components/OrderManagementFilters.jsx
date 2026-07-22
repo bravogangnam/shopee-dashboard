@@ -33,7 +33,17 @@ function todayKST() {
   return kst.toISOString().slice(0, 10);
 }
 
-export default function OrderManagementFilters({ filters, stats, onChange, onSubmit, onReset, onApply }) {
+export default function OrderManagementFilters({
+  filters,
+  stats,
+  onChange,
+  onSubmit,
+  onReset,
+  onApply,
+  onInvoicePrepare,
+  selectedOrderCount = 0,
+  invoicePreparing = false,
+}) {
   const isAllPeriodStatus = Boolean(filters.order_status);
 
   const dateRangeValue = filters.date_from && filters.date_to
@@ -159,6 +169,14 @@ export default function OrderManagementFilters({ filters, stats, onChange, onSub
         <div className="filter-actions">
           <button type="submit">검색</button>
           <button type="button" className="ghost-button" onClick={onReset}>초기화</button>
+          <button
+            type="button"
+            className="action-btn primary"
+            onClick={onInvoicePrepare}
+            disabled={!selectedOrderCount || invoicePreparing}
+          >
+            {invoicePreparing ? '송장 작업 중...' : `송장준비 (${selectedOrderCount})`}
+          </button>
         </div>
       </div>
     </form>

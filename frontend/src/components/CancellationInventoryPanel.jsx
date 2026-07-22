@@ -19,6 +19,7 @@ const previousStatusLabels = {
   TO_CONFIRM_RECEIVE: '수취 확인',
   COMPLETED: '배송 완료',
   CANCELLED: '취소 완료',
+  UNKNOWN: '최초 확인 시 이미 취소',
 };
 
 function getDecisionReason(row) {

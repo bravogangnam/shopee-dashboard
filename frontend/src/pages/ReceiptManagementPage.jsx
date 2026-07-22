@@ -799,8 +799,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
           </div>
           <div className="receipt-summary-card">
             <span>입고완료 금액</span>
-            <strong>{formatKrw(receiptSummary?.completed?.total_amount_vat_excluded || 0)}</strong>
-            <small>VAT 제외 · 입력가 {formatKrw(receiptSummary?.completed?.total_amount_vat_included || 0)}</small>
+            <strong>{formatKrw(receiptSummary?.completed?.total_amount_vat_included || 0)}</strong>
           </div>
           <div className="receipt-summary-card">
             <span>입고예정 수량</span>
@@ -809,8 +808,7 @@ function StockInTab({ dashboard, reloadDashboard }) {
           </div>
           <div className="receipt-summary-card">
             <span>입고예정 금액</span>
-            <strong>{formatKrw(receiptSummary?.pending?.pending_amount_vat_excluded || 0)}</strong>
-            <small>VAT 제외 · 입력가 {formatKrw(receiptSummary?.pending?.pending_amount_vat_included || 0)}</small>
+            <strong>{formatKrw(receiptSummary?.pending?.pending_amount_vat_included || 0)}</strong>
           </div>
         </div>
       </section>

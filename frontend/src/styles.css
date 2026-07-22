@@ -4182,14 +4182,6 @@ html[data-theme='dark'] .order-management-page .status-tab.active {
   content: '';
 }
 
-.receipt-month-summary .receipt-summary-card:nth-child(n + 3)::before {
-  background: #f59e0b;
-}
-
-.receipt-month-summary .receipt-summary-card:nth-child(n + 3) {
-  background: linear-gradient(145deg, #ffffff 0%, #fffbeb 100%);
-}
-
 .receipt-month-summary .receipt-summary-card small {
   line-height: 1.4;
 }
@@ -8925,8 +8917,4 @@ html[data-theme='dark'] .product-analytics-page .pa-country-grid article {
 
 html[data-theme='dark'] .receipt-page .receipt-month-summary .receipt-summary-card {
   background: linear-gradient(145deg, #15243a 0%, #122238 100%) !important;
-}
-
-html[data-theme='dark'] .receipt-page .receipt-month-summary .receipt-summary-card:nth-child(n + 3) {
-  background: linear-gradient(145deg, #15243a 0%, #292516 100%) !important;
 }

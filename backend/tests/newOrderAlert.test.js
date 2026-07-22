@@ -31,10 +31,13 @@ assert.match(alertService, /p\.product_name_kr/);
 assert.match(alertService, /p\.sku COLLATE utf8mb4_general_ci/);
 assert.match(alertService, /productName: row\.product_name_kr \|\| row\.item_name/);
 assert.match(alertService, /optionName: row\.product_name_kr \? ''/);
+assert.match(alertService, /alert\.displayStatus !== 'READY_TO_SHIP'/);
 
 const pushService = fs.readFileSync(path.join(__dirname, '../src/services/shopeePushService.js'), 'utf8');
 const syncWorker = fs.readFileSync(path.join(__dirname, '../src/jobs/syncWorker.js'), 'utf8');
 assert.match(pushService, /notifyNewOrderOnce/);
+assert.match(pushService, /applied\.displayStatus === 'READY_TO_SHIP'/);
 assert.match(syncWorker, /notifyNewOrderOnce/);
+assert.match(syncWorker, /orderRow\.display_status === 'READY_TO_SHIP'/);
 
 console.log('new order Telegram alert tests passed');

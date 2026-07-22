@@ -49,6 +49,7 @@ async function loadNewOrderAlert(tenantId, shopId, orderSn) {
   if (!rows.length) return null;
   return {
     region: rows[0].region || '-',
+    displayStatus: rows[0].display_status || '-',
     items: rows.map(row => ({
       region: row.region || '-',
       orderSn,
@@ -84,6 +85,9 @@ async function notifyNewOrderOnce({ tenantId, shopId, orderSn }) {
     await ensureOrderAlertDeliveriesTable();
     const alert = await loadNewOrderAlert(tenantId, shopId, orderSn);
     if (!alert?.items?.length) return { skipped: true, reason: 'order_items_unavailable' };
+    if (alert.displayStatus !== 'READY_TO_SHIP') {
+      return { skipped: true, reason: `display_status:${alert.displayStatus || '-'}` };
+    }
     if (!await claimDelivery(tenantId, shopId, orderSn)) {
       return { skipped: true, reason: 'already_delivered_or_processing' };
     }

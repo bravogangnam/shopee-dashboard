@@ -137,8 +137,8 @@ async function syncPushedOrder({ context, event }) {
     itemRows,
     source: `push:${event.code}`,
   });
-  const becameReadyToShip = orderRow.order_status === 'READY_TO_SHIP' &&
-    (applied.created || applied.previousOrderStatus !== 'READY_TO_SHIP');
+  const becameReadyToShip = applied.displayStatus === 'READY_TO_SHIP' &&
+    (applied.created || applied.previousDisplayStatus !== 'READY_TO_SHIP');
   if (becameReadyToShip) {
     await notifyNewOrderOnce({
       tenantId: context.tenant_id,

@@ -389,7 +389,7 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID, discoveryMode = 'n
               });
               if (applied.created) {
                 insertedKeySet.add(`${orderRow.shop_id}::${orderRow.order_sn}`);
-                if (orderRow.order_status === 'READY_TO_SHIP') {
+                if (orderRow.display_status === 'READY_TO_SHIP') {
                   await notifyNewOrderOnce({
                     tenantId,
                     shopId: shop.shop_id,
@@ -535,7 +535,7 @@ async function runSync(jobId, { tenantId = CURRENT_TENANT_ID, discoveryMode = 'n
             source: 'polling',
           });
           if (applied.updated) {
-            if (applied.previousOrderStatus !== 'READY_TO_SHIP' && orderRow.order_status === 'READY_TO_SHIP') {
+            if (applied.previousDisplayStatus !== 'READY_TO_SHIP' && applied.displayStatus === 'READY_TO_SHIP') {
               await notifyNewOrderOnce({
                 tenantId,
                 shopId: shop.shop_id,

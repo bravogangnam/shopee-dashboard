@@ -3,6 +3,7 @@ const router = express.Router();
 
 const db = require('../config/database');
 const { requireAuth, requirePlatformAdmin } = require('../middleware/auth');
+const { deleteTenantBackgrounds } = require('../services/brandBackgroundService');
 
 router.use(requireAuth);
 router.use(requirePlatformAdmin);
@@ -548,6 +549,9 @@ router.delete('/tenants/:id', async (req, res) => {
     }
 
     await conn.commit();
+    await deleteTenantBackgrounds(tenantId).catch((error) => {
+      console.error(`[Admin] tenant background cleanup failed: tenant=${tenantId}: ${error.message}`);
+    });
 
     return res.json({
       success: true,

@@ -63,6 +63,7 @@ app.use('/api/payment-balances', require('./routes/paymentBalanceRoutes'));
 app.use('/api/products', require('./routes/productsRoutes'));
 app.use('/api/receipts', require('./routes/receiptsRoutes'));
 app.use('/api/product-capture', require('./routes/productCaptureRoutes'));
+app.use('/api/brand-image-maker', require('./routes/brandImageMakerRoutes'));
 
 // ─── 송장 라우트 (격리: 오류 시 기존 서비스 영향 없음) ──────────
 try {

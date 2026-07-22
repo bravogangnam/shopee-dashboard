@@ -354,6 +354,7 @@ export default function BrandImageMakerPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [dragTarget, setDragTarget] = useState("");
   const canvasMap = useRef(new Map());
   const editorCanvas = useRef(null);
   const editorStage = useRef(null);
@@ -425,9 +426,10 @@ export default function BrandImageMakerPage() {
     }
   }
 
-  async function uploadBackgrounds(event) {
-    const files = Array.from(event.target.files || []);
-    event.target.value = "";
+  async function saveBackgroundFiles(fileList) {
+    const files = Array.from(fileList || []).filter(
+      (file) => file.type === "image/png" || /\.png$/i.test(file.name),
+    );
     if (!files.length) return;
     const formData = new FormData();
     files.forEach((file) => formData.append("backgrounds", file));
@@ -445,6 +447,17 @@ export default function BrandImageMakerPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function uploadBackgrounds(event) {
+    saveBackgroundFiles(event.target.files);
+    event.target.value = "";
+  }
+
+  function dropBackgrounds(event) {
+    event.preventDefault();
+    setDragTarget("");
+    saveBackgroundFiles(event.dataTransfer.files);
   }
 
   async function chooseBackground(id) {
@@ -547,30 +560,46 @@ export default function BrandImageMakerPage() {
     });
   }
 
-  function handleFiles(event) {
-    const files = Array.from(event.target.files || []).filter(
-      (file) => file.type === "image/png",
+  function addProductFiles(fileList) {
+    const files = Array.from(fileList || []).filter(
+      (file) => file.type === "image/png" || /\.png$/i.test(file.name),
     );
-    images.forEach((item) => URL.revokeObjectURL(item.url));
-    canvasMap.current.clear();
-    setManualBrands({});
-    setOverrides({});
-    setEditingId("");
-    setImages(
-      files.map((file, index) => ({
-        id: `${file.name}-${file.lastModified}-${index}`,
-        file,
-        filename: file.name,
-        sku: skuFromFilename(file.name),
-        url: URL.createObjectURL(file),
-      })),
-    );
+    setImages((current) => {
+      const existingKeys = new Set(
+        current.map((item) => `${item.file.name}-${item.file.size}-${item.file.lastModified}`),
+      );
+      const added = files
+        .filter((file) => {
+          const key = `${file.name}-${file.size}-${file.lastModified}`;
+          if (existingKeys.has(key)) return false;
+          existingKeys.add(key);
+          return true;
+        })
+        .map((file, index) => ({
+          id: `${file.name}-${file.size}-${file.lastModified}-${Date.now()}-${index}`,
+          file,
+          filename: file.name,
+          sku: skuFromFilename(file.name),
+          url: URL.createObjectURL(file),
+        }));
+      return [...current, ...added];
+    });
     setMessage(
       files.length
-        ? `제품 PNG ${files.length}장을 불러왔습니다. 모두 1000×1000 작업판에 자동 맞춤됩니다.`
+        ? `제품 PNG를 추가했습니다. 중복 파일은 제외되며 모두 1000×1000 작업판에 자동 맞춤됩니다.`
         : "",
     );
+  }
+
+  function handleFiles(event) {
+    addProductFiles(event.target.files);
     event.target.value = "";
+  }
+
+  function dropProductFiles(event) {
+    event.preventDefault();
+    setDragTarget("");
+    addProductFiles(event.dataTransfer.files);
   }
 
   async function downloadItem(item) {
@@ -695,7 +724,17 @@ export default function BrandImageMakerPage() {
                 <p>마진차트의 두 열을 그대로 복사하세요.</p>
               </div>
             </div>
-            <b>{parsed.map.size}개 SKU</b>
+            <div className="brand-maker-card-actions">
+              <b>{parsed.map.size}개 SKU</b>
+              <button
+                type="button"
+                className="ghost-button compact"
+                onClick={() => setPasteText("")}
+                disabled={!pasteText}
+              >
+                초기화
+              </button>
+            </div>
           </div>
           <textarea
             value={pasteText}
@@ -721,7 +760,22 @@ export default function BrandImageMakerPage() {
             </div>
             <b>{backgrounds.length}장</b>
           </div>
-          <label className="brand-maker-dropzone compact">
+          <label
+            className={`brand-maker-dropzone compact ${dragTarget === "background" ? "dragging" : ""}`}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              setDragTarget("background");
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+              setDragTarget("background");
+            }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setDragTarget("");
+            }}
+            onDrop={dropBackgrounds}
+          >
             <input
               type="file"
               accept="image/png"
@@ -730,6 +784,7 @@ export default function BrandImageMakerPage() {
               disabled={busy}
             />
             <strong>{busy ? "처리 중" : "배경 PNG 추가"}</strong>
+            <span>클릭하거나 PNG 파일을 여기에 끌어놓으세요</span>
           </label>
           <div className="brand-background-list">
             {backgrounds.map((item) => (
@@ -780,15 +835,30 @@ export default function BrandImageMakerPage() {
             </div>
             <b>{images.length}장</b>
           </div>
-          <label className="brand-maker-dropzone">
+          <label
+            className={`brand-maker-dropzone ${dragTarget === "product" ? "dragging" : ""}`}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              setDragTarget("product");
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+              setDragTarget("product");
+            }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setDragTarget("");
+            }}
+            onDrop={dropProductFiles}
+          >
             <input
               type="file"
               accept="image/png"
               multiple
               onChange={handleFiles}
             />
-            <strong>제품 PNG 선택</strong>
-            <span>크기가 달라도 1000×1000에 자동 맞춤</span>
+            <strong>제품 PNG 선택 또는 드래그</strong>
+            <span>여러 번 추가 가능 · 크기가 달라도 1000×1000에 자동 맞춤</span>
           </label>
         </section>
       </div>

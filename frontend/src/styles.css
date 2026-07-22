@@ -9322,6 +9322,8 @@ html[data-theme='dark'] .product-analytics-page .quick-date-grid button { border
 .brand-maker-controls { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:10px; margin-top:14px; }
 .brand-maker-controls label,.brand-maker-result label { display:grid; gap:5px; color:var(--bim-muted); font-size:11px; font-weight:800; }
 .brand-maker-controls input,.brand-maker-controls select,.brand-maker-result input { width:100%; height:34px; box-sizing:border-box; border:1px solid var(--bim-line); border-radius:7px; background:var(--bim-card); color:var(--bim-text); padding:0 9px; }
+.brand-name-textarea { width:100%; min-height:76px; box-sizing:border-box; resize:vertical; border:1px solid var(--bim-line); border-radius:7px; background:var(--bim-card); color:var(--bim-text); padding:9px; font:inherit; line-height:1.35; }
+.brand-name-textarea.compact { min-height:52px; }
 .brand-maker-controls input[type='color'] { padding:3px; cursor:pointer; }
 .brand-maker-controls .brand-maker-check { display:flex; align-items:center; align-self:end; height:34px; flex-direction:row; gap:7px; padding:0 9px; border:1px solid var(--bim-line); border-radius:7px; color:var(--bim-text); white-space:nowrap; }
 .brand-maker-check input { width:14px; height:14px; }
@@ -9395,6 +9397,7 @@ html[data-theme='dark'] .brand-maker-status.ok { background:#123b2b; color:#92e6
 .brand-editor-settings { display:grid; align-content:start; gap:13px; padding:16px; border:1px solid var(--bim-line); border-radius:10px; background:var(--bim-soft); }
 .brand-editor-settings>label,.brand-editor-field-grid label { display:grid; gap:5px; color:var(--bim-muted); font-size:11px; font-weight:800; }
 .brand-editor-settings input,.brand-editor-settings select { width:100%; height:36px; box-sizing:border-box; border:1px solid var(--bim-line); border-radius:7px; background:var(--bim-card); color:var(--bim-text); padding:0 9px; }
+.brand-editor-settings .brand-name-textarea { height:auto; }
 .brand-editor-settings input[type='color'] { padding:3px; }.brand-editor-settings input:disabled { opacity:.5; }
 .brand-editor-field-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
 .brand-editor-checkbox { display:flex!important; align-items:center; grid-template-columns:none!important; flex-direction:row; gap:8px!important; padding:9px; border:1px solid var(--bim-line); border-radius:7px; color:var(--bim-text)!important; }.brand-editor-checkbox input { width:15px; height:15px; }

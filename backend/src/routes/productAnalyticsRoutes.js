@@ -109,7 +109,9 @@ router.get('/overview', async (req, res) => {
       `SELECT p.sku, p.product_name_kr, p.product_name_en, p.option_name, p.stock_quantity,
               COALESCE(p.cost_price_with_vat, p.discounted_price_with_vat, p.cost_price * 1.1) current_cost,
               (SELECT COALESCE(oi.image_info_image_url, oi.item_image_url) FROM order_items oi
-               WHERE oi.tenant_id = p.tenant_id AND COALESCE(NULLIF(oi.model_sku,''), NULLIF(oi.item_sku,'')) = p.sku
+               WHERE oi.tenant_id = p.tenant_id
+                 AND COALESCE(NULLIF(oi.model_sku,''), NULLIF(oi.item_sku,'')) COLLATE utf8mb4_unicode_ci
+                   = p.sku COLLATE utf8mb4_unicode_ci
                ORDER BY oi.id DESC LIMIT 1) image_url
        FROM products p WHERE p.tenant_id = ? ORDER BY p.sku`, [tenantId]);
 

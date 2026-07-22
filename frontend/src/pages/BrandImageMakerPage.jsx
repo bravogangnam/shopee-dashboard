@@ -9,7 +9,16 @@ const FONT_OPTIONS = [
   ["Trebuchet", "Trebuchet MS, Arial, sans-serif"],
   ["Georgia", "Georgia, serif"],
 ];
+const LAYER_ORDER_OPTIONS = [
+  [["background", "brand", "product"], "배경 > 브랜드명 > 메인 이미지"],
+  [["background", "product", "brand"], "배경 > 메인 이미지 > 브랜드명"],
+  [["brand", "background", "product"], "브랜드명 > 배경 > 메인 이미지"],
+  [["brand", "product", "background"], "브랜드명 > 메인 이미지 > 배경"],
+  [["product", "background", "brand"], "메인 이미지 > 배경 > 브랜드명"],
+  [["product", "brand", "background"], "메인 이미지 > 브랜드명 > 배경"],
+];
 const DEFAULT_SETTINGS = {
+  layerOrder: ["background", "brand", "product"],
   product: { left: 0, top: 0, width: 100, height: 100 },
   brand: {
     left: 10,
@@ -24,6 +33,7 @@ const DEFAULT_SETTINGS = {
     autoFit: true,
     fontSize: 80,
     shadow: false,
+    visible: true,
   },
 };
 
@@ -32,6 +42,9 @@ const clamp = (value, min, max) =>
 
 function cloneSettings(value = DEFAULT_SETTINGS) {
   return {
+    layerOrder: Array.isArray(value.layerOrder)
+      ? [...value.layerOrder]
+      : [...DEFAULT_SETTINGS.layerOrder],
     product: { ...DEFAULT_SETTINGS.product, ...(value.product || {}) },
     brand: { ...DEFAULT_SETTINGS.brand, ...(value.brand || value || {}) },
   };
@@ -165,8 +178,8 @@ async function drawComposite(
   canvas.height = 1000;
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, 1000, 1000);
-  drawContain(context, productImage, settings.product);
-  if (brandText) {
+  const drawBrand = () => {
+    if (!brandText || settings.brand.visible === false) return;
     const brand = settings.brand;
     const boxX = (1000 * brand.left) / 100;
     const boxY = (1000 * brand.top) / 100;
@@ -196,8 +209,16 @@ async function drawComposite(
       context.fillText(line || " ", 0, lineY, boxWidth);
     });
     context.restore();
-  }
-  if (backgroundImage) context.drawImage(backgroundImage, 0, 0, 1000, 1000);
+  };
+  const layerOrder = Array.isArray(settings.layerOrder)
+    ? settings.layerOrder
+    : DEFAULT_SETTINGS.layerOrder;
+  [...layerOrder].reverse().forEach((layer) => {
+    if (layer === "product") drawContain(context, productImage, settings.product);
+    if (layer === "brand") drawBrand();
+    if (layer === "background" && backgroundImage)
+      context.drawImage(backgroundImage, 0, 0, 1000, 1000);
+  });
 }
 
 function authHeaders(extra = {}) {
@@ -515,12 +536,14 @@ export default function BrandImageMakerPage() {
           ? ""
           : parsed.map.get(item.sku) || "";
         const override = overrides[item.id];
+        const settings = override?.settings || commonSettings;
+        const brand = manualBrands[item.id] ?? automaticBrand;
         return {
           ...item,
-          brand: manualBrands[item.id] ?? automaticBrand,
+          brand,
           conflict: parsed.conflicts.has(item.sku),
-          matched: Boolean(manualBrands[item.id] ?? automaticBrand),
-          settings: override?.settings || commonSettings,
+          matched: settings.brand.visible === false || Boolean(brand),
+          settings,
           backgroundId: override?.backgroundId || selectedBackgroundId,
           customized: Boolean(override),
         };
@@ -547,6 +570,13 @@ export default function BrandImageMakerPage() {
     }));
   }
 
+  function updateCommonLayerOrder(value) {
+    setCommonSettings((current) => ({
+      ...current,
+      layerOrder: value.split(","),
+    }));
+  }
+
   function updateOverride(itemId, target, patch) {
     setOverrides((current) => {
       const base = current[itemId]?.settings || cloneSettings(commonSettings);
@@ -555,6 +585,19 @@ export default function BrandImageMakerPage() {
         [itemId]: {
           ...current[itemId],
           settings: { ...base, [target]: { ...base[target], ...patch } },
+        },
+      };
+    });
+  }
+
+  function updateOverrideLayerOrder(itemId, value) {
+    setOverrides((current) => {
+      const base = current[itemId]?.settings || cloneSettings(commonSettings);
+      return {
+        ...current,
+        [itemId]: {
+          ...current[itemId],
+          settings: { ...base, layerOrder: value.split(",") },
         },
       };
     });
@@ -884,6 +927,31 @@ export default function BrandImageMakerPage() {
             전체 설정 초기화
           </button>
         </div>
+        <div className="brand-layer-controls">
+          <label>
+            레이어 순서 <small>왼쪽이 가장 위</small>
+            <select
+              value={commonSettings.layerOrder.join(",")}
+              onChange={(event) => updateCommonLayerOrder(event.target.value)}
+            >
+              {LAYER_ORDER_OPTIONS.map(([order, label]) => (
+                <option key={order.join(",")} value={order.join(",")}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="brand-layer-toggle">
+            <input
+              type="checkbox"
+              checked={commonSettings.brand.visible !== false}
+              onChange={(event) =>
+                updateCommon("brand", "visible", event.target.checked)
+              }
+            />
+            브랜드명 표시
+          </label>
+        </div>
         <div className="brand-common-groups">
           <div>
             <strong>제품</strong>
@@ -1169,6 +1237,38 @@ export default function BrandImageMakerPage() {
                     ))}
                   </select>
                 </label>
+                <div className="brand-editor-layer-controls">
+                  <label>
+                    개별 레이어 순서
+                    <select
+                      value={editingItem.settings.layerOrder.join(",")}
+                      onChange={(event) =>
+                        updateOverrideLayerOrder(
+                          editingItem.id,
+                          event.target.value,
+                        )
+                      }
+                    >
+                      {LAYER_ORDER_OPTIONS.map(([order, label]) => (
+                        <option key={order.join(",")} value={order.join(",")}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="brand-editor-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={editingItem.settings.brand.visible !== false}
+                      onChange={(event) =>
+                        updateOverride(editingItem.id, "brand", {
+                          visible: event.target.checked,
+                        })
+                      }
+                    />
+                    브랜드명 표시
+                  </label>
+                </div>
                 {editTarget === "product" ? (
                   <div className="brand-editor-field-grid">
                     <RangeField

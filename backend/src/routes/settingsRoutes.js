@@ -11,11 +11,12 @@
 
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireApprovedTenant, loadTenantAccessContext } = require('../middleware/auth');
+const { requireAuth, requireApprovedTenant, requirePlatformAdmin, loadTenantAccessContext } = require('../middleware/auth');
 const db = require('../config/database');
 const { testMarginChartSheet, syncMarginChartSheet } = require('../services/tenantMarginChartSync');
 const { syncAllShopProfiles } = require('../services/shopeeShopProfileService');
 const { cleanupShippingLabelFiles, getRetentionDays } = require('../services/shippingLabelCleanupService');
+const { getServerStorageStatus, cleanupSafeServerFiles } = require('../services/serverStorageService');
 const { getCurrentTenantId } = require('../config/tenant');
 require('dotenv').config();
 
@@ -337,7 +338,7 @@ router.post('/shops/sync-profile', async (req, res) => {
 });
 
 
-router.post('/shipping-labels/cleanup', async (req, res) => {
+router.post('/shipping-labels/cleanup', requirePlatformAdmin, async (req, res) => {
   try {
     const result = await cleanupShippingLabelFiles();
     return res.json({
@@ -361,6 +362,25 @@ router.post('/shipping-labels/cleanup', async (req, res) => {
       error: '송장 파일 정리에 실패했습니다.',
       retentionDays: getRetentionDays(),
     });
+  }
+});
+
+router.get('/server-storage', requirePlatformAdmin, async (req, res) => {
+  try {
+    return res.json({ success: true, data: await getServerStorageStatus() });
+  } catch (err) {
+    console.error('[Settings] server storage load failed:', err.message);
+    return res.status(500).json({ success: false, error: '서버 용량을 확인하지 못했습니다.' });
+  }
+});
+
+router.post('/server-storage/cleanup', requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await cleanupSafeServerFiles();
+    return res.json({ success: result.success, data: result });
+  } catch (err) {
+    console.error('[Settings] safe server cleanup failed:', err.message);
+    return res.status(500).json({ success: false, error: '안전 정리를 완료하지 못했습니다.' });
   }
 });
 

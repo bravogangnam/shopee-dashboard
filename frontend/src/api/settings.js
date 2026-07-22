@@ -59,6 +59,16 @@ export function cleanupShippingLabels() {
   });
 }
 
+export function fetchServerStorage() {
+  return apiRequest('/api/settings/server-storage');
+}
+
+export function cleanupServerStorage() {
+  return apiRequest('/api/settings/server-storage/cleanup', {
+    method: 'POST',
+  });
+}
+
 export function fetchTokenStatus() {
   return apiRequest('/api/auth/status');
 }

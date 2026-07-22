@@ -19,7 +19,8 @@ import {
   updateGoogleSheetSettings,
   testMarginChartSheet,
   syncMarginChartSheet,
-  cleanupShippingLabels,
+  fetchServerStorage,
+  cleanupServerStorage,
 } from '../api/settings.js';
 import { formatDateTime } from '../utils/format.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -53,6 +54,19 @@ function getConnectionRows(result) {
 
 function getJobPayload(result) {
   return result.job || result.data || result;
+}
+
+function formatStorageBytes(value) {
+  const bytes = Number(value || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let size = bytes / 1024;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size >= 10 ? size.toFixed(1) : size.toFixed(2)} ${units[unitIndex]}`;
 }
 
 
@@ -237,7 +251,8 @@ export default function SettingsPage() {
     backfill: false,
     refresh: false,
     shopProfileSync: false,
-    shippingLabelCleanup: false,
+    serverStorage: false,
+    serverCleanup: false,
   });
   const [connectionResults, setConnectionResults] = useState(null);
   const [backfillStatus, setBackfillStatus] = useState(null);
@@ -245,6 +260,7 @@ export default function SettingsPage() {
   const [newCurrency, setNewCurrency] = useState({ currency: '', rate_to_krw: '' });
   const [showPartnerKey, setShowPartnerKey] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [serverStorage, setServerStorage] = useState(null);
 
   const connectionRows = useMemo(() => getConnectionRows(connectionResults), [connectionResults]);
 
@@ -301,11 +317,25 @@ export default function SettingsPage() {
     }
   }
 
+  async function loadServerStorage() {
+    if (!isPlatformAdmin) return;
+    setLoadingKey('serverStorage', true);
+    try {
+      const result = await fetchServerStorage();
+      setServerStorage(result.data || null);
+    } catch (err) {
+      showMessage('error', err.message || '서버 용량을 확인하지 못했습니다.');
+    } finally {
+      setLoadingKey('serverStorage', false);
+    }
+  }
+
   useEffect(() => {
     loadAccount();
     loadTokenStatus();
     loadShops();
     loadRates();
+    loadServerStorage();
   }, []);
 
   useEffect(() => {
@@ -434,23 +464,22 @@ export default function SettingsPage() {
   }
 
 
-  async function handleShippingLabelCleanup() {
-    const confirmed = window.confirm('합본 송장과 45일 초과 개별 공식 송장 PDF만 정리합니다. 주문/FIFO/정산/재고 데이터는 삭제하지 않습니다. 계속할까요?');
+  async function handleServerCleanup() {
+    const confirmed = window.confirm(
+      '임시 합본 PDF, 45일이 지난 개별 송장, 최신 3개를 제외한 배포 백업, 애플리케이션 로그만 정리합니다. 주문·정산·재고·DB·브랜드 배경 이미지는 삭제하지 않습니다. 계속할까요?'
+    );
     if (!confirmed) return;
 
-    setLoadingKey('shippingLabelCleanup', true);
+    setLoadingKey('serverCleanup', true);
     try {
-      const result = await cleanupShippingLabels();
-      const deletedFiles = Number(result.deletedFiles || 0);
-      const failedFiles = Number(result.failedFiles || 0);
-      showMessage(
-        failedFiles > 0 ? 'error' : 'success',
-        result.message || `송장 파일 정리 완료: 삭제 ${deletedFiles}개, 실패 ${failedFiles}개`
-      );
+      const result = await cleanupServerStorage();
+      const data = result.data || {};
+      setServerStorage(data.after || null);
+      showMessage('success', `안전 정리 완료: ${formatStorageBytes(data.deletedBytes)}를 정리했습니다.`);
     } catch (err) {
-      showMessage('error', err.message || '송장 파일 정리에 실패했습니다.');
+      showMessage('error', err.message || '서버 안전 정리에 실패했습니다.');
     } finally {
-      setLoadingKey('shippingLabelCleanup', false);
+      setLoadingKey('serverCleanup', false);
     }
   }
 
@@ -692,20 +721,48 @@ export default function SettingsPage() {
       </section>
 
 
-      <section className="settings-section settings-tool-card">
-        <h2>송장 파일 정리</h2>
-        <p className="settings-help-text">
-          45일이 지난 개별 송장과 임시 합본 PDF만 정리합니다. 주문·정산·재고 데이터는 유지됩니다.
-        </p>
-        <button
-          type="button"
-          className="btn btn-outline"
-          onClick={handleShippingLabelCleanup}
-          disabled={loading.shippingLabelCleanup}
-        >
-          {loading.shippingLabelCleanup ? '정리 중...' : '송장 파일 정리 실행'}
-        </button>
-      </section>
+      {isPlatformAdmin ? (
+        <section className="settings-section settings-tool-card server-storage-card">
+          <div className="server-storage-heading">
+            <div>
+              <h2>서버 저장공간</h2>
+              <p className="settings-help-text">서버 용량을 확인하고 다시 만들 수 있는 안전한 파일만 정리합니다.</p>
+            </div>
+            <button type="button" className="btn btn-outline" onClick={loadServerStorage} disabled={loading.serverStorage || loading.serverCleanup}>
+              {loading.serverStorage ? '확인 중...' : '용량 새로고침'}
+            </button>
+          </div>
+
+          {serverStorage ? (
+            <>
+              <div className="server-storage-summary">
+                <div><span>전체 용량</span><strong>{formatStorageBytes(serverStorage.volume?.totalBytes)}</strong></div>
+                <div><span>사용 중</span><strong>{formatStorageBytes(serverStorage.volume?.usedBytes)}</strong></div>
+                <div><span>사용 가능</span><strong>{formatStorageBytes(serverStorage.volume?.availableBytes)}</strong></div>
+                <div><span>정리 가능</span><strong className="cleanup-amount">{formatStorageBytes(serverStorage.cleanup?.reclaimableBytes)}</strong></div>
+              </div>
+              <div className="server-storage-meter" aria-label={`서버 사용률 ${serverStorage.volume?.usedPercent || 0}%`}>
+                <span style={{ width: `${Math.min(100, Number(serverStorage.volume?.usedPercent || 0))}%` }} />
+              </div>
+              <div className="server-storage-meta">
+                <span>사용률 <strong>{serverStorage.volume?.usedPercent || 0}%</strong></span>
+                <span>송장 {serverStorage.cleanup?.labels?.files || 0}개</span>
+                <span>오래된 배포 백업 {serverStorage.cleanup?.frontendBackups?.count || 0}개</span>
+                <span>정리 가능한 로그 {serverStorage.cleanup?.logs?.count || 0}개</span>
+              </div>
+            </>
+          ) : (
+            <p className="settings-help-text">{loading.serverStorage ? '서버 용량을 확인하고 있습니다.' : '용량 새로고침을 눌러 확인하세요.'}</p>
+          )}
+
+          <div className="server-storage-actions">
+            <button type="button" className="btn btn-primary" onClick={handleServerCleanup} disabled={loading.serverCleanup || loading.serverStorage}>
+              {loading.serverCleanup ? '안전 정리 중...' : '안전한 데이터 정리'}
+            </button>
+            <small>주문·정산·재고·DB·브랜드 배경 이미지는 삭제하지 않습니다.</small>
+          </div>
+        </section>
+      ) : null}
       </div>
 
       <section className="settings-section shops-section">

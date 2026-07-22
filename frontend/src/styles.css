@@ -9149,6 +9149,85 @@ html[data-theme='dark'] .ant-picker-dropdown .ant-picker-cell-range-end .ant-pic
   margin-top: auto;
 }
 
+.server-storage-card {
+  grid-column: 1 / -1;
+  gap: 14px;
+  min-height: 0;
+}
+
+.server-storage-heading,
+.server-storage-actions,
+.server-storage-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.server-storage-heading h2,
+.server-storage-heading p {
+  margin: 0;
+}
+
+.server-storage-heading p {
+  margin-top: 4px;
+}
+
+.server-storage-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.server-storage-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 14px;
+  border: 1px solid var(--theme-border, #e2e8f0);
+  border-radius: 10px;
+  background: var(--theme-surface-soft, #f8fafc);
+}
+
+.server-storage-summary span,
+.server-storage-meta,
+.server-storage-actions small {
+  color: var(--theme-text-muted, #64748b);
+  font-size: 12px;
+}
+
+.server-storage-summary strong {
+  color: var(--theme-text-strong, #0f172a);
+  font-size: 18px;
+}
+
+.server-storage-summary .cleanup-amount {
+  color: #0f9f6e;
+}
+
+.server-storage-meter {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--theme-surface-soft, #e2e8f0);
+}
+
+.server-storage-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #7c3aed);
+}
+
+.server-storage-meta {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.server-storage-actions {
+  justify-content: flex-start;
+}
+
 html[data-theme='dark'] .settings-group-heading h2,
 html[data-theme='dark'] .settings-section-heading h2 {
   color: var(--theme-text-strong) !important;
@@ -9191,6 +9270,16 @@ html[data-theme='dark'] .settings-table-wrap .shop-table th {
 
   .settings-page .settings-grid {
     grid-template-columns: 1fr;
+  }
+
+  .server-storage-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .server-storage-heading,
+  .server-storage-actions {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .settings-page .token-status.compact {

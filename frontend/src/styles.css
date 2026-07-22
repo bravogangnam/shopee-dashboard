@@ -6173,6 +6173,64 @@ html[data-theme='dark'] .ledger-page .chart-summary-pill:nth-child(7) strong { c
   font-weight: 600;
 }
 
+html[data-theme='dark'] .order-settlement-return-section {
+  border-color: #5d3a38;
+  background: #182235;
+}
+html[data-theme='dark'] .order-settlement-return-icon {
+  background: #452925;
+  color: #ff8b73;
+}
+html[data-theme='dark'] .order-settlement-return-heading h3,
+html[data-theme='dark'] .order-settlement-return-card-head > div > strong,
+html[data-theme='dark'] .order-settlement-return-grid strong,
+html[data-theme='dark'] .order-settlement-return-logistics strong {
+  color: #eef4fb;
+}
+html[data-theme='dark'] .order-settlement-return-heading p,
+html[data-theme='dark'] .order-settlement-return-card-head > div > span,
+html[data-theme='dark'] .order-settlement-return-grid span,
+html[data-theme='dark'] .order-settlement-return-grid small,
+html[data-theme='dark'] .order-settlement-return-logistics span {
+  color: #9db0c8;
+}
+html[data-theme='dark'] .order-settlement-return-count {
+  border-color: #74463f;
+  background: #1d2a3e;
+  color: #ff967f;
+}
+html[data-theme='dark'] .order-settlement-return-card {
+  border-color: #30435f;
+  background: #111e31;
+}
+html[data-theme='dark'] .order-settlement-return-card-head {
+  border-color: #30435f;
+  background: #15243a;
+}
+html[data-theme='dark'] .order-settlement-return-grid > div {
+  border-color: #30435f;
+}
+html[data-theme='dark'] .order-settlement-return-logistics {
+  border-color: #30435f;
+  background: #0f1b2d;
+}
+html[data-theme='dark'] .order-return-status-requested,
+html[data-theme='dark'] .order-return-status-processing,
+html[data-theme='dark'] .order-return-status-judging,
+html[data-theme='dark'] .order-return-status-seller_dispute {
+  background: #3e3119;
+  color: #f2c36d;
+}
+html[data-theme='dark'] .order-return-status-accepted {
+  background: #15382b;
+  color: #72d6a7;
+}
+html[data-theme='dark'] .order-return-status-cancelled,
+html[data-theme='dark'] .order-return-status-closed {
+  background: #273449;
+  color: #b2c0d3;
+}
+
 html[data-theme='dark'] .order-management-page .order-all-period-notice {
   border-color: var(--theme-input-border);
   background: var(--theme-input-bg);

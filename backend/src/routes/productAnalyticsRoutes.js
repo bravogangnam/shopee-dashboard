@@ -138,6 +138,7 @@ router.get('/overview', async (req, res) => {
         stock_quantity: Number(row.stock_quantity || 0), current_cost: row.current_cost == null ? null : Number(row.current_cost),
         cost_missing: row.current_cost == null, pending_settlement_orders: Number(row.pending_settlement_orders || 0) };
     });
+    rows = rows.filter(row => row.sold_qty > 0);
     if (search) { const q = search.toLocaleLowerCase(); rows = rows.filter(row => [row.sku, row.product_name_kr, row.product_name_en, row.item_name, row.option_name].some(value => String(value || '').toLocaleLowerCase().includes(q))); }
       summary = rows.reduce((acc, row) => { acc.sku_count += 1; acc.sold_qty += row.sold_qty; acc.order_count += row.order_count; acc.sales_krw += row.sales_krw; acc.settlement_krw += Number(row.settlement_krw || 0); acc.cost_krw += row.cost_krw; acc.net_profit_krw += Number(row.net_profit_krw || 0); if (row.cost_missing) acc.missing_cost_count += 1; if (row.net_profit_krw < 0) acc.loss_sku_count += 1; acc.pending_settlement_orders += row.pending_settlement_orders; return acc; }, { sku_count: 0, sold_qty: 0, order_count: 0, sales_krw: 0, settlement_krw: 0, cost_krw: 0, net_profit_krw: 0, missing_cost_count: 0, loss_sku_count: 0, pending_settlement_orders: 0 });
       summary.profit_rate = summary.sales_krw ? summary.net_profit_krw / summary.sales_krw * 100 : null;

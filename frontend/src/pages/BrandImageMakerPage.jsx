@@ -357,6 +357,7 @@ export default function BrandImageMakerPage() {
   const canvasMap = useRef(new Map());
   const editorCanvas = useRef(null);
   const editorStage = useRef(null);
+  const imagesRef = useRef([]);
   const backgroundsRef = useRef([]);
   const parsed = useMemo(() => parseSkuBrandText(pasteText), [pasteText]);
 
@@ -369,9 +370,13 @@ export default function BrandImageMakerPage() {
   useEffect(() => {
     loadBackgrounds();
   }, []);
+  useEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
   useEffect(
-    () => () => images.forEach((item) => URL.revokeObjectURL(item.url)),
-    [images],
+    () => () =>
+      imagesRef.current.forEach((item) => URL.revokeObjectURL(item.url)),
+    [],
   );
   useEffect(() => {
     backgroundsRef.current = backgrounds;
@@ -617,6 +622,27 @@ export default function BrandImageMakerPage() {
         ? `${targets.length - failed}장 완료 · ${failed}장 실패`
         : `${targets.length}장 다운로드를 시작했습니다.`,
     );
+  }
+
+  function removeImage(itemId) {
+    setImages((current) => {
+      const removed = current.find((item) => item.id === itemId);
+      if (removed) URL.revokeObjectURL(removed.url);
+      return current.filter((item) => item.id !== itemId);
+    });
+    canvasMap.current.delete(itemId);
+    setManualBrands((current) => {
+      const next = { ...current };
+      delete next[itemId];
+      return next;
+    });
+    setOverrides((current) => {
+      const next = { ...current };
+      delete next[itemId];
+      return next;
+    });
+    if (editingId === itemId) setEditingId("");
+    setMessage("선택한 이미지를 작업 목록에서 제거했습니다.");
   }
 
   function resetAll() {
@@ -956,14 +982,23 @@ export default function BrandImageMakerPage() {
                       placeholder="직접 입력 가능 · Enter로 줄바꿈"
                     />
                   </label>
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    disabled={!item.matched}
-                    onClick={() => downloadItem(item)}
-                  >
-                    개별 다운로드
-                  </button>
+                  <div className="brand-maker-result-actions">
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={!item.matched}
+                      onClick={() => downloadItem(item)}
+                    >
+                      개별 다운로드
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button danger"
+                      onClick={() => removeImage(item.id)}
+                    >
+                      이미지 제거
+                    </button>
+                  </div>
                 </article>
               );
             })}

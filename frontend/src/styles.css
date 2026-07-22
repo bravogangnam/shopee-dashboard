@@ -9340,6 +9340,12 @@ html[data-theme='dark'] .product-analytics-page .quick-date-grid button { border
 .brand-maker-status { flex:0 0 auto; padding:4px 7px; border-radius:999px; background:#fff0df; color:#a65d00!important; font-size:10px!important; font-weight:800; }
 .brand-maker-status.ok { background:#e8f7ef; color:#087443!important; }
 .brand-maker-result .ghost-button { width:100%; margin-top:9px; }
+.brand-maker-result-actions { display:grid; grid-template-columns:1fr auto; gap:7px; }
+.brand-maker-result-actions .ghost-button { margin-top:9px; }
+.brand-maker-result-actions .danger { width:auto; border-color:#f4b8b8; color:#dc2626; white-space:nowrap; }
+.brand-maker-result-actions .danger:hover { border-color:#ef4444; background:#fff1f2; }
+html[data-theme='dark'] .brand-maker-result-actions .danger { border-color:#6f3540; color:#fb7185; }
+html[data-theme='dark'] .brand-maker-result-actions .danger:hover { background:#351923; }
 .brand-maker-empty { padding:58px 20px; color:var(--bim-muted); text-align:center; font-size:13px; }
 .brand-maker-message { margin-top:0; }
 

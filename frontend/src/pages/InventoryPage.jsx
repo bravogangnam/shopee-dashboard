@@ -132,12 +132,6 @@ function InventoryStats({ products, summary }) {
       tone: 'inventory-card-purchase-needed',
     },
     {
-      label: '품절 SKU',
-      value: `${Number(stats.out_of_stock_count || 0).toLocaleString('ko-KR')}개`,
-      sub: '재고 0',
-      tone: 'inventory-card-out',
-    },
-    {
       label: '재고부족 SKU',
       value: `${Number(stats.low_stock_count || 0).toLocaleString('ko-KR')}개`,
       sub: '부족 기준 이하',
@@ -148,6 +142,12 @@ function InventoryStats({ products, summary }) {
       value: `${Number(stats.in_stock_sku_count || 0).toLocaleString('ko-KR')}개`,
       sub: '재고 보유 중',
       tone: 'inventory-card-in-stock',
+    },
+    {
+      label: '품절 SKU',
+      value: `${Number(stats.out_of_stock_count || 0).toLocaleString('ko-KR')}개`,
+      sub: '재고 0',
+      tone: 'inventory-card-out',
     },
     {
       label: '총 재고액',
@@ -983,12 +983,9 @@ export default function InventoryPage() {
     <section className="page inventory-page">
       <div className="page-header">
         <div>
+          <span className="inventory-page-eyebrow">INVENTORY</span>
           <h1>재고 관리</h1>
-          <p>
-            재고 수량은 대시보드 입고 관리 메뉴에서 반영합니다.
-            재고 증가는 입고 관리에서 처리하고, 재고 보정은 파손/분실/실사 차이처럼 재고를 줄일 때만 사용합니다.
-            Shopee 실제 재고와는 연동하지 않습니다.
-          </p>
+          <p>입고·판매·취소 내역을 기준으로 현재 재고와 구매 필요 상품을 확인합니다.</p>
         </div>
         <div className="action-buttons">
           <button type="button" className="action-btn" onClick={loadProducts} disabled={loading}>
@@ -1000,24 +997,22 @@ export default function InventoryPage() {
       {message && <div className="notice">{message}</div>}
       {error && <div className="alert">{error}</div>}
 
-      <div className="receipt-sync-panel receipt-sync-disabled">
-        <div>
-          <strong>입고관리 시트 동기화 중단</strong>
-          <p>
-            입고관리 시트와 상품구성표 시트 동기화는 중단되었습니다.
-            앞으로 입고 등록과 상품구성표 관리는 왼쪽 메뉴의 입고 관리에서 처리하세요.
-          </p>
-        </div>
-      </div>
-
       <ReceiptSyncResultCard result={syncResult} />
 
-      <InventoryStats products={products} summary={inventorySummary} />
-      <div className="inventory-refresh-note">
-        마지막 갱신: {refreshedAt ? refreshedAt.toLocaleTimeString('ko-KR') : '-'}
+      <div className="inventory-summary-section">
+        <div className="inventory-summary-meta">
+          <div>
+            <strong>재고 현황</strong>
+            <span>내부 관리 재고이며 Shopee 판매 재고와는 별도입니다.</span>
+          </div>
+          <span className="inventory-refresh-note">
+            마지막 갱신 {refreshedAt ? refreshedAt.toLocaleTimeString('ko-KR') : '-'}
+          </span>
+        </div>
+        <InventoryStats products={products} summary={inventorySummary} />
       </div>
 
-      <div className="inventory-tabs">
+      <div className="inventory-tabs" aria-label="재고 보기 전환">
         <button
           type="button"
           className={activeInventoryTab === 'today' ? 'active' : ''}

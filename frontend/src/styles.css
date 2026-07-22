@@ -1290,9 +1290,50 @@ html[data-theme='dark'] .order-management-page .status-tab.active {
 }
 
 .inventory-stats {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
+}
+
+.inventory-page-eyebrow {
+  display: block;
+  margin-bottom: 5px;
+  color: #1677ff;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.inventory-summary-section {
+  padding: 18px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 5px 18px rgba(15, 23, 42, 0.05);
+}
+
+.inventory-summary-meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.inventory-summary-meta > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.inventory-summary-meta strong {
+  color: #172033;
+  font-size: 15px;
+}
+
+.inventory-summary-meta > div span {
+  color: #64748b;
+  font-size: 12px;
 }
 
 .inventory-stat-card {
@@ -1302,10 +1343,10 @@ html[data-theme='dark'] .order-management-page .status-tab.active {
   flex-direction: column;
   gap: 5px;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #fff;
-  padding: 16px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 15px 16px;
+  box-shadow: none;
 }
 
 .inventory-stat-card span {
@@ -1370,24 +1411,31 @@ html[data-theme='dark'] .order-management-page .status-tab.active {
   flex-wrap: wrap;
   gap: 12px;
   align-items: flex-end;
-  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
   background: #fff;
-  padding: 16px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  padding: 14px 16px;
+  box-shadow: none;
 }
 
 .inventory-refresh-note {
-  margin-top: -8px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
   color: #7b8797;
   font-size: 12px;
   font-weight: 700;
-  text-align: right;
+  white-space: nowrap;
 }
 
 .inventory-tabs {
   display: flex;
   gap: 8px;
-  margin: 16px 0 12px;
+  margin: 18px 0 12px;
   border-bottom: 1px solid #e5e7eb;
 }
 
@@ -1441,6 +1489,39 @@ html[data-theme='dark'] .order-management-page .status-tab.active {
   margin: 4px 0 0;
   color: #64748b;
   font-size: 13px;
+}
+
+@media (max-width: 1280px) {
+  .inventory-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .inventory-card-value {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 720px) {
+  .inventory-summary-section {
+    padding: 14px;
+  }
+
+  .inventory-summary-meta {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inventory-refresh-note {
+    align-self: flex-start;
+  }
+
+  .inventory-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-card-value {
+    grid-column: 1 / -1;
+  }
 }
 
 .toggle-inline {
@@ -8447,6 +8528,7 @@ html[data-theme='dark'] .ledger-page .filters,
 html[data-theme='dark'] .ledger-page .ledger-table-wrap,
 html[data-theme='dark'] .ledger-page .table-state,
 html[data-theme='dark'] .inventory-page .inventory-stat-card,
+html[data-theme='dark'] .inventory-page .inventory-summary-section,
 html[data-theme='dark'] .inventory-page .inventory-filters,
 html[data-theme='dark'] .inventory-page .today-order-inventory,
 html[data-theme='dark'] .inventory-page .today-order-table-wrap,
@@ -8462,6 +8544,20 @@ html[data-theme='dark'] .product-capture-page .product-capture-result-wrap {
   border-color: var(--theme-border) !important;
   background: var(--theme-surface) !important;
   color: var(--theme-text) !important;
+}
+
+html[data-theme='dark'] .inventory-page .inventory-summary-meta strong {
+  color: var(--theme-text-strong);
+}
+
+html[data-theme='dark'] .inventory-page .inventory-summary-meta > div span {
+  color: var(--theme-text-muted);
+}
+
+html[data-theme='dark'] .inventory-page .inventory-refresh-note {
+  border-color: var(--theme-border-soft);
+  background: var(--theme-surface-soft);
+  color: var(--theme-text-muted);
 }
 
 html[data-theme='dark'] .inventory-page .cancellation-summary-card { border-color: var(--theme-border); background: var(--theme-surface-soft); }

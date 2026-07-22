@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchCancellationInventoryReviews, restoreCancellationInventory } from '../api/products.js';
 import CopyIconButton from './CopyIconButton.jsx';
+import OrderSettlementDetailModal from './OrderSettlementDetailModal.jsx';
 
 const labels = {
   AUTO_RESTORED: '자동 복원 완료',
@@ -42,11 +43,23 @@ function getPreviousStatus(status) {
   return label ? `${label} (${status})` : status || '-';
 }
 
+function getItems(row) {
+  if (Array.isArray(row.items) && row.items.length) return row.items;
+  return [{
+    id: 'legacy',
+    sku: row.skus || '',
+    item_name: row.item_names || '',
+    option_name: row.option_names || '',
+    quantity: Number(row.total_quantity || 0),
+  }];
+}
+
 export default function CancellationInventoryPanel({ onMessage, onError }) {
   const [rows, setRows] = useState([]);
   const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [target, setTarget] = useState(null);
+  const [detailOrder, setDetailOrder] = useState(null);
   const [restoring, setRestoring] = useState(false);
 
   async function load() {
@@ -130,31 +143,41 @@ export default function CancellationInventoryPanel({ onMessage, onError }) {
               </tr>
             </thead>
             <tbody>
-              {visibleRows.length ? visibleRows.map(row => (
+              {visibleRows.length ? visibleRows.map(row => {
+                const items = getItems(row);
+                return (
                 <tr key={`${row.shop_id}-${row.order_sn}`}>
                   <td>{String(row.created_at || '-').replace('T', ' ').replace('.000Z', '')}</td>
                   <td>
                     <div className="order-id-row">
-                      <strong>{row.order_sn}</strong>
+                      <button
+                        type="button"
+                        className="link-button cancellation-order-link"
+                        onClick={() => setDetailOrder({ orderSn: row.order_sn, shopId: row.shop_id })}
+                      >
+                        {row.order_sn}
+                      </button>
                       <CopyIconButton value={row.order_sn} label="주문번호" />
                     </div>
                   </td>
                   <td><span className={`region-badge region-${String(row.region || '').toLowerCase()}`}>{row.region || '-'}</span></td>
                   <td>
-                    <div className="ledger-sku-line">
-                      <span>{row.skus || '-'}</span>
-                      {row.skus && <CopyIconButton value={row.skus} label="SKU" />}
+                    <div className="cancellation-item-lines">
+                      {items.map(item => <div className="ledger-sku-line" key={item.id}>
+                        <span>{item.sku || '-'}</span>
+                        {item.sku && <CopyIconButton value={item.sku} label="SKU" />}
+                      </div>)}
                     </div>
                   </td>
-                  <td>{row.item_names || '-'}</td>
-                  <td>{row.option_names || '-'}</td>
-                  <td className="num">{Number(row.total_quantity || 0)}</td>
+                  <td><div className="cancellation-item-lines">{items.map(item => <div key={item.id}>{item.item_name || '-'}</div>)}</div></td>
+                  <td><div className="cancellation-item-lines">{items.map(item => <div key={item.id}>{item.option_name || '-'}</div>)}</div></td>
+                  <td className="num"><div className="cancellation-item-lines">{items.map(item => <div key={item.id}>{Number(item.quantity || 0)}</div>)}</div></td>
                   <td>{getPreviousStatus(row.previous_order_status)}</td>
                   <td><span className={`cancellation-decision ${row.decision.toLowerCase()}`}>{labels[row.decision] || row.decision}</span></td>
                   <td>{getDecisionReason(row)}</td>
                   <td>{row.decision === 'RESTORE_PENDING' && <button type="button" className="invoice-btn" onClick={() => setTarget(row)}>재고 복원</button>}</td>
                 </tr>
-              )) : (
+              )}) : (
                 <tr><td colSpan="11" className="empty-cell">표시할 취소 재고 이력이 없습니다.</td></tr>
               )}
             </tbody>
@@ -174,9 +197,7 @@ export default function CancellationInventoryPanel({ onMessage, onError }) {
             </div>
             <div className="modal-body">
               <p><strong>주문번호:</strong> {target.order_sn}</p>
-              <p><strong>SKU:</strong> {target.skus || '-'}</p>
-              <p><strong>상품명:</strong> {target.item_names || '-'}</p>
-              <p><strong>옵션명:</strong> {target.option_names || '-'}</p>
+              <p><strong>대상 상품:</strong> {getItems(target).length}개 항목</p>
               <p><strong>복원 수량:</strong> {target.total_quantity || 0}개</p>
               <p>FIFO 재고와 현재 재고가 함께 증가하며, 같은 주문에는 한 번만 실행할 수 있습니다.</p>
             </div>
@@ -186,6 +207,13 @@ export default function CancellationInventoryPanel({ onMessage, onError }) {
             </div>
           </div>
         </div>
+      )}
+      {detailOrder && (
+        <OrderSettlementDetailModal
+          orderSn={detailOrder.orderSn}
+          shopId={detailOrder.shopId}
+          onClose={() => setDetailOrder(null)}
+        />
       )}
     </section>
   );

@@ -74,20 +74,45 @@ async function getCancellationReviews({ tenantId, decision = '', limit = 100 }) 
   params.push(safeLimit);
   const [rows] = await db.query(
     `SELECT r.*, o.region, o.order_status, o.order_created_at,
-            GROUP_CONCAT(DISTINCT COALESCE(oi.model_sku, oi.item_sku) ORDER BY oi.id SEPARATOR ', ') AS skus,
-            GROUP_CONCAT(DISTINCT oi.item_name ORDER BY oi.id SEPARATOR ' / ') AS item_names,
-            GROUP_CONCAT(DISTINCT NULLIF(oi.model_name, '') ORDER BY oi.id SEPARATOR ' / ') AS option_names,
-            SUM(COALESCE(oi.model_quantity_purchased, 0)) AS total_quantity
+            oi.id AS order_item_id,
+            COALESCE(NULLIF(oi.model_sku, ''), NULLIF(oi.item_sku, '')) AS sku,
+            oi.item_name,
+            oi.model_name AS option_name,
+            COALESCE(oi.model_quantity_purchased, 0) AS item_quantity
        FROM inventory_cancellation_reviews r
        LEFT JOIN orders o ON o.tenant_id = r.tenant_id AND o.shop_id = r.shop_id AND BINARY o.order_sn = BINARY r.order_sn
        LEFT JOIN order_items oi ON oi.tenant_id = r.tenant_id AND oi.shop_id = r.shop_id AND BINARY oi.order_sn = BINARY r.order_sn
       WHERE r.tenant_id = ?${decisionSql}
-      GROUP BY r.id
-      ORDER BY r.created_at DESC
+      ORDER BY r.created_at DESC, oi.id ASC
       LIMIT ?`,
     params
   );
-  return rows;
+  const reviews = new Map();
+  for (const row of rows) {
+    if (!reviews.has(row.id)) {
+      reviews.set(row.id, { ...row, items: [], total_quantity: 0 });
+    }
+    const review = reviews.get(row.id);
+    if (row.order_item_id) {
+      const quantity = Number(row.item_quantity || 0);
+      review.items.push({
+        id: row.order_item_id,
+        sku: row.sku || '',
+        item_name: row.item_name || '',
+        option_name: row.option_name || '',
+        quantity,
+      });
+      review.total_quantity += quantity;
+    }
+  }
+  return Array.from(reviews.values()).map(review => {
+    delete review.order_item_id;
+    delete review.sku;
+    delete review.item_name;
+    delete review.option_name;
+    delete review.item_quantity;
+    return review;
+  });
 }
 
 async function markCancellationReviewRestored({ tenantId, shopId, orderSn }) {

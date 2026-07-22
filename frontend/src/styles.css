@@ -7972,11 +7972,26 @@ html[data-theme='dark'] input[type='datetime-local']::-webkit-calendar-picker-in
 .cancellation-summary-card strong { display: block; margin-top: 4px; color: #172033; font-size: 18px; }
 .cancellation-summary-card.active { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,.12); }
 .cancellation-inventory-table td small { display: block; margin-top: 3px; color: #64748b; }
-.cancellation-inventory-table { min-width: 1680px; }
+.cancellation-inventory-table { min-width: 1740px; font-size: 12px; }
 .cancellation-inventory-table th,
-.cancellation-inventory-table td { vertical-align: middle; }
+.cancellation-inventory-table td { padding: 12px 10px; vertical-align: middle; }
 .cancellation-inventory-table .ledger-sku-line { min-width: 130px; }
 .cancellation-inventory-table .ledger-sku-line > span { white-space: nowrap; }
+.cancellation-inventory-table th:nth-child(1) { width: 145px; }
+.cancellation-inventory-table th:nth-child(2) { width: 165px; }
+.cancellation-inventory-table th:nth-child(3) { width: 54px; }
+.cancellation-inventory-table th:nth-child(4) { width: 150px; }
+.cancellation-inventory-table th:nth-child(5) { width: 300px; }
+.cancellation-inventory-table th:nth-child(6) { width: 185px; }
+.cancellation-inventory-table th:nth-child(7) { width: 55px; }
+.cancellation-inventory-table th:nth-child(8) { width: 185px; }
+.cancellation-inventory-table th:nth-child(9) { width: 125px; }
+.cancellation-inventory-table th:nth-child(10) { width: 270px; }
+.cancellation-inventory-table th:nth-child(11) { width: 105px; }
+.cancellation-item-lines { display: grid; gap: 5px; }
+.cancellation-item-lines > div { display: flex; min-height: 26px; align-items: center; line-height: 1.35; }
+.cancellation-order-link { color: #1677ff; font-weight: 800; text-decoration: none; }
+.cancellation-order-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 .ledger-sku-line { display: flex; align-items: center; gap: 5px; min-width: 90px; }
 .cancellation-decision { display: inline-flex; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .cancellation-decision.auto_restored,.cancellation-decision.restored_manually { background: #ecfdf3; color: #15803d; }

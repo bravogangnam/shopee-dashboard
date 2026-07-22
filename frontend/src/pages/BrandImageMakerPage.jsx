@@ -165,39 +165,39 @@ async function drawComposite(
   canvas.height = 1000;
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, 1000, 1000);
-  if (backgroundImage) context.drawImage(backgroundImage, 0, 0, 1000, 1000);
   drawContain(context, productImage, settings.product);
-  if (!brandText) return;
-
-  const brand = settings.brand;
-  const boxX = (1000 * brand.left) / 100;
-  const boxY = (1000 * brand.top) / 100;
-  const boxWidth = (1000 * brand.width) / 100;
-  const boxHeight = (1000 * brand.height) / 100;
-  const lines = textLines(brandText);
-  const fontSize = fitFontSize(context, brandText, boxWidth, boxHeight, brand);
-  context.font = `${brand.fontWeight} ${fontSize}px ${brand.fontFamily}`;
-  context.fillStyle = brand.color;
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  if (brand.shadow) {
-    context.shadowColor = "rgba(0,0,0,.55)";
-    context.shadowBlur = Math.max(2, fontSize * 0.08);
-    context.shadowOffsetY = Math.max(1, fontSize * 0.035);
+  if (brandText) {
+    const brand = settings.brand;
+    const boxX = (1000 * brand.left) / 100;
+    const boxY = (1000 * brand.top) / 100;
+    const boxWidth = (1000 * brand.width) / 100;
+    const boxHeight = (1000 * brand.height) / 100;
+    const lines = textLines(brandText);
+    const fontSize = fitFontSize(context, brandText, boxWidth, boxHeight, brand);
+    const lineHeight = fontSize * 1.12;
+    const naturalHeight = lineHeight * lines.length;
+    const verticalScale = brand.autoFit
+      ? boxHeight / Math.max(naturalHeight, 1)
+      : 1;
+    context.save();
+    context.font = `${brand.fontWeight} ${fontSize}px ${brand.fontFamily}`;
+    context.fillStyle = brand.color;
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    if (brand.shadow) {
+      context.shadowColor = "rgba(0,0,0,.55)";
+      context.shadowBlur = Math.max(2, fontSize * 0.08);
+      context.shadowOffsetY = Math.max(1, fontSize * 0.035);
+    }
+    context.translate(boxX + boxWidth / 2, boxY + boxHeight / 2);
+    context.scale(1, verticalScale);
+    lines.forEach((line, index) => {
+      const lineY = (index - (lines.length - 1) / 2) * lineHeight;
+      context.fillText(line || " ", 0, lineY, boxWidth);
+    });
+    context.restore();
   }
-  const lineHeight = fontSize * 1.12;
-  const naturalHeight = lineHeight * lines.length;
-  const verticalScale = brand.autoFit
-    ? boxHeight / Math.max(naturalHeight, 1)
-    : 1;
-  context.save();
-  context.translate(boxX + boxWidth / 2, boxY + boxHeight / 2);
-  context.scale(1, verticalScale);
-  lines.forEach((line, index) => {
-    const lineY = (index - (lines.length - 1) / 2) * lineHeight;
-    context.fillText(line || " ", 0, lineY, boxWidth);
-  });
-  context.restore();
+  if (backgroundImage) context.drawImage(backgroundImage, 0, 0, 1000, 1000);
 }
 
 function authHeaders(extra = {}) {

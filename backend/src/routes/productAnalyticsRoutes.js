@@ -40,7 +40,7 @@ function analyticsCte(whereSql) {
       SELECT tenant_id, order_sn, shop_id, item_id, model_id,
              SUM(required_qty) required_qty, SUM(allocated_qty) allocated_qty, SUM(fifo_cost) fifo_cost
       FROM movement_fifo GROUP BY tenant_id, order_sn, shop_id, item_id, model_id
-    ), lines AS (
+    ), order_lines AS (
       SELECT o.tenant_id, o.order_sn, o.shop_id, o.region, o.order_status, o.order_created_at,
              o.currency, er.rate_to_krw, o.net_profit order_net_profit,
              COALESCE(o.order_chargeable_weight_gram, 0) order_weight_gram,
@@ -62,10 +62,10 @@ function analyticsCte(whereSql) {
        AND f.item_id <=> oi.item_id AND f.model_id <=> oi.model_id
       WHERE ${whereSql}
     ), weighted AS (
-      SELECT lines.*,
+      SELECT order_lines.*,
              SUM(line_sales_local) OVER (PARTITION BY tenant_id, shop_id, order_sn) order_line_sales,
              COUNT(*) OVER (PARTITION BY tenant_id, shop_id, order_sn) order_line_count
-      FROM lines WHERE sku IS NOT NULL
+      FROM order_lines WHERE sku IS NOT NULL
     ), allocated AS (
       SELECT weighted.*,
              CASE WHEN order_line_sales > 0 THEN line_sales_local / order_line_sales ELSE 1 / order_line_count END ratio,

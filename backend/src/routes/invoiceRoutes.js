@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getCurrentTenantId } = require('../config/tenant');
 const fs = require('fs');
+const path = require('path');
 const crypto = require('crypto');
 const { requireAuth, requireApprovedTenant } = require('../middleware/auth');
 const {
@@ -12,6 +13,39 @@ const {
 } = require('../services/jobManager');
 const { runInvoice } = require('../jobs/invoiceWorker');
 const labelStorage = require('../services/labelStorageService');
+
+const MERGED_INVOICE_DIR = path.resolve(__dirname, '../../../data/shipping-labels/_merged');
+const MERGED_DELETE_DELAY_MS = 5000;
+
+function scheduleMergedInvoiceDelete(filePath, jobId) {
+  if (!filePath) return false;
+
+  const resolvedPath = path.resolve(filePath);
+  const expectedPath = path.join(MERGED_INVOICE_DIR, `${jobId}.pdf`);
+  if (resolvedPath !== expectedPath) return false;
+
+  const timer = setTimeout(() => {
+    fs.promises.unlink(resolvedPath).then(() => {
+      console.log(`[InvoiceRoute] temporary merged PDF deleted: ${resolvedPath}`);
+    }).catch(error => {
+      if (error?.code !== 'ENOENT') {
+        console.error(`[InvoiceRoute] failed to delete temporary merged PDF: ${error.message}`);
+      }
+    });
+  }, MERGED_DELETE_DELAY_MS);
+  timer.unref?.();
+  return true;
+}
+
+function sendTemporaryInvoiceFile(res, filePath, jobId) {
+  return res.sendFile(filePath, error => {
+    if (error) {
+      if (!res.headersSent) res.status(error.statusCode || 500).end();
+      return;
+    }
+    scheduleMergedInvoiceDelete(filePath, jobId);
+  });
+}
 
 router.get('/jobs/:jobId/print', async (req, res) => {
   const jobId = String(req.params.jobId || '').trim();
@@ -125,7 +159,7 @@ router.get('/jobs/:jobId/print-pdf', async (req, res) => {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="invoice-${job.id}.pdf"`);
   res.setHeader('Cache-Control', 'no-store');
-  return res.sendFile(mergedPath);
+  return sendTemporaryInvoiceFile(res, mergedPath, job.id);
 });
 
 router.use(requireAuth);
@@ -332,7 +366,7 @@ async function sendInvoiceJobDownload(req, res, jobId) {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
   res.setHeader('Cache-Control', 'no-store');
-  return res.sendFile(mergedPath);
+  return sendTemporaryInvoiceFile(res, mergedPath, job.id);
 }
 
 

@@ -36,13 +36,19 @@ function ensureTable() {
 }
 
 function classifyCancellation(previousOrderStatus) {
+  if (previousOrderStatus === 'UNPAID' || previousOrderStatus === 'PENDING') {
+    return { decision: DECISIONS.DO_NOT_RESTORE, reason: '재고 차감 전 취소 · 복원할 재고 없음' };
+  }
   if (previousOrderStatus === 'READY_TO_SHIP') {
-    return { decision: DECISIONS.AUTO_RESTORED, reason: '출고 접수 전 취소' };
+    return { decision: DECISIONS.AUTO_RESTORED, reason: '재고 차감 후·출고 접수 전 취소 · 자동 복원' };
   }
   if (previousOrderStatus === 'PROCESSED') {
-    return { decision: DECISIONS.RESTORE_PENDING, reason: '출고 접수 후 취소' };
+    return { decision: DECISIONS.RESTORE_PENDING, reason: '출고 접수 후 취소 · 실제 회수 확인 필요' };
   }
-  return { decision: DECISIONS.DO_NOT_RESTORE, reason: '물류 진행 이후 취소' };
+  if (['SHIPPED', 'TO_CONFIRM_RECEIVE', 'COMPLETED'].includes(previousOrderStatus)) {
+    return { decision: DECISIONS.DO_NOT_RESTORE, reason: '배송 진행 이후 취소 · 자동 복원 제외' };
+  }
+  return { decision: DECISIONS.DO_NOT_RESTORE, reason: '재고 차감 이력 확인 불가 · 자동 복원 제외' };
 }
 
 async function recordCancellationReview({ tenantId, shopId, orderSn, previousOrderStatus, updateTime, decision, reason }) {
@@ -70,6 +76,7 @@ async function getCancellationReviews({ tenantId, decision = '', limit = 100 }) 
     `SELECT r.*, o.region, o.order_status, o.order_created_at,
             GROUP_CONCAT(DISTINCT COALESCE(oi.model_sku, oi.item_sku) ORDER BY oi.id SEPARATOR ', ') AS skus,
             GROUP_CONCAT(DISTINCT oi.item_name ORDER BY oi.id SEPARATOR ' / ') AS item_names,
+            GROUP_CONCAT(DISTINCT NULLIF(oi.model_name, '') ORDER BY oi.id SEPARATOR ' / ') AS option_names,
             SUM(COALESCE(oi.model_quantity_purchased, 0)) AS total_quantity
        FROM inventory_cancellation_reviews r
        LEFT JOIN orders o ON o.tenant_id = r.tenant_id AND o.shop_id = r.shop_id AND BINARY o.order_sn = BINARY r.order_sn

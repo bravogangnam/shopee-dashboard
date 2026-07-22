@@ -408,7 +408,32 @@ async function processInventoryForOrder(order, { previousOrderStatus = null } = 
     const { isInventoryFifoEnabled, allocateSaleInventoryForOrder } = require('./inventoryFifoService');
     if (!isInventoryFifoEnabled()) return;
     if (order.order_status === 'CANCELLED') {
-      if (!previousOrderStatus || previousOrderStatus === 'CANCELLED') return;
+      if (!previousOrderStatus || previousOrderStatus === 'CANCELLED') {
+        const [movementRows] = await db.query(
+          `SELECT
+             SUM(CASE WHEN movement_type = 'SALE' THEN 1 ELSE 0 END) AS sale_count,
+             SUM(CASE WHEN movement_type = 'CANCEL_RESTORE' THEN 1 ELSE 0 END) AS restore_count
+           FROM inventory_movements
+          WHERE tenant_id = ? AND shop_id = ? AND order_sn = ?`,
+          [order.tenant_id, order.shop_id, order.order_sn]
+        );
+        const saleCount = Number(movementRows[0]?.sale_count || 0);
+        const restoreCount = Number(movementRows[0]?.restore_count || 0);
+        await recordCancellationReview({
+          tenantId: order.tenant_id,
+          shopId: order.shop_id,
+          orderSn: order.order_sn,
+          previousOrderStatus: 'UNKNOWN',
+          updateTime: order.update_time,
+          decision: restoreCount > 0 ? DECISIONS.AUTO_RESTORED : DECISIONS.DO_NOT_RESTORE,
+          reason: restoreCount > 0
+            ? '취소 상태로 최초 확인 · 기존 재고 복원 이력 확인'
+            : saleCount > 0
+              ? '취소 직전 단계 확인 불가 · 자동 복원 제외'
+              : '최초 동기화 시 이미 취소 완료 · 재고 차감 이력 없음',
+        });
+        return;
+      }
       const classification = classifyCancellation(previousOrderStatus);
       if (classification.decision === DECISIONS.AUTO_RESTORED) {
         const restoredCount = await restoreCancelledOrder(order);

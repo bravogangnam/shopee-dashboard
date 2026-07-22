@@ -129,11 +129,19 @@ router.get('/overview', async (req, res) => {
         cost_missing: row.current_cost == null, pending_settlement_orders: Number(row.pending_settlement_orders || 0) };
     });
     if (search) { const q = search.toLocaleLowerCase(); rows = rows.filter(row => [row.sku, row.product_name_kr, row.product_name_en, row.item_name, row.option_name].some(value => String(value || '').toLocaleLowerCase().includes(q))); }
-    const sort = String(req.query.sort || 'net_profit_krw'); const direction = req.query.direction === 'asc' ? 1 : -1;
-    rows.sort((a, b) => ((Number(a[sort] || 0) - Number(b[sort] || 0)) * direction) || String(a.sku).localeCompare(String(b.sku)));
+    const allowedSorts = new Set(['sku', 'stock_quantity', 'sold_qty', 'order_count', 'sales_krw', 'settlement_krw', 'cost_krw', 'net_profit_krw', 'profit_rate', 'cancellation_rate', 'last_sold_at']);
+    const requestedSort = String(req.query.sort || 'net_profit_krw');
+    const sort = allowedSorts.has(requestedSort) ? requestedSort : 'net_profit_krw';
+    const direction = req.query.direction === 'asc' ? 1 : -1;
+    rows.sort((a, b) => {
+      const result = sort === 'sku' || sort === 'last_sold_at'
+        ? String(a[sort] || '').localeCompare(String(b[sort] || ''))
+        : Number(a[sort] || 0) - Number(b[sort] || 0);
+      return result * direction || String(a.sku).localeCompare(String(b.sku));
+    });
     const summary = rows.reduce((acc, row) => { acc.sku_count += 1; acc.sold_qty += row.sold_qty; acc.order_count += row.order_count; acc.sales_krw += row.sales_krw; acc.settlement_krw += Number(row.settlement_krw || 0); acc.cost_krw += row.cost_krw; acc.net_profit_krw += Number(row.net_profit_krw || 0); if (row.cost_missing) acc.missing_cost_count += 1; if (row.net_profit_krw < 0) acc.loss_sku_count += 1; acc.pending_settlement_orders += row.pending_settlement_orders; return acc; }, { sku_count: 0, sold_qty: 0, order_count: 0, sales_krw: 0, settlement_krw: 0, cost_krw: 0, net_profit_krw: 0, missing_cost_count: 0, loss_sku_count: 0, pending_settlement_orders: 0 });
     summary.profit_rate = summary.sales_krw ? summary.net_profit_krw / summary.sales_krw * 100 : null;
-    const page = Math.max(1, Number(req.query.page || 1)); const pageSize = Math.min(200, Math.max(10, Number(req.query.page_size || 50)));
+    const page = Math.max(1, Number(req.query.page || 1)); const pageSize = 50;
     res.json({ success: true, summary, rows: rows.slice((page - 1) * pageSize, page * pageSize), total: rows.length, page, page_size: pageSize });
   } catch (error) { console.error('[ProductAnalytics] overview:', error); res.status(500).json({ success: false, error: error.message }); }
 });

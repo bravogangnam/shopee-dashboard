@@ -58,6 +58,7 @@ app.use('/api/test', require('./routes/testRoutes'));
 app.use('/api/jobs', require('./routes/jobRoutes'));
 app.use('/api/shopee/push', require('./routes/shopeePushRoutes'));
 app.use('/api/orders', require('./routes/ordersRoutes'));
+app.use('/api/product-analytics', require('./routes/productAnalyticsRoutes'));
 app.use('/api/payment-balances', require('./routes/paymentBalanceRoutes'));
 app.use('/api/products', require('./routes/productsRoutes'));
 app.use('/api/receipts', require('./routes/receiptsRoutes'));

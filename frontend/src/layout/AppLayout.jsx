@@ -38,6 +38,14 @@ function ReceiptIcon() {
   );
 }
 
+function AnalyticsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 19V10M10 19V5M16 19v-7M22 19H2" />
+    </svg>
+  );
+}
+
 function AdminIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -69,6 +77,7 @@ const navItems = [
   { to: '/ledger', label: '정산 관리', icon: <LedgerIcon /> },
   { to: '/inventory', label: '재고 관리', icon: <InventoryIcon /> },
   { to: '/receipts', label: '입고 관리', icon: <ReceiptIcon /> },
+  { to: '/product-analytics', label: '상품 분석', icon: <AnalyticsIcon /> },
   { to: '/product-capture', label: '상품 수집', icon: <ListIcon /> },
   { to: '/naver-product-capture', label: '네이버 수집', icon: <ListIcon /> },
   { to: '/admin', label: '관리자', icon: <AdminIcon />, adminOnly: true },

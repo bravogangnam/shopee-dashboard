@@ -11,6 +11,7 @@ import SettingsPage from './pages/SettingsPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
 import ProductCapturePage from './pages/ProductCapturePage.jsx';
 import NaverProductCapturePage from './pages/NaverProductCapturePage.jsx';
+import ProductAnalyticsPage from './pages/ProductAnalyticsPage.jsx';
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="/ledger" element={<LedgerPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/receipts" element={<ReceiptManagementPage />} />
+          <Route path="/product-analytics" element={<ProductAnalyticsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/product-capture" element={<ProductCapturePage />} />
           <Route path="/naver-product-capture" element={<NaverProductCapturePage />} />

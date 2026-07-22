@@ -357,6 +357,12 @@ label {
 
 /* Desktop density: keep every authenticated screen fully usable at browser 100%. */
 @media (min-width: 1200px) {
+  html,
+  body,
+  #root {
+    overflow-x: hidden;
+  }
+
   .app-shell {
     width: 111.111111%;
     min-height: 111.111111vh;

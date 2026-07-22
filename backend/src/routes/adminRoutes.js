@@ -38,6 +38,49 @@ function isProtectedTenant(tenant) {
   return Number(tenant?.id || 0) === 1 || tenant?.code === 'GANGNAMCOS';
 }
 
+function quoteIdentifier(value) {
+  return `\`${String(value).replace(/`/g, '``')}\``;
+}
+
+async function getTenantScopedTables(conn) {
+  const [rows] = await conn.query(
+    `SELECT TABLE_NAME AS table_name
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND COLUMN_NAME = 'tenant_id'
+     ORDER BY TABLE_NAME`
+  );
+
+  return rows.map((row) => row.table_name);
+}
+
+async function deleteTenantScopedData(conn, tenantId) {
+  const tables = await getTenantScopedTables(conn);
+  const targetTables = tables.filter((tableName) => tableName !== 'tenants');
+  const deletedRows = {};
+
+  // Every statement is constrained by the exact tenant_id. Foreign key checks are
+  // disabled only on this dedicated transaction connection so child-table order
+  // cannot leave a half-deleted tenant when schemas evolve.
+  await conn.query('SET FOREIGN_KEY_CHECKS = 0');
+  try {
+    for (const tableName of targetTables) {
+      const [result] = await conn.query(
+        `DELETE FROM ${quoteIdentifier(tableName)} WHERE tenant_id = ?`,
+        [tenantId]
+      );
+      deletedRows[tableName] = Number(result.affectedRows || 0);
+    }
+
+    const [tenantResult] = await conn.query('DELETE FROM tenants WHERE id = ?', [tenantId]);
+    deletedRows.tenants = Number(tenantResult.affectedRows || 0);
+  } finally {
+    await conn.query('SET FOREIGN_KEY_CHECKS = 1');
+  }
+
+  return deletedRows;
+}
+
 async function getTenantById(conn, tenantId, forUpdate = false) {
   const [rows] = await conn.query(
     `SELECT
@@ -419,6 +462,108 @@ router.patch('/tenants/:id/suspend', async (req, res) => {
       error: 'Failed to suspend tenant',
     });
   } finally {
+    conn.release();
+  }
+});
+
+router.delete('/tenants/:id', async (req, res) => {
+  const tenantId = parseTenantId(req.params.id);
+  const confirmationCode = String(req.body?.confirmationCode || '').trim();
+
+  if (!tenantId) {
+    return res.status(400).json({ success: false, error: 'Invalid tenant id' });
+  }
+
+  const adminUserId = Number(req.user?.user_id || req.user?.id || 0) || null;
+  const conn = await db.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    const tenant = await getTenantById(conn, tenantId, true);
+    if (!tenant) {
+      await conn.rollback();
+      return res.status(404).json({ success: false, error: 'Tenant not found' });
+    }
+
+    if (isProtectedTenant(tenant)) {
+      await conn.rollback();
+      return res.status(403).json({
+        success: false,
+        error: 'Protected tenant cannot be deleted',
+        code: 'PROTECTED_TENANT',
+      });
+    }
+
+    if (confirmationCode !== tenant.code) {
+      await conn.rollback();
+      return res.status(400).json({
+        success: false,
+        error: 'Tenant confirmation code does not match',
+        code: 'CONFIRMATION_MISMATCH',
+      });
+    }
+
+    if (adminUserId) {
+      const [[currentAdminMembership]] = await conn.query(
+        `SELECT 1 AS found
+         FROM tenant_users
+         WHERE tenant_id = ? AND user_id = ?
+         LIMIT 1`,
+        [tenantId, adminUserId]
+      );
+
+      if (currentAdminMembership) {
+        await conn.rollback();
+        return res.status(403).json({
+          success: false,
+          error: 'The tenant containing the current administrator cannot be deleted',
+          code: 'CURRENT_ADMIN_TENANT',
+        });
+      }
+    }
+
+    const [memberRows] = await conn.query(
+      'SELECT DISTINCT user_id FROM tenant_users WHERE tenant_id = ? FOR UPDATE',
+      [tenantId]
+    );
+    const memberUserIds = memberRows.map((row) => Number(row.user_id)).filter(Number.isSafeInteger);
+
+    const deletedRows = await deleteTenantScopedData(conn, tenantId);
+
+    let deletedUsers = 0;
+    if (memberUserIds.length > 0) {
+      const placeholders = memberUserIds.map(() => '?').join(', ');
+      const [userResult] = await conn.query(
+        `DELETE u
+         FROM users u
+         WHERE u.id IN (${placeholders})
+           AND u.is_platform_admin = 0
+           AND NOT EXISTS (
+             SELECT 1 FROM tenant_users tu WHERE tu.user_id = u.id
+           )`,
+        memberUserIds
+      );
+      deletedUsers = Number(userResult.affectedRows || 0);
+    }
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      deletedTenant: { id: tenant.id, code: tenant.code },
+      deletedUsers,
+      deletedRows,
+    });
+  } catch (err) {
+    try { await conn.rollback(); } catch (_) {}
+    console.error('[Admin] delete tenant failed:', err.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to delete tenant',
+    });
+  } finally {
+    try { await conn.query('SET FOREIGN_KEY_CHECKS = 1'); } catch (_) {}
     conn.release();
   }
 });

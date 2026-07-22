@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   approveTenant,
+  deleteTenant,
   fetchAdminTenants,
   fetchAdminUsers,
   rejectTenant,
@@ -87,6 +88,21 @@ export default function AdminPage() {
     const reasonRequired = type === 'reject' || type === 'suspend';
     let reason = '';
 
+    if (type === 'delete') {
+      const confirmationCode = window.prompt(
+        `${tenant.code} Tenant와 연결된 주문, 정산, 상품, 재고, 설정 및 사용자 데이터를 모두 영구 삭제합니다.\n\n계속하려면 Tenant 코드 ${tenant.code} 를 정확히 입력하세요.`,
+        ''
+      );
+
+      if (confirmationCode === null) return;
+      if (confirmationCode.trim() !== tenant.code) {
+        setError('Tenant 코드가 일치하지 않아 삭제하지 않았습니다.');
+        return;
+      }
+
+      reason = confirmationCode.trim();
+    }
+
     if (reasonRequired) {
       const label = type === 'reject' ? '거절' : '정지';
       reason = window.prompt(`${tenant.code} ${label} 사유를 입력하세요.`, '') || '';
@@ -113,6 +129,9 @@ export default function AdminPage() {
       } else if (type === 'suspend') {
         await suspendTenant(tenant.id, reason);
         setMessage(`${tenant.code} 정지 완료`);
+      } else if (type === 'delete') {
+        await deleteTenant(tenant.id, reason);
+        setMessage(`${tenant.code} Tenant와 관련 데이터가 모두 삭제되었습니다.`);
       }
 
       await loadAdminData();
@@ -208,6 +227,7 @@ export default function AdminPage() {
                   const approveLoading = actionLoading === `approve:${tenant.id}`;
                   const rejectLoading = actionLoading === `reject:${tenant.id}`;
                   const suspendLoading = actionLoading === `suspend:${tenant.id}`;
+                  const deleteLoading = actionLoading === `delete:${tenant.id}`;
 
                   return (
                     <tr key={tenant.id}>
@@ -259,6 +279,15 @@ export default function AdminPage() {
                             disabled={suspendLoading || isProtected}
                           >
                             {suspendLoading ? '처리중' : '정지'}
+                          </button>
+                          <button
+                            type="button"
+                            className="danger-action"
+                            onClick={() => runTenantAction('delete', tenant)}
+                            disabled={deleteLoading || isProtected}
+                            title={isProtected ? '운영 Tenant는 삭제할 수 없습니다.' : 'Tenant와 관련 데이터를 영구 삭제'}
+                          >
+                            {deleteLoading ? '삭제중' : '삭제'}
                           </button>
                         </div>
                       </td>

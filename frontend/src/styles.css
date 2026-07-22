@@ -3069,6 +3069,17 @@ html[data-theme='dark'] .order-management-page .status-tab.active {
   color: #991b1b;
 }
 
+.admin-actions .danger-action {
+  border-color: #dc2626;
+  background: #dc2626;
+  color: #fff;
+}
+
+.admin-actions .danger-action:hover:not(:disabled) {
+  border-color: #b91c1c;
+  background: #b91c1c;
+}
+
 .alert {
   border-radius: 12px;
   padding: 12px 14px;

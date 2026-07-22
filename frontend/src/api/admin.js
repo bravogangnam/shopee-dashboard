@@ -41,3 +41,10 @@ export function suspendTenant(tenantId, reason = '') {
     body: { reason },
   });
 }
+
+export function deleteTenant(tenantId, confirmationCode) {
+  return apiRequest(`/api/admin/tenants/${encodeURIComponent(tenantId)}`, {
+    method: 'DELETE',
+    body: { confirmationCode },
+  });
+}

@@ -4,6 +4,8 @@ const { requireAuth, requireApprovedTenant } = require('../middleware/auth');
 const { getCurrentTenantId } = require('../config/tenant');
 
 const router = express.Router();
+const overviewCache = new Map();
+const OVERVIEW_CACHE_MS = 60 * 1000;
 router.use(requireAuth);
 router.use(requireApprovedTenant);
 
@@ -91,7 +93,15 @@ router.get('/overview', async (req, res) => {
   const search = String(req.query.search || '').trim();
   const cte = analyticsCte(scoped.sql);
   try {
-    const [performance] = await db.query(`${cte}
+    const cacheKey = JSON.stringify([tenantId, ...scoped.params.slice(1), search.toLocaleLowerCase()]);
+    const cached = overviewCache.get(cacheKey);
+    let rows;
+    let summary;
+    if (cached && Date.now() - cached.createdAt < OVERVIEW_CACHE_MS) {
+      rows = cached.rows.slice();
+      summary = cached.summary;
+    } else {
+      const [performance] = await db.query(`${cte}
       SELECT sku,
         MAX(item_name) item_name, MAX(model_name) option_name, MAX(image_url) image_url,
         GROUP_CONCAT(DISTINCT region ORDER BY region SEPARATOR ',') regions,
@@ -105,7 +115,7 @@ router.get('/overview', async (req, res) => {
         MAX(order_created_at) last_sold_at
       FROM allocated GROUP BY sku`, scoped.params);
 
-    const [products] = await db.query(
+      const [products] = await db.query(
       `SELECT p.sku, p.product_name_kr, p.product_name_en, p.option_name, p.stock_quantity,
               COALESCE(p.cost_price_with_vat, p.discounted_price_with_vat, p.cost_price * 1.1) current_cost,
               (SELECT COALESCE(oi.image_info_image_url, oi.item_image_url) FROM order_items oi
@@ -115,8 +125,8 @@ router.get('/overview', async (req, res) => {
                ORDER BY oi.id DESC LIMIT 1) image_url
        FROM products p WHERE p.tenant_id = ? ORDER BY p.sku`, [tenantId]);
 
-    const perfMap = new Map(performance.map(row => [String(row.sku), row]));
-    let rows = products.map(product => ({ ...product, ...(perfMap.get(String(product.sku)) || {}) }));
+      const perfMap = new Map(performance.map(row => [String(row.sku), row]));
+      rows = products.map(product => ({ ...product, ...(perfMap.get(String(product.sku)) || {}) }));
     const productSkus = new Set(products.map(row => String(row.sku)));
     rows.push(...performance.filter(row => !productSkus.has(String(row.sku))).map(row => ({ ...row, stock_quantity: 0, current_cost: null, cost_missing: true })));
     rows = rows.map(row => {
@@ -129,6 +139,11 @@ router.get('/overview', async (req, res) => {
         cost_missing: row.current_cost == null, pending_settlement_orders: Number(row.pending_settlement_orders || 0) };
     });
     if (search) { const q = search.toLocaleLowerCase(); rows = rows.filter(row => [row.sku, row.product_name_kr, row.product_name_en, row.item_name, row.option_name].some(value => String(value || '').toLocaleLowerCase().includes(q))); }
+      summary = rows.reduce((acc, row) => { acc.sku_count += 1; acc.sold_qty += row.sold_qty; acc.order_count += row.order_count; acc.sales_krw += row.sales_krw; acc.settlement_krw += Number(row.settlement_krw || 0); acc.cost_krw += row.cost_krw; acc.net_profit_krw += Number(row.net_profit_krw || 0); if (row.cost_missing) acc.missing_cost_count += 1; if (row.net_profit_krw < 0) acc.loss_sku_count += 1; acc.pending_settlement_orders += row.pending_settlement_orders; return acc; }, { sku_count: 0, sold_qty: 0, order_count: 0, sales_krw: 0, settlement_krw: 0, cost_krw: 0, net_profit_krw: 0, missing_cost_count: 0, loss_sku_count: 0, pending_settlement_orders: 0 });
+      summary.profit_rate = summary.sales_krw ? summary.net_profit_krw / summary.sales_krw * 100 : null;
+      overviewCache.set(cacheKey, { createdAt: Date.now(), rows: rows.slice(), summary });
+      if (overviewCache.size > 50) overviewCache.delete(overviewCache.keys().next().value);
+    }
     const allowedSorts = new Set(['sku', 'stock_quantity', 'sold_qty', 'order_count', 'sales_krw', 'settlement_krw', 'cost_krw', 'net_profit_krw', 'profit_rate', 'cancellation_rate', 'last_sold_at']);
     const requestedSort = String(req.query.sort || 'net_profit_krw');
     const sort = allowedSorts.has(requestedSort) ? requestedSort : 'net_profit_krw';
@@ -139,8 +154,6 @@ router.get('/overview', async (req, res) => {
         : Number(a[sort] || 0) - Number(b[sort] || 0);
       return result * direction || String(a.sku).localeCompare(String(b.sku));
     });
-    const summary = rows.reduce((acc, row) => { acc.sku_count += 1; acc.sold_qty += row.sold_qty; acc.order_count += row.order_count; acc.sales_krw += row.sales_krw; acc.settlement_krw += Number(row.settlement_krw || 0); acc.cost_krw += row.cost_krw; acc.net_profit_krw += Number(row.net_profit_krw || 0); if (row.cost_missing) acc.missing_cost_count += 1; if (row.net_profit_krw < 0) acc.loss_sku_count += 1; acc.pending_settlement_orders += row.pending_settlement_orders; return acc; }, { sku_count: 0, sold_qty: 0, order_count: 0, sales_krw: 0, settlement_krw: 0, cost_krw: 0, net_profit_krw: 0, missing_cost_count: 0, loss_sku_count: 0, pending_settlement_orders: 0 });
-    summary.profit_rate = summary.sales_krw ? summary.net_profit_krw / summary.sales_krw * 100 : null;
     const page = Math.max(1, Number(req.query.page || 1)); const pageSize = 50;
     res.json({ success: true, summary, rows: rows.slice((page - 1) * pageSize, page * pageSize), total: rows.length, page, page_size: pageSize });
   } catch (error) { console.error('[ProductAnalytics] overview:', error); res.status(500).json({ success: false, error: error.message }); }

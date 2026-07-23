@@ -117,6 +117,45 @@ function naverCollector() {
     }));
     return [...found.values()];
   };
+  const collectDomOptions = (basePrice) => {
+    const visible = (element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    };
+    const optionHeading = [...document.querySelectorAll('body *')].find((element) => {
+      const text = clean(element.textContent);
+      return element.children.length < 3 && /^옵션\s*선택/.test(text);
+    });
+    if (!optionHeading) return [];
+    let optionRoot = optionHeading.parentElement;
+    for (let element = optionRoot; element && element !== document.body; element = element.parentElement) {
+      const inputs = element.querySelectorAll('input[type="radio"], input[type="checkbox"]');
+      if (inputs.length >= 2 && inputs.length <= 100) { optionRoot = element; break; }
+    }
+    const controls = [...optionRoot.querySelectorAll('input[type="radio"], input[type="checkbox"]')];
+    const found = []; const names = new Set();
+    controls.forEach((control) => {
+      let holder = control.labels?.[0] || control.closest('label');
+      if (!holder) {
+        for (let element = control.parentElement; element && element !== optionRoot; element = element.parentElement) {
+          const text = clean(element.innerText || element.textContent);
+          if (text && text.length <= 180) { holder = element; break; }
+        }
+      }
+      if (holder && !visible(holder)) return;
+      let name = clean(control.getAttribute('aria-label') || holder?.innerText || holder?.textContent || control.value);
+      name = name.replace(/^옵션\s*선택(?:\s*\([^)]*\))?\s*/g, '').replace(/\s*[+-]\s*[\d,]+\s*원\s*$/g, '').trim();
+      if (!name || /^(on|off|true|false)$/i.test(name) || names.has(name)) return;
+      names.add(name);
+      const imageElement = holder?.querySelector?.('img');
+      const background = holder ? getComputedStyle(holder).backgroundImage.match(/url\(["']?(.+?)["']?\)/)?.[1] : '';
+      const optionImage = imageUrl(imageElement?.dataset?.src || imageElement?.currentSrc || imageElement?.src || background);
+      const extraPrice = clean(holder?.innerText || holder?.textContent).match(/[+]\s*([\d,]+)\s*원/);
+      found.push({ optionName: name, price: basePrice + Number((extraPrice?.[1] || '0').replace(/,/g, '')), optionImage });
+    });
+    return found;
+  };
   const fallbackCopy = (text) => {
     const textarea = document.createElement('textarea'); textarea.value = text;
     Object.assign(textarea.style, { position: 'fixed', left: '20px', top: '20px', width: '700px', height: '400px', zIndex: '2147483646' });
@@ -150,14 +189,16 @@ function naverCollector() {
       ]).map((url) => ({ url }));
       const imageMap = optionImageMap(product);
       const combinations = Array.isArray(product.optionCombinations) ? product.optionCombinations : [];
-      const rows = combinations.length ? combinations.map((option) => {
+      const apiRows = combinations.length ? combinations.map((option) => {
         const parts = [1, 2, 3, 4, 5].map((index) => clean(option[`optionName${index}`])).filter(Boolean);
         const optionName = parts.join(' / ') || '-';
         const directImage = imageUrl(option.imageInfo?.images?.[0] || option.imageInfo || option.imageUrl || option.image);
         const mappedImage = parts.map((part) => imageMap.get(part)).find(Boolean) || '';
         const price = Number(option.dispDiscountedSalePrice ?? option.discountedSalePrice ?? (basePrice + Number(option.price || 0)));
         return { optionName, price, optionImage: directImage || mappedImage };
-      }) : [{ optionName: '-', price: basePrice, optionImage: '' }];
+      }) : [];
+      const domRows = apiRows.length ? [] : collectDomOptions(basePrice);
+      const rows = apiRows.length ? apiRows : domRows.length ? domRows : [{ optionName: '-', price: basePrice, optionImage: '' }];
       const detailImages = collectDetailImages().map((url) => ({ url }));
       const detailVideos = collectVideos();
       const payload = { source: 'naver', productName, mainImages, detailImages, detailVideos, rows, warning: apiWarning || undefined };

@@ -20,24 +20,41 @@ function naverCollector() {
     try { const url = new URL(text); url.searchParams.delete('type'); return url.toString(); } catch { return text; }
   };
   const unique = (values) => [...new Set(values.map(imageUrl).filter(Boolean))];
+  const asArray = (value) => Array.isArray(value) ? value : value ? [value] : [];
   const state = window.__PRELOADED_STATE__ || {};
-  const simple = state.simpleProductForDetailPage?.A || state.product || {};
-  const productId = String(simple.id || location.pathname.match(/\/products\/(\d+)/)?.[1] || '');
-  const channelUid = simple.channel?.channelUid || state.channel?.channelUid || '';
-  if (!productId) { toast('네이버 상품번호를 찾지 못했습니다. 상품 페이지를 새로고침한 뒤 다시 실행하세요.', true); return; }
-  const prefix = location.hostname.includes('brand.naver.com') ? '/n' : '/i';
-  const findProduct = (root) => {
-    const seen = new WeakSet(); let best = null;
+  const pathProductId = String(location.pathname.match(/\/products\/(\d+)/)?.[1] || '');
+  const productImageValues = (product) => [
+    product?.representativeImageUrl,
+    ...asArray(product?.optionalImageUrls),
+    ...asArray(product?.productImages),
+    ...asArray(product?.channelProductImages),
+    ...asArray(product?.galleryImages),
+    ...asArray(product?.images),
+  ];
+  const findProduct = (root, expectedId = '') => {
+    const seen = new WeakSet(); let best = null; let bestScore = -1;
     const walk = (value, depth) => {
       if (!value || typeof value !== 'object' || seen.has(value) || depth > 10) return;
       seen.add(value);
-      if (Array.isArray(value.optionCombinations) || (value.name && (value.productImages || value.channelProductImages))) {
-        if (!best || (value.optionCombinations?.length || 0) > (best.optionCombinations?.length || 0)) best = value;
+      const id = String(value.id || value.productId || value.channelProductNo || '');
+      const imageCount = unique(productImageValues(value)).length;
+      const optionCount = Array.isArray(value.optionCombinations) ? value.optionCombinations.length : 0;
+      const score = (expectedId && id === expectedId ? 10000 : 0) + (value.name ? 100 : 0) + imageCount * 20 + optionCount;
+      if ((imageCount || optionCount) && score > bestScore) {
+        best = value;
+        bestScore = score;
       }
       Object.keys(value).slice(0, 500).forEach((key) => walk(value[key], depth + 1));
     };
-    walk(root, 0); return best || root;
+    walk(root, 0); return best;
   };
+  const simpleRoot = state.simpleProductForDetailPage?.A || state.simpleProductForDetailPage || state.product || {};
+  const simple = findProduct(simpleRoot, pathProductId) || simpleRoot;
+  const stateProduct = findProduct(state, pathProductId) || simple;
+  const productId = String(pathProductId || simple.id || stateProduct.id || '');
+  const channelUid = simple.channel?.channelUid || stateProduct.channel?.channelUid || state.channel?.channelUid || '';
+  if (!productId) { toast('네이버 상품번호를 찾지 못했습니다. 상품 페이지를 새로고침한 뒤 다시 실행하세요.', true); return; }
+  const prefix = location.hostname.includes('brand.naver.com') ? '/n' : '/i';
   const optionImageMap = (product) => {
     const map = new Map();
     (product.standardOptions || []).forEach((group) => (group.options || []).forEach((option) => {
@@ -52,6 +69,41 @@ function naverCollector() {
     const result = [document];
     document.querySelectorAll('iframe').forEach((frame) => { try { if (frame.contentDocument) result.push(frame.contentDocument); } catch {} });
     return result;
+  };
+  const collectStructuredMainImages = () => {
+    const values = [];
+    document.querySelectorAll('script[type="application/ld+json"]').forEach((element) => {
+      try {
+        const roots = [].concat(JSON.parse(element.textContent || 'null') || []);
+        const visit = (value) => {
+          if (!value || typeof value !== 'object') return;
+          if (String(value['@type'] || '').toLowerCase() === 'product') {
+            values.push(...[].concat(value.image || []));
+          }
+          if (Array.isArray(value['@graph'])) value['@graph'].forEach(visit);
+        };
+        roots.forEach(visit);
+      } catch {}
+    });
+    return values;
+  };
+  const collectDomMainImages = () => {
+    const values = [
+      document.querySelector('meta[property="og:image"]')?.content,
+      document.querySelector('meta[name="twitter:image"]')?.content,
+      ...collectStructuredMainImages(),
+    ];
+    const detailRoots = new Set(documents().flatMap((doc) => [...doc.querySelectorAll('.se-main-container, [class*="detail_content"], [class*="detailContent"]')]));
+    [...document.images].forEach((element) => {
+      if ([...detailRoots].some((root) => root.contains(element))) return;
+      const url = element.dataset.src || element.dataset.original || element.currentSrc || element.src;
+      const width = Number(element.naturalWidth || element.width || 0);
+      const height = Number(element.naturalHeight || element.height || 0);
+      const looksLikeProductImage = /shop-phinf|shopping-phinf|pstatic\.net/i.test(url || '');
+      const looksLikeGallery = /thumb|image|gallery|product/i.test(String(element.className || '') + String(element.parentElement?.className || ''));
+      if (looksLikeProductImage && looksLikeGallery && width >= 80 && height >= 80) values.push(url);
+    });
+    return unique(values);
   };
   const collectDetailImages = () => unique(documents().flatMap((doc) => [...doc.querySelectorAll('img.se-image-resource, .se-main-container img')].map((element) => element.dataset.src || element.dataset.original || element.currentSrc || element.src)));
   const collectVideos = () => {
@@ -72,18 +124,30 @@ function naverCollector() {
     toast('자동 복사가 실패했습니다. 열린 복사창에서 Ctrl+C를 눌러주세요.', true);
   };
   (async () => {
-    let product = simple; let apiWarning = '';
+    let product = stateProduct || simple; let apiWarning = '';
     if (channelUid) {
       try {
-        const response = await fetch(`${prefix}/v2/channels/${encodeURIComponent(channelUid)}/products/${encodeURIComponent(productId)}?withWindow=true`, { credentials: 'include' });
+        const endpoint = `${prefix}/v2/channels/${encodeURIComponent(channelUid)}/products/${encodeURIComponent(productId)}?withWindow=true`;
+        let response = await fetch(endpoint, { credentials: 'include' });
+        if (response.status === 429) {
+          const retryAfter = Math.min(3000, Math.max(800, Number(response.headers.get('retry-after') || 1) * 1000));
+          await new Promise((resolve) => setTimeout(resolve, retryAfter));
+          response = await fetch(endpoint, { credentials: 'include' });
+        }
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        product = findProduct(await response.json());
+        const responseBody = await response.json();
+        product = findProduct(responseBody, productId) || responseBody;
       } catch (error) { apiWarning = `상품 API ${error.message}`; }
     } else apiWarning = '채널 정보 없음';
     try {
       const productName = clean(product.name || simple.name || document.querySelector('h1')?.textContent || document.title.split(':')[0]);
       const basePrice = Number(product.benefitsView?.discountedSalePrice ?? product.discountedSalePrice ?? product.salePrice ?? simple.benefitsView?.discountedSalePrice ?? simple.salePrice ?? 0);
-      const mainImages = unique([simple.representativeImageUrl, ...(simple.optionalImageUrls || []), product.representativeImageUrl, ...(product.optionalImageUrls || []), ...(product.productImages || []), ...(product.channelProductImages || []), ...(product.galleryImages || [])]).map((url) => ({ url }));
+      const mainImages = unique([
+        ...productImageValues(simple),
+        ...productImageValues(stateProduct),
+        ...productImageValues(product),
+        ...collectDomMainImages(),
+      ]).map((url) => ({ url }));
       const imageMap = optionImageMap(product);
       const combinations = Array.isArray(product.optionCombinations) ? product.optionCombinations : [];
       const rows = combinations.length ? combinations.map((option) => {

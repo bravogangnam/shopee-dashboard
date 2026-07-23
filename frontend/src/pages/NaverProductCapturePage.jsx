@@ -130,8 +130,32 @@ function naverCollector() {
     if (!optionHeading) return [];
     let optionRoot = optionHeading.parentElement;
     for (let element = optionRoot; element && element !== document.body; element = element.parentElement) {
-      const inputs = element.querySelectorAll('input[type="radio"], input[type="checkbox"]');
-      if (inputs.length >= 2 && inputs.length <= 100) { optionRoot = element; break; }
+      const controls = element.querySelectorAll('input[type="radio"], input[type="checkbox"], [role="listbox"] [role="option"]');
+      if (controls.length >= 2 && controls.length <= 100) { optionRoot = element; break; }
+    }
+    const listboxGroups = [...optionRoot.querySelectorAll('[role="listbox"]')].map((listbox) => {
+      const names = new Set();
+      const options = [...listbox.querySelectorAll('[role="option"]')].map((option) => {
+        const rawText = clean(option.getAttribute('data-shp-contents-id') || option.innerText || option.textContent);
+        const name = rawText.replace(/\s*[+-]\s*[\d,]+\s*원\s*$/g, '').trim();
+        if (!name || names.has(name)) return null;
+        names.add(name);
+        const imageElement = option.querySelector('img');
+        const background = getComputedStyle(option).backgroundImage.match(/url\(["']?(.+?)["']?\)/)?.[1];
+        const optionImage = imageUrl(imageElement?.dataset?.src || imageElement?.currentSrc || imageElement?.src || background);
+        const extraPrice = rawText.match(/[+]\s*([\d,]+)\s*원/);
+        return { name, optionImage, extraPrice: Number((extraPrice?.[1] || '0').replace(/,/g, '')) };
+      }).filter(Boolean);
+      const type = options.length ? listbox.querySelector('[role="option"]')?.getAttribute('data-shp-contents-type') || '' : '';
+      return { key: `${type}:${options.map((option) => option.name).join('|')}`, options };
+    }).filter((group, index, groups) => group.options.length && groups.findIndex((candidate) => candidate.key === group.key) === index);
+    if (listboxGroups.length) {
+      const combinations = listboxGroups.reduce((rows, group) => rows.flatMap((row) => group.options.map((option) => ({
+        names: [...row.names, option.name],
+        price: row.price + option.extraPrice,
+        optionImage: row.optionImage || option.optionImage,
+      }))), [{ names: [], price: basePrice, optionImage: '' }]);
+      return combinations.map((row) => ({ optionName: row.names.join(' / '), price: row.price, optionImage: row.optionImage }));
     }
     const controls = [...optionRoot.querySelectorAll('input[type="radio"], input[type="checkbox"]')];
     const found = []; const names = new Set();

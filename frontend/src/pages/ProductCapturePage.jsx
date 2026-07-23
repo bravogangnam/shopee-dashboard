@@ -16,6 +16,7 @@ const BOOKMARKLET_CODE_WITH_IMAGES = BOOKMARKLET_CODE
   .replace('...optionObjects.map(o=>', '...optionPictures,...optionObjects.map(o=>');
 
 const BOOKMARKLET_CODE_READY = BOOKMARKLET_CODE_WITH_IMAGES
+  .replace('payload={productName:pn', 'payload={source:"shopee",productName:pn')
   .replace('if(n>=100000)return(n/100000).toFixed(2);if(n>=1000)return(n/100).toFixed(2)', 'if(n>=1000)return(n/100000).toFixed(2)')
   .replace(
     'javascript:(async()=>{const c=',
@@ -25,6 +26,8 @@ const BOOKMARKLET_CODE_READY = BOOKMARKLET_CODE_WITH_IMAGES
   .replace('alert("현재 상품과 일치하는 모델 데이터를 찾지 못했습니다. 페이지가 완전히 로딩된 뒤 다시 실행하세요.")', 'toast("현재 상품과 일치하는 모델 데이터를 찾지 못했습니다. 페이지가 완전히 로딩된 뒤 다시 실행하세요.",true)')
   .replace('alert("복사창이 열렸습니다. Ctrl+C 후 붙여넣기 해보세요.")', 'toast("자동 복사에 실패했습니다. 열린 복사창에서 Ctrl+C를 눌러주세요.",true)')
   .replace('alert("Shopee 상품수집 복사 완료: "+rows.length+"행, 메인 사진 "+main.length+"장")', 'toast("상품수집 완료 · 옵션 "+rows.length+"개 · 메인 사진 "+main.length+"장")');
+
+export const SHOPEE_BOOKMARKLET_CODE = BOOKMARKLET_CODE_READY;
 
 const cleanUrl = (value) => (typeof value === 'string' && /^https?:\/\//i.test(value.trim()) ? value.trim() : '');
 

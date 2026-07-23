@@ -9,8 +9,7 @@ import LedgerPage from './pages/LedgerPage.jsx';
 import OrderManagementPage from './pages/OrderManagementPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import AdminPage from './pages/AdminPage.jsx';
-import ProductCapturePage from './pages/ProductCapturePage.jsx';
-import NaverProductCapturePage from './pages/NaverProductCapturePage.jsx';
+import UnifiedProductCapturePage from './pages/UnifiedProductCapturePage.jsx';
 import ProductAnalyticsPage from './pages/ProductAnalyticsPage.jsx';
 import BrandImageMakerPage from './pages/BrandImageMakerPage.jsx';
 
@@ -29,8 +28,8 @@ export default function App() {
           <Route path="/receipts" element={<ReceiptManagementPage />} />
           <Route path="/product-analytics" element={<ProductAnalyticsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/product-capture" element={<ProductCapturePage />} />
-          <Route path="/naver-product-capture" element={<NaverProductCapturePage />} />
+          <Route path="/product-capture" element={<UnifiedProductCapturePage />} />
+          <Route path="/naver-product-capture" element={<Navigate to="/product-capture" replace />} />
           <Route path="/brand-image-maker" element={<BrandImageMakerPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/settings/rates" element={<Navigate to="/settings" replace />} />

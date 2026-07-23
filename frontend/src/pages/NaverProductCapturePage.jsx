@@ -169,6 +169,7 @@ function naverCollector() {
 }
 
 const BOOKMARKLET_CODE = `javascript:(${naverCollector.toString()})()`;
+export const NAVER_BOOKMARKLET_CODE = BOOKMARKLET_CODE;
 const cleanUrl = (value) => typeof value === 'string' && /^https?:\/\//i.test(value.trim()) ? value.trim() : '';
 const safeStem = (value) => String(value || '파일').normalize('NFC').replace(/[\\/:*?"<>|\x00-\x1f]/g, '').replace(/\s+/g, '_').replace(/^\.+|[. ]+$/g, '').slice(0, 48) || '파일';
 

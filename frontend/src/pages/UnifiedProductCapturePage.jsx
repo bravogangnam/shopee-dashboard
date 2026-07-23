@@ -22,6 +22,13 @@ function normalizeProduct(product) {
     source,
     name,
     warning: String(product.warning || ''),
+    collectorVersion: String(product.collectorVersion || ''),
+    optionSource: String(product.optionSource || ''),
+    diagnostics: product.diagnostics && typeof product.diagnostics === 'object' ? {
+      optionExpected: Boolean(product.diagnostics.optionExpected),
+      collectedOptionCount: Number(product.diagnostics.collectedOptionCount || 0),
+      mainImageCount: Number(product.diagnostics.mainImageCount || 0),
+    } : null,
     mainImages: [...new Set((product.mainImages || []).map((item) => cleanUrl(item?.url || item)).filter(Boolean))].map((url) => ({ url })),
     detailImages: [...new Set((product.detailImages || []).map((item) => cleanUrl(item?.url || item)).filter(Boolean))].map((url) => ({ url })),
     detailVideos: [...new Map((product.detailVideos || []).filter((item) => /^[A-F0-9]+$/i.test(item?.vid || '') && item?.inkey).map((item) => [String(item.vid), {
@@ -101,7 +108,15 @@ function parseCapture(text) {
   return normalizeProduct({
     source,
     name,
-    warning: parsed?.warning,
+    warning: [
+      parsed?.warning,
+      parsed?.diagnostics?.optionExpected && !parsed?.diagnostics?.collectedOptionCount ? '옵션이 있는 상품이지만 옵션 목록을 확인하지 못함' : '',
+      !name ? '상품명 누락' : '',
+      productRows.some((row) => !row.price || !Number.isFinite(Number(row.price)) || Number(row.price) <= 0) ? '가격 확인 필요' : '',
+    ].filter(Boolean).filter((warning, index, warnings) => warnings.indexOf(warning) === index).join(' / '),
+    collectorVersion: parsed?.collectorVersion,
+    optionSource: parsed?.optionSource,
+    diagnostics: parsed?.diagnostics,
     mainImages: parsed?.mainImages,
     detailImages: parsed?.detailImages,
     detailVideos: parsed?.detailVideos,
@@ -121,6 +136,15 @@ export default function UnifiedProductCapturePage() {
   const mainImages = useMemo(() => (product?.mainImages || []).map((item, index) => ({ ...item, sequence: index + 1 })), [product]);
   const detailImages = useMemo(() => (product?.detailImages || []).map((item, index) => ({ ...item, sequence: index + 1 })), [product]);
   const detailVideos = useMemo(() => (product?.detailVideos || []).map((item, index) => ({ ...item, sequence: index + 1 })), [product]);
+  const optionSourceLabel = {
+    'api-combinations': 'API 조합형',
+    'api-standards': 'API 표준형',
+    'api-simple': 'API 단독형',
+    'shopee-models': 'Shopee 모델',
+    dom: '화면 옵션',
+    none: '옵션 없음',
+    missing: '옵션 확인 실패',
+  }[product?.optionSource] || '';
 
   const persist = (next) => {
     const normalized = normalizeState(next);
@@ -264,7 +288,7 @@ export default function UnifiedProductCapturePage() {
 
       <div className="product-capture-workspace">
         <section className="card product-capture-paste-panel">
-          <div className="product-capture-panel-header"><h3>상품정보 붙여넣기</h3>{product && <span className={`capture-source-badge source-${product.source}`}>{product.source === 'naver' ? '네이버' : 'Shopee'}</span>}</div>
+          <div className="product-capture-panel-header"><h3>상품정보 붙여넣기</h3>{product && <div className="capture-source-meta"><span className={`capture-source-badge source-${product.source}`}>{product.source === 'naver' ? '네이버' : 'Shopee'}</span>{optionSourceLabel && <span className="capture-source-badge">{optionSourceLabel} · 옵션 {product.diagnostics?.collectedOptionCount ?? rows.length}개</span>}</div>}</div>
           <textarea rows={3} value={pasteText} onChange={(event) => handlePaste(event.target.value)} placeholder="Shopee 또는 네이버 북마크릿 JSON을 붙여넣으세요." />
           <div className="product-capture-paste-actions">
             <button className="action-btn" type="button" onClick={reset}>전체 초기화</button>

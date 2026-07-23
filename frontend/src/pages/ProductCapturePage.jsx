@@ -16,7 +16,14 @@ const BOOKMARKLET_CODE_WITH_IMAGES = BOOKMARKLET_CODE
   .replace('...optionObjects.map(o=>', '...optionPictures,...optionObjects.map(o=>');
 
 const BOOKMARKLET_CODE_READY = BOOKMARKLET_CODE_WITH_IMAGES
-  .replace('payload={productName:pn', 'payload={source:"shopee",productName:pn')
+  .replace(
+    'payload={productName:pn',
+    'payload={source:"shopee",collectorVersion:"unified-2",optionSource:"shopee-models",diagnostics:{optionExpected:best.ts.length>0||best.ms.length>1,collectedOptionCount:rows[0]?.optionName==="-"?0:rows.length,mainImageCount:main.length},productName:pn',
+  )
+  .replace(
+    'mainImages:main,rows},text=',
+    'mainImages:main,rows,warning:[!pn?"상품명 누락":"",!main.length?"메인 사진 없음":"",rows.some(r=>!r.price||!Number.isFinite(Number(r.price))||Number(r.price)<=0)?"가격 확인 필요":"",(best.ts.length||best.ms.length>1)&&rows.every(r=>r.optionName==="-")?"옵션 목록 확인 필요":"",rows.some((r,i,a)=>r.optionName!=="-"&&a.findIndex(x=>x.optionName===r.optionName)!==i)?"중복 옵션명 확인 필요":""].filter(Boolean).join(" / ")||void 0},text=',
+  )
   .replace('if(n>=100000)return(n/100000).toFixed(2);if(n>=1000)return(n/100).toFixed(2)', 'if(n>=1000)return(n/100000).toFixed(2)')
   .replace(
     'javascript:(async()=>{const c=',
@@ -25,7 +32,7 @@ const BOOKMARKLET_CODE_READY = BOOKMARKLET_CODE_WITH_IMAGES
   .replace('alert("현재 URL에서 Shopee item_id를 찾지 못했습니다. 상품 URL을 확인하세요.")', 'toast("현재 URL에서 Shopee item_id를 찾지 못했습니다. 상품 URL을 확인하세요.",true)')
   .replace('alert("현재 상품과 일치하는 모델 데이터를 찾지 못했습니다. 페이지가 완전히 로딩된 뒤 다시 실행하세요.")', 'toast("현재 상품과 일치하는 모델 데이터를 찾지 못했습니다. 페이지가 완전히 로딩된 뒤 다시 실행하세요.",true)')
   .replace('alert("복사창이 열렸습니다. Ctrl+C 후 붙여넣기 해보세요.")', 'toast("자동 복사에 실패했습니다. 열린 복사창에서 Ctrl+C를 눌러주세요.",true)')
-  .replace('alert("Shopee 상품수집 복사 완료: "+rows.length+"행, 메인 사진 "+main.length+"장")', 'toast("상품수집 완료 · 옵션 "+rows.length+"개 · 메인 사진 "+main.length+"장")');
+  .replace('alert("Shopee 상품수집 복사 완료: "+rows.length+"행, 메인 사진 "+main.length+"장")', 'toast("상품수집 완료 · 옵션 "+rows.length+"개 · 메인 사진 "+main.length+"장"+(payload.warning?" · 확인 필요("+payload.warning+")":""),Boolean(payload.warning))');
 
 export const SHOPEE_BOOKMARKLET_CODE = BOOKMARKLET_CODE_READY;
 

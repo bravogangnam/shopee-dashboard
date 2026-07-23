@@ -3467,6 +3467,14 @@ html[data-theme='dark'] .order-management-page .status-tab.active {
   font-weight: 700;
 }
 
+.capture-source-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .capture-source-badge.source-shopee {
   border-color: #fed7aa;
   background: #fff7ed;

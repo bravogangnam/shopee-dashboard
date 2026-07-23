@@ -38,7 +38,11 @@ function naverCollector() {
       seen.add(value);
       const id = String(value.id || value.productId || value.channelProductNo || '');
       const imageCount = unique(productImageValues(value)).length;
-      const optionCount = Array.isArray(value.optionCombinations) ? value.optionCombinations.length : 0;
+      const optionCount = [
+        value.optionCombinations,
+        value.optionStandards,
+        value.optionSimple,
+      ].reduce((count, options) => count + (Array.isArray(options) ? options.length : 0), 0);
       const score = (expectedId && id === expectedId ? 10000 : 0) + (value.name ? 100 : 0) + imageCount * 20 + optionCount;
       if ((imageCount || optionCount) && score > bestScore) {
         best = value;
@@ -64,6 +68,27 @@ function naverCollector() {
       if (name && url) map.set(name, url);
     }));
     return map;
+  };
+  const fixedOptionRows = (product, basePrice) => {
+    const imageMap = optionImageMap(product);
+    const rowFromOption = (option) => {
+      const parts = [1, 2, 3, 4, 5].map((index) => clean(option[`optionName${index}`])).filter(Boolean);
+      const optionName = parts.join(' / ') || clean(option.name || option.optionName) || '-';
+      const directImage = imageUrl(option.imageInfo?.images?.[0] || option.imageInfo || option.imageUrl || option.image);
+      const mappedImage = parts.map((part) => imageMap.get(part)).find(Boolean) || '';
+      const price = Number(option.dispDiscountedSalePrice ?? option.discountedSalePrice ?? (basePrice + Number(option.price || 0)));
+      return { optionName, price, optionImage: directImage || mappedImage };
+    };
+    const combinations = Array.isArray(product.optionCombinations) ? product.optionCombinations : [];
+    if (combinations.length) return { rows: combinations.map(rowFromOption), source: 'api-combinations' };
+    const standards = Array.isArray(product.optionStandards) ? product.optionStandards : [];
+    if (standards.length) return { rows: standards.map(rowFromOption), source: 'api-standards' };
+    const simpleOptions = Array.isArray(product.optionSimple) ? product.optionSimple : [];
+    if (simpleOptions.length) {
+      const groups = new Set(simpleOptions.map((option) => clean(option.groupName)).filter(Boolean));
+      if (groups.size <= 1) return { rows: simpleOptions.map(rowFromOption), source: 'api-simple' };
+    }
+    return { rows: [], source: '' };
   };
   const documents = () => {
     const result = [document];
@@ -211,24 +236,41 @@ function naverCollector() {
         ...productImageValues(product),
         ...collectDomMainImages(),
       ]).map((url) => ({ url }));
-      const imageMap = optionImageMap(product);
-      const combinations = Array.isArray(product.optionCombinations) ? product.optionCombinations : [];
-      const apiRows = combinations.length ? combinations.map((option) => {
-        const parts = [1, 2, 3, 4, 5].map((index) => clean(option[`optionName${index}`])).filter(Boolean);
-        const optionName = parts.join(' / ') || '-';
-        const directImage = imageUrl(option.imageInfo?.images?.[0] || option.imageInfo || option.imageUrl || option.image);
-        const mappedImage = parts.map((part) => imageMap.get(part)).find(Boolean) || '';
-        const price = Number(option.dispDiscountedSalePrice ?? option.discountedSalePrice ?? (basePrice + Number(option.price || 0)));
-        return { optionName, price, optionImage: directImage || mappedImage };
-      }) : [];
+      const fixedOptions = fixedOptionRows(product, basePrice);
+      const apiRows = fixedOptions.rows;
       const domRows = apiRows.length ? [] : collectDomOptions(basePrice);
       const rows = apiRows.length ? apiRows : domRows.length ? domRows : [{ optionName: '-', price: basePrice, optionImage: '' }];
+      const optionExpected = Boolean(
+        product.optionUsable ||
+        simple.optionUsable ||
+        document.querySelector('[data-shp-area-id="optselect"][role="option"]') ||
+        [...document.querySelectorAll('body *')].some((element) => element.children.length < 3 && /^옵션\s*선택/.test(clean(element.textContent))),
+      );
+      const warnings = [apiWarning];
+      if (optionExpected && rows.length === 1 && rows[0].optionName === '-') warnings.push('옵션이 있는 상품이지만 옵션 목록을 확인하지 못함');
+      if (!productName) warnings.push('상품명 누락');
+      if (!mainImages.length) warnings.push('메인 사진 없음');
+      if (rows.some((row) => !Number.isFinite(Number(row.price)) || Number(row.price) <= 0)) warnings.push('가격 확인 필요');
+      const duplicateNames = rows.map((row) => row.optionName).filter((name, index, names) => name !== '-' && names.indexOf(name) !== index);
+      if (duplicateNames.length) warnings.push('중복 옵션명 확인 필요');
+      const warning = warnings.filter(Boolean).join(' / ');
       const detailImages = collectDetailImages().map((url) => ({ url }));
       const detailVideos = collectVideos();
-      const payload = { source: 'naver', productName, mainImages, detailImages, detailVideos, rows, warning: apiWarning || undefined };
+      const payload = {
+        source: 'naver',
+        collectorVersion: 'unified-2',
+        optionSource: fixedOptions.source || (domRows.length ? 'dom' : optionExpected ? 'missing' : 'none'),
+        diagnostics: { optionExpected, collectedOptionCount: rows[0]?.optionName === '-' ? 0 : rows.length, mainImageCount: mainImages.length },
+        productName,
+        mainImages,
+        detailImages,
+        detailVideos,
+        rows,
+        warning: warning || undefined,
+      };
       const text = JSON.stringify(payload, null, 2);
-      const status = `네이버 상품수집 완료 · 옵션 ${rows.length}개 · 메인 ${mainImages.length}장 · 상세 ${detailImages.length}장 · 동영상 ${detailVideos.length}개${apiWarning ? ` · 일부 정보 제한(${apiWarning})` : ''}`;
-      try { await navigator.clipboard.writeText(text); toast(status); } catch { fallbackCopy(text); }
+      const status = `네이버 상품수집 완료 · 옵션 ${rows[0]?.optionName === '-' ? 0 : rows.length}개 · 메인 ${mainImages.length}장 · 상세 ${detailImages.length}장 · 동영상 ${detailVideos.length}개${warning ? ` · 확인 필요(${warning})` : ''}`;
+      try { await navigator.clipboard.writeText(text); toast(status, Boolean(warning)); } catch { fallbackCopy(text); }
     } catch (error) { toast(`네이버 상품수집 실패: ${error.message}`, true); }
   })();
 }

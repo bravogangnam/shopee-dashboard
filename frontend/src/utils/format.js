@@ -25,20 +25,8 @@ export function formatKrw(value) {
   return `₩${Math.round(number).toLocaleString('ko-KR')}`;
 }
 
-export function formatDateTime(value) {
-  if (isBlank(value)) return '-';
-  const rawValue = String(value);
-  const hasTimezone = /(?:Z|[+-]\d{2}:\d{2})$/.test(rawValue);
-
-  if (!hasTimezone) {
-    return rawValue.replace('T', ' ').replace('.000', '');
-  }
-
-  const date = new Date(rawValue);
-  if (Number.isNaN(date.getTime())) {
-    return rawValue.replace('T', ' ').replace('.000Z', '');
-  }
-
+function formatDateInSeoul(date) {
+  if (Number.isNaN(date.getTime())) return '-';
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Seoul',
@@ -54,6 +42,30 @@ export function formatDateTime(value) {
 
   const hour = parts.hour === '24' ? '00' : parts.hour;
   return `${parts.year}-${parts.month}-${parts.day} ${hour}:${parts.minute}:${parts.second}`;
+}
+
+export function formatUnixDateTimeKst(value) {
+  if (isBlank(value)) return '-';
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds)) return '-';
+  return formatDateInSeoul(new Date(seconds * 1000));
+}
+
+export function formatDateTime(value) {
+  if (isBlank(value)) return '-';
+  const rawValue = String(value);
+  const hasTimezone = /(?:Z|[+-]\d{2}:\d{2})$/.test(rawValue);
+
+  if (!hasTimezone) {
+    return rawValue.replace('T', ' ').replace('.000', '');
+  }
+
+  const date = new Date(rawValue);
+  if (Number.isNaN(date.getTime())) {
+    return rawValue.replace('T', ' ').replace('.000Z', '');
+  }
+
+  return formatDateInSeoul(date);
 }
 
 export function profitTone(value) {

@@ -1,4 +1,4 @@
-import { formatCurrency, formatDateTime } from '../utils/format.js';
+import { formatCurrency, formatUnixDateTimeKst } from '../utils/format.js';
 import CopyIconButton from './CopyIconButton.jsx';
 
 function regionClass(region) {
@@ -249,7 +249,7 @@ export default function OrderManagementTable({
                 </td>
                 <td>
                   <strong>{orderSn}</strong>
-                  <small>{formatDateTime(order.order_created_at)}</small>
+                  <small>{formatUnixDateTimeKst(order.create_time)}</small>
                 </td>
                 <td>{renderSkuLines(items)}</td>
                 <td>
